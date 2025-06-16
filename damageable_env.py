@@ -5,6 +5,7 @@ from omnigibson.objects.usd_object import USDObject
 from omnigibson.objects.controllable_object import ControllableObject
 from omnigibson.objects.light_object import LightObject
 from omnigibson.objects.stateful_object import StatefulObject
+from omnigibson.robots.franka import FrankaPanda
 from safety_benchmark.damageable_mixin import (
     DamageableDatasetObject,
     DamageablePrimitiveObject,
@@ -12,6 +13,7 @@ from safety_benchmark.damageable_mixin import (
     DamageableControllableObject,
     DamageableLightObject,
     DamageableStatefulObject,
+    DamageableFrankaPanda,
 )
 from safety_benchmark.params.test_params import PARAMS
 import omnigibson as og
@@ -28,51 +30,30 @@ DAMAGEABLE_OBJECT_MAPPING = {
     "ControllableObject": DamageableControllableObject,
     "LightObject": DamageableLightObject,
     "StatefulObject": DamageableStatefulObject,
+    "FrankaPanda": DamageableFrankaPanda,
 }
 
 def create_damageable_object_from_config(cls_name, cls_registry, cfg, cls_type_descriptor):
-    """
-    Helper function to create a damageable object with str type @cls_name, which should be a valid entry in @cls_registry,
-    using kwargs in dictionary form @cfg to pass to the constructor, with @cls_type_name specified for debugging.
-    This is similar to create_class_from_registry_and_config but ensures objects are created as damageable versions.
-
-    Args:
-        cls_name (str): Name of the class to create. This should correspond to the actual class type, in string form
-        cls_registry (dict): Class registry. This should map string names of valid classes to create to the
-            actual class type itself
-        cfg (dict): Any keyword arguments to pass to the class constructor
-        cls_type_descriptor (str): Description of the class type being created. This can be any string and is used
-            solely for debugging purposes
-
-    Returns:
-        any: Created damageable object instance
-    """
+    '''
+    Loads in object from config as a damageable object
+    '''
     # Make sure the requested class type is valid
     assert cls_name in cls_registry, f"Invalid {cls_type_descriptor} type received! Valid options are: {cls_registry.keys()}, got: {cls_name}"
 
-    # Get the base class
+    # Get damageable class if there
     base_cls = cls_registry[cls_name]
-    
-    # Get the damageable version of the class if it exists
     damageable_cls = DAMAGEABLE_OBJECT_MAPPING.get(base_cls.__name__)
-    
-    # If no damageable version exists, use the base class
     cls_to_use = damageable_cls if damageable_cls is not None else base_cls
-    
-    # Extract the kwargs relevant for the specific class
+
+    # Get kwargs
     cls_kwargs = {}
-    # Get signatures for both the damageable class and base class
-    damageable_sig = inspect.signature(damageable_cls.__init__) if damageable_cls is not None else None
     base_sig = inspect.signature(base_cls.__init__)
-    
-    # Extract kwargs for both classes
     for k in base_sig.parameters.keys():
         if k != "self" and k in cfg:
             cls_kwargs[k] = cfg[k]
-    
-    # If this is a damageable class, ensure params are passed correctly
+
     if damageable_cls is not None:
-        # Ensure damage_params exists
+        # Getting damage parameters
         if "damage_params" not in cfg:
             obj_name = cfg.get("name", "default")
             if obj_name in PARAMS:
@@ -81,32 +62,22 @@ def create_damageable_object_from_config(cls_name, cls_registry, cfg, cls_type_d
                 cls_kwargs["params"] = PARAMS["default"]
         else:
             cls_kwargs["params"] = cfg["damage_params"]
-    
-    # Create the class
+
+    # Creating class
     return cls_to_use(**cls_kwargs)
 
 class DamageableEnvironment(Environment):
-    """
-    A version of the OmniGibson environment that loads objects as damageable versions.
-    """
-
+    '''
+    OmniGibson environment wrapper to support damageable objects and robots
+    '''
     def __init__(self, configs, in_vec_env=False):
-        """
-        Initialize the damageable environment.
-
-        Args:
-            configs (str or dict or list of str or dict): config_file path(s) or raw config dictionaries.
-                If multiple configs are specified, they will be merged sequentially in the order specified.
-            in_vec_env (bool): Whether this environment is part of a vectorized environment
-        """
+        # Initialize the damageable environment
         super().__init__(configs, in_vec_env)
         self.damage_generators_initialized = False
 
     def load(self):
-        """
-        Load the scene and robot specified in the config file.
-        """
-        # This environment is not loaded
+        # Load scene, objects, and robots
+        # TODO: Need to add support for scenes
         self._loaded = False
 
         # Load config variables
@@ -125,9 +96,7 @@ class DamageableEnvironment(Environment):
                 obj._initialize_health()
 
     def _load_objects(self):
-        """
-        Load any additional custom objects into the scene as damageable versions.
-        """
+        # Load objects from config as damageable versions
         assert og.sim.is_stopped(), "Simulator must be stopped before loading objects!"
         for i, obj_config in enumerate(self.objects_config):
             # Add a name for the object if necessary
@@ -152,24 +121,15 @@ class DamageableEnvironment(Environment):
         assert og.sim.is_stopped(), "Simulator must be stopped after loading objects!"
 
     def step(self, action):
-        """
-        Step the environment and update health of all damageable objects.
-        
-        Args:
-            action: The action to take in the environment
-            
-        Returns:
-            tuple: (obs, reward, terminated, truncated, info) from the environment step
-        """
-        # Step the environment
+        # Step function wrapper for damage generation
         if not self.damage_generators_initialized:
+            # Initializing damage generators if this is the first env step
             for obj in self.scene.objects:
                 if hasattr(obj, "_initialize_damage_generators"):
                     obj._initialize_damage_generators()
             self.damage_generators_initialized = True
 
-        obs, reward, terminated, truncated, info = super().step(action)
-        
+        obs, reward, terminated, truncated, info = super().step(action) # Stepping the base env
         
         # Update health of all damageable objects
         for obj in self.scene.objects:

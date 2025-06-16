@@ -10,38 +10,38 @@ from safety_benchmark.params.test_params import PARAMS, DAMAGE_GENERATORS
 
 
 class DamageableMixin:
-    """Mixin adding damageable functionality to any object class."""
+    '''
+    Mixin adding damage functionality to the OmniGibson object classes'
+    '''
     def __init__(self, *args, **kwargs):
-        # Initialize base class
         super().__init__(*args, **kwargs)
-        # Store parameters and prepare empty generators list
+        # Store params dict, set empty damage_generators list
         self.params = kwargs.get('params', {})
         self.damage_generators = []
 
-    def _initialize_health(self):
-        """Initialize health-related attributes after base object is initialized."""
-        # Start each link at full health
-        self.link_healths = {link_name: 100.0 for link_name in self.links.keys()}
-        # Unpack thresholds
+        # Set thresholds
         thresholds = self.params.get("health_thresholds", [90.0, 60.0, 30.0])
         self.minor_threshold, self.major_threshold, self.critical_threshold = thresholds
-        # Initial status for each link
+
+    def _initialize_health(self):
+        # Initialize link healths to the maximum
+        self.link_healths = {link_name: 100.0 for link_name in self.links.keys()}
         self.damage_statuses = {link_name: "none" for link_name in self.links.keys()}
 
     def _initialize_damage_generators(self):
-        """Initialize damage generators after base object is initialized."""
+        # Set damage generators once sim is playing
         for generator_name in self.params.get("damage_generators", []):
-            gen_cls = DAMAGE_GENERATORS[generator_name]
+            gen_cls = DAMAGE_GENERATORS[generator_name] # Getting correct damage generator
             self.damage_generators.append(gen_cls(self, **self.params[generator_name]))
 
     @property
     def health(self):
-        """Returns the average health across all links."""
+        # Returning average health value across links
         return sum(self.link_healths.values()) / len(self.link_healths)
 
     @property
     def damage_status(self):
-        """Returns the overall damage status of the object based on thresholds."""
+        # Returning damage status of average health
         h = self.health
         if h < self.critical_threshold:
             return "critical"
@@ -55,14 +55,15 @@ class DamageableMixin:
             return "none"
 
     def update_health(self):
-        """Updates the health of all links based on damage from all generators."""
+        # Updates health based on the damage generators
         for generator in self.damage_generators:
             link_damages = generator.generate_damage()
             for link_name, damage in link_damages.items():
-                # Decrease health but not below zero
+                # Update link healths
                 new_health = max(0.0, self.link_healths[link_name] - damage)
                 self.link_healths[link_name] = new_health
-                # Update individual link status
+
+                # Calculate and update individual link status
                 if new_health < self.critical_threshold:
                     status = "critical"
                 elif new_health < self.major_threshold:
@@ -76,37 +77,24 @@ class DamageableMixin:
                 self.damage_statuses[link_name] = status
 
 
-# Damageable subclasses using the mixin
+'''Damageable Object subclasses'''
 class DamageableDatasetObject(DamageableMixin, DatasetObject):
-    """A DatasetObject that can be damaged."""
     pass
-
 
 class DamageablePrimitiveObject(DamageableMixin, PrimitiveObject):
-    """A PrimitiveObject that can be damaged."""
     pass
-
 
 class DamageableUSDObject(DamageableMixin, USDObject):
-    """A USDObject that can be damaged."""
     pass
-
 
 class DamageableControllableObject(DamageableMixin, ControllableObject):
-    """A ControllableObject that can be damaged."""
     pass
-
 
 class DamageableLightObject(DamageableMixin, LightObject):
-    """A LightObject that can be damaged."""
     pass
-
 
 class DamageableStatefulObject(DamageableMixin, StatefulObject):
-    """A StatefulObject that can be damaged."""
     pass
 
-
 class DamageableFrankaPanda(DamageableMixin, FrankaPanda):
-    """A FrankaPanda robot that can be damaged."""
     pass

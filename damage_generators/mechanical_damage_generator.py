@@ -3,15 +3,20 @@ from omnigibson.objects.object_base import BaseObject
 import omnigibson as og
 import torch
 from omnigibson.utils.usd_utils import RigidContactAPI
+from typing import Dict
 
 class MechanicalDamageGenerator(DamageGenerator):
+    '''
+    Damage generator for mechanical forces
+    '''
     def __init__(self, entity: BaseObject, damage_threshold: float, scale: float):
         super().__init__(entity, damage_threshold, scale)
         # Initialize the contact API
         RigidContactAPI.initialize_view()
 
-    def generate_damage(self):
+    def generate_damage(self) -> Dict[str, float]:
         link_damages = {}
+        # Tracking contact forces for each link
         for link_name, link in self.entity.links.items():
             total_force = 0.0
 

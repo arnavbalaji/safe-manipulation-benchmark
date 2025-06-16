@@ -1,11 +1,17 @@
 from omnigibson.objects.object_base import BaseObject
+from abc import ABC, abstractmethod
+from typing import Dict
 
 
-class DamageGenerator:
+class DamageGenerator(ABC):
+    '''
+    Damage Generator abstract class
+    '''
     def __init__(self, entity: BaseObject, damage_threshold: float, scale: float):
         self.damage_threshold = damage_threshold
         self.scale = scale
         self.entity = entity
-
-    def generate_damage(self):
-        return {link_name: 0.0 for link_name in self.entity.links.keys()}
+    
+    @abstractmethod
+    def generate_damage(self) -> Dict[str, float]:
+        raise NotImplementedError
