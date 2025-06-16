@@ -1,11 +1,11 @@
 from omnigibson.envs.env_base import Environment
-from omnigibson.objects.dataset_object import DatasetObject
-from omnigibson.objects.primitive_object import PrimitiveObject
-from omnigibson.objects.usd_object import USDObject
-from omnigibson.objects.controllable_object import ControllableObject
-from omnigibson.objects.light_object import LightObject
-from omnigibson.objects.stateful_object import StatefulObject
-from omnigibson.robots.franka import FrankaPanda
+# from omnigibson.objects.dataset_object import DatasetObject
+# from omnigibson.objects.primitive_object import PrimitiveObject
+# from omnigibson.objects.usd_object import USDObject
+# from omnigibson.objects.controllable_object import ControllableObject
+# from omnigibson.objects.light_object import LightObject
+# from omnigibson.objects.stateful_object import StatefulObject
+# from omnigibson.robots.franka import FrankaPanda
 from safety_benchmark.damageable_mixin import (
     DamageableDatasetObject,
     DamageablePrimitiveObject,
@@ -14,10 +14,14 @@ from safety_benchmark.damageable_mixin import (
     DamageableLightObject,
     DamageableStatefulObject,
     DamageableFrankaPanda,
+    DamageableTiago,
 )
 from safety_benchmark.params.test_params import PARAMS
 import omnigibson as og
 import inspect
+import random
+import string
+import torch
 
 from omnigibson.objects import REGISTERED_OBJECTS
 from omnigibson.robots import REGISTERED_ROBOTS
@@ -31,6 +35,7 @@ DAMAGEABLE_OBJECT_MAPPING = {
     "LightObject": DamageableLightObject,
     "StatefulObject": DamageableStatefulObject,
     "FrankaPanda": DamageableFrankaPanda,
+    "Tiago": DamageableTiago,
 }
 
 def create_damageable_object_from_config(cls_name, cls_registry, cfg, cls_type_descriptor):
@@ -94,6 +99,42 @@ class DamageableEnvironment(Environment):
         for obj in self.scene.objects:
             if hasattr(obj, "_initialize_health"):
                 obj._initialize_health()
+
+    def _load_robots(self):
+        """
+        Load robots into the scene
+        """
+        # Only actually load robots if no robot has been imported from the scene loading directly yet
+        if len(self.scene.robots) == 0:
+            assert og.sim.is_stopped(), "Simulator must be stopped before loading robots!"
+
+            # Iterate over all robots to generate in the robot config
+            for i, robot_config in enumerate(self.robots_config):
+                # Add a name for the robot if necessary
+                if "name" not in robot_config:
+                    robot_config["name"] = "robot_" + "".join(random.choices(string.ascii_lowercase, k=6))
+
+                position, orientation = robot_config.pop("position", None), robot_config.pop("orientation", None)
+                pose_frame = robot_config.pop("pose_frame", "scene")
+                if position is not None:
+                    position = position if isinstance(position, torch.Tensor) else torch.tensor(position, dtype=torch.float32)
+                if orientation is not None:
+                    orientation = (
+                        orientation if isinstance(orientation, torch.Tensor) else torch.tensor(orientation, dtype=torch.float32)
+                    )
+
+                # Make sure robot exists, grab its corresponding kwargs, and create / import the robot
+                robot = create_damageable_object_from_config(
+                    cls_name=robot_config["type"],
+                    cls_registry=REGISTERED_ROBOTS,
+                    cfg=robot_config,
+                    cls_type_descriptor="robot",
+                )
+                # Import the robot into the simulator
+                self.scene.add_object(robot)
+                robot.set_position_orientation(position=position, orientation=orientation, frame=pose_frame)
+
+        assert og.sim.is_stopped(), "Simulator must be stopped after loading robots!"
 
     def _load_objects(self):
         # Load objects from config as damageable versions

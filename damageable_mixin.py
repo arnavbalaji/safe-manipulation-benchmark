@@ -6,6 +6,7 @@ from omnigibson.objects.controllable_object import ControllableObject
 from omnigibson.objects.light_object import LightObject
 from omnigibson.objects.stateful_object import StatefulObject
 from omnigibson.robots.franka import FrankaPanda
+from omnigibson.robots.tiago import Tiago
 from safety_benchmark.params.test_params import PARAMS, DAMAGE_GENERATORS
 
 
@@ -97,4 +98,7 @@ class DamageableStatefulObject(DamageableMixin, StatefulObject):
     pass
 
 class DamageableFrankaPanda(DamageableMixin, FrankaPanda):
+    pass
+
+class DamageableTiago(DamageableMixin, Tiago):
     pass
