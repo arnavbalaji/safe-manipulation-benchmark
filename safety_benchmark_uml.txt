@@ -1,0 +1,87 @@
+@startuml
+
+skinparam classAttributeIconSize 0
+skinparam classFontSize 13
+skinparam nodesep 20
+
+' Core base classes
+class omnigibson.Environment {
+    +step() : Tuple[obs, reward, terminated, truncated, info]
+}
+
+class omnigibson.BaseObject
+
+class omnigibson.DatasetObject
+BaseObject <|-- DatasetObject
+
+' Inheritance structure
+Environment <|-- DamageableEnvironment
+DatasetObject <|-- DamageableDatasetObject
+DamageableMixin <|-- DamageableDatasetObject
+
+' Abstract and concrete damage generators
+abstract class DamageGenerator {
+    -damage_threshold : float
+    -scale : float
+    +generate_damage() : Dict<link_name, damage_amount>
+}
+
+class MechanicalDamageGenerator
+DamageGenerator <|-- MechanicalDamageGenerator
+
+' Mixin class for damageable behavior
+class DamageableMixin {
+    -link_healths : Dict<link_name, health>
+    -damage_statuses : Dict<link_name, status>
+    -damage_generators : List<DamageGenerator>
+    +health : property
+    +damage_status : property
+    +update_health()
+}
+
+' Environment wrapper
+class DamageableEnvironment {
+    +step() : Tuple[obs, reward, terminated, truncated, info]
+}
+
+' Explicit subclass shown
+class DamageableDatasetObject {
+    // Inherits from DamageableMixin and DatasetObject
+}
+
+note right of DamageableDatasetObject
+  Other similar classes also exist, such as:
+  - DamageablePrimitiveObject
+  - DamageableUSDObject
+  - DamageableControllableObject
+  - DamageableLightObject
+  - DamageableStatefulObject
+
+  Each one combines DamageableMixin with a
+  different BaseObject subclass and can also be
+  included in DamageableEnvironment.scene.objects.
+end note
+
+' Associations
+DamageableEnvironment --> "scene.objects" DamageableDatasetObject : contains
+DamageableMixin --> "*" DamageGenerator : uses
+
+' Notes about parameters
+note right of DamageableMixin
+  Initialized with a `params` dict. For example:
+  
+  {
+    "damage_generators": ["mechanical"],
+    "health_thresholds": [90.0, 60.0, 30.0],
+    "mechanical": {
+        "damage_threshold": 0.0,
+        "scale": 1.0
+    }
+  }
+
+  Each generator config (e.g. "mechanical")
+  is passed to the corresponding generator class,
+  like MechanicalDamageGenerator.
+end note
+
+@enduml
