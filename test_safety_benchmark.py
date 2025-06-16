@@ -198,12 +198,12 @@ def save_video(frames_dict, output_prefix):
     height, width = frames_dict["camera"][0].shape[:2]
 
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    avi_path1 = f'{output_prefix}_table.avi'
-    mp4_path1 = f'{output_prefix}_table.mp4'
+    avi_path1 = f'videos_and_images/{output_prefix}_table.avi'
+    mp4_path1 = f'videos_and_images/{output_prefix}_table.mp4'
     out1 = cv2.VideoWriter(avi_path1, fourcc, 30, (width, height))
 
-    avi_path2 = f'{output_prefix}_object.avi'
-    mp4_path2 = f'{output_prefix}_object.mp4'
+    avi_path2 = f'videos_and_images/{output_prefix}_object.avi'
+    mp4_path2 = f'videos_and_images/{output_prefix}_object.mp4'
     out2 = cv2.VideoWriter(avi_path2, fourcc, 30, (width, height))
 
     def format_value(val):
@@ -472,7 +472,7 @@ def main(quickstart=False):
     # Save initial camera observation
     initial_camera_obs = og.sim.viewer_camera.get_obs()[0]["rgb"]
     initial_camera_obs = initial_camera_obs.cpu().numpy()[:, :, :3]
-    cv2.imwrite('initial_camera_obs.png', cv2.cvtColor(initial_camera_obs, cv2.COLOR_RGB2BGR))
+    cv2.imwrite('videos_and_images/initial_camera_obs.png', cv2.cvtColor(initial_camera_obs, cv2.COLOR_RGB2BGR))
     
     # Add breakpoint
     breakpoint()

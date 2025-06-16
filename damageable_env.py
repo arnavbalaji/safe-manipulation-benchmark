@@ -164,7 +164,6 @@ class DamageableEnvironment(Environment):
         # Step the environment
         if not self.damage_generators_initialized:
             for obj in self.scene.objects:
-                breakpoint()
                 if hasattr(obj, "_initialize_damage_generators"):
                     obj._initialize_damage_generators()
             self.damage_generators_initialized = True
