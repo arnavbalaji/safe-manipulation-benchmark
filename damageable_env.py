@@ -95,10 +95,30 @@ class DamageableEnvironment(Environment):
         self._load_task()
         self._load_external_sensors()
 
+        self.inialize_damageable_objects()
+
+    def inialize_damageable_objects(self):
         # Initialize health for all damageable objects
         for obj in self.scene.objects:
             if hasattr(obj, "_initialize_health"):
                 obj._initialize_health()
+
+    def reset(self):
+        """Reset the environment and damage generators."""
+        # Reset the base environment
+        obs = super().reset()
+        
+        # Reset damage generators for all objects
+        for obj in self.scene.objects:
+            if hasattr(obj, "reset_damage_generators"):
+                obj.reset_damage_generators()
+            if hasattr(obj, "_initialize_health"):
+                obj._initialize_health()
+        
+        # Reset damage generator initialization flag
+        self.damage_generators_initialized = False
+        
+        return obs
 
     def _load_robots(self):
         """

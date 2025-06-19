@@ -35,6 +35,12 @@ class DamageableMixin:
             gen_cls = DAMAGE_GENERATORS[generator_name] # Getting correct damage generator
             self.damage_generators.append(gen_cls(self, **self.params[generator_name]))
 
+    def reset_damage_generators(self):
+        """Reset tracking state in all damage generators (useful for environment resets)."""
+        for generator in self.damage_generators:
+            if hasattr(generator, 'reset_tracking'):
+                generator.reset_tracking()
+
     @property
     def health(self):
         # Returning average health value across links
@@ -76,6 +82,18 @@ class DamageableMixin:
                 else:
                     status = "none"
                 self.damage_statuses[link_name] = status
+
+    def get_impact_history(self, link_name: str = None):
+        """Get impact history from damage generators for debugging."""
+        impact_history = {}
+        for generator in self.damage_generators:
+            if hasattr(generator, 'get_impact_history'):
+                history = generator.get_impact_history(link_name)
+                if link_name is None:
+                    impact_history.update(history)
+                else:
+                    impact_history[link_name] = history
+        return impact_history
 
 
 '''Damageable Object subclasses'''
