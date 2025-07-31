@@ -6,11 +6,11 @@ PARAMS = {
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
             "damage_threshold": 0.0,
-            "scale": 5.0,  # Increased scale for more aggressive damage
+            "scale": 6.0,  # Increased scale for more aggressive damage
             "material_properties": {
                 "fragility": 10.0,  # Very fragile (glass)
                 "elasticity": 0.05,  # Very low bounce (glass doesn't bounce much)
-                "density": 2500.0,  # Glass density (kg/m³)
+                "density": 2500.0,  # Glass density 
                 "contact_threshold": 0.02,  # Very sensitive to impacts
                 "energy_threshold": 0.001,  # Very low energy threshold for glass
             }

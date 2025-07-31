@@ -4,6 +4,10 @@ Example script demo'ing robot control.
 Options for random actions, as well as selection of robot action space
 """
 
+# Set matplotlib backend to non-interactive before importing pyplot
+import matplotlib
+matplotlib.use('Agg')
+
 import torch as th
 import json
 import os
@@ -33,7 +37,7 @@ OBJECT_CONFIGS = {
         "model": "zanmar",
         "position": [0.1, 0.0, 3.0],
         "orientation": [0, 0, 0, 1],
-        "scale": [2.0, 2.0, 2.0],
+        "scale": [1.2, 1.2, 1.2],
         "damage_params": PARAMS["baseball"]
     },
     "bowl": {
@@ -141,7 +145,7 @@ def main():
     for _ in range(20):  # Increased settling steps
         og.sim.step()
 
-    save_state_path = "safety_benchmark/grasp_save_state.json"
+    save_state_path = "safety_benchmark/grasp_save_state_bowl.json"
     if os.path.exists(save_state_path):
         print(f"🔄 Loading saved simulation state from: {save_state_path}")
         og.sim.restore(scene_files=[save_state_path])
@@ -188,7 +192,7 @@ def main():
     
     # Function to save simulation state with breakpoint
     def save_sim_state():
-        filepath = f"safety_benchmark/grasp_save_state2.json"
+        filepath = f"safety_benchmark/grasp_save_state_baseball2.json"
         og.sim.save(json_paths=[filepath])
         print(f"✅ Simulation state saved to: {filepath}")
         breakpoint()
@@ -208,7 +212,7 @@ def main():
     print("Press ESC to quit")
 
     # Loop control until user quits
-    max_steps = 500
+    max_steps = 400
     step = 0
 
     images = []
@@ -235,11 +239,13 @@ def main():
     # Clean up camera mover
     camera_mover.clear()
 
+    force_values = obj.damage_generators[0].force_values
+
     # Save video
     height, width = images[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    avi_path = f'videos_and_images/bowl_grasp_teleop.avi'
-    mp4_path = f'videos_and_images/bowl_grasp_teleop.mp4'
+    avi_path = f'videos_and_images/baseball_grasp_teleop2.avi'
+    mp4_path = f'videos_and_images/baseball_grasp_teleop2.mp4'
     out = cv2.VideoWriter(avi_path, fourcc, 30, (width, height))
 
     for i, image in enumerate(images):
@@ -251,22 +257,22 @@ def main():
 
         # Handle link health wrapping
         y_pos += 30
-        link_health_text = f"Link Health: {', '.join([f'{key}: {value:.2f}' for key, value in link_healths[i].items()])}"
-        words = link_health_text.split()
-        current_line = ""
-        for word in words:
-            test_line = current_line + " " + word if current_line else word
-            if len(test_line) * 10 < width - 20:  # Approximate character width
-                current_line = test_line
-            else:
-                cv2.putText(frame_copy, current_line, (10, y_pos),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                y_pos += 25
-                current_line = word
-        if current_line:
-            cv2.putText(frame_copy, current_line, (10, y_pos),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            y_pos += 25
+        # link_health_text = f"Link Health: {', '.join([f'{key}: {value:.2f}' for key, value in link_healths[i].items()])}"
+        # words = link_health_text.split()
+        # current_line = ""
+        # for word in words:
+        #     test_line = current_line + " " + word if current_line else word
+        #     if len(test_line) * 10 < width - 20:  # Approximate character width
+        #         current_line = test_line
+        #     else:
+        #         cv2.putText(frame_copy, current_line, (10, y_pos),
+        #                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        #         y_pos += 25
+        #         current_line = word
+        # if current_line:
+        #     cv2.putText(frame_copy, current_line, (10, y_pos),
+        #                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        #     y_pos += 25
 
         # Add damage status
         cv2.putText(frame_copy, f"Damage Status: {damage_statuses[i]}", (10, y_pos),
@@ -282,6 +288,68 @@ def main():
     
     # Clean up AVI file
     os.remove(avi_path)
+
+    # Create force value animation
+    import matplotlib.pyplot as plt
+    import matplotlib.animation as animation
+
+    # Set up the figure and axis with matching dimensions
+    fig, ax = plt.subplots(figsize=(6.83, 6.83))  # Makes it match 512x512 with default DPI of 75
+    line, = ax.plot([], [], lw=2)
+
+    # Set the limits of the plot
+    ax.set_xlim(1, len(force_values))
+    ax.set_ylim(min(force_values), max(force_values) * 1.1)
+    ax.set_xlabel('Timestep')
+    ax.set_ylabel('Force')
+    ax.set_title('Force Values Over Time')
+    plt.tight_layout()  # Adjust layout to fit in figure
+
+    # Initialization function
+    def init():
+        line.set_data([], [])
+        return line,
+
+    # Animation function which updates the figure
+    def animate(i):
+        x = list(range(1, i + 2))
+        y = force_values[:i + 1]
+        line.set_data(x, y)
+        return line,
+
+    # Create an animation object
+    ani = animation.FuncAnimation(
+        fig, animate, 
+        init_func=init,
+        frames=len(force_values),
+        interval=1000/30,
+        blit=True
+    )
+
+    # Save the animation as a video file - using exact working configuration
+    force_mp4 = 'videos_and_images/force_plot.mp4'
+    # Save animation using working configuration from animate_values.py
+    writer = animation.FFMpegWriter(
+        fps=30,
+        codec='mpeg4',
+        extra_args=['-vcodec', 'mpeg4', '-qscale', '5']
+    )
+    ani.save(force_mp4, writer=writer)
+    plt.close()
+
+    # Combine videos side by side using mpeg4 codec
+    combined_mp4 = 'videos_and_images/combined_view.mp4'
+    subprocess.run([
+        'ffmpeg', '-y',
+        '-i', mp4_path,
+        '-i', force_mp4,
+        '-filter_complex',
+        '[0:v][1:v]scale2ref=oh*dar:ih[v0][v1];[v0][v1]hstack=inputs=2[v]',  # Scale videos to match height
+        '-map', '[v]',
+        '-vcodec', 'mpeg4',  # Use mpeg4 codec
+        '-q:v', '5',         # Quality scale (fixed ambiguous -qscale)
+        combined_mp4
+    ], check=True)
 
     # Always shut down the environment cleanly at the end
     og.clear()

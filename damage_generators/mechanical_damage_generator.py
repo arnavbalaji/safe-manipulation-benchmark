@@ -28,6 +28,8 @@ class MechanicalDamageGenerator(DamageGenerator):
             "contact_threshold": 0.1,  # Minimum velocity change to consider as impact (m/s)
             "energy_threshold": 0.01,  # Minimum kinetic energy to consider as impact (J)
         }
+
+        self.force_values = []
         
         # Initialize the contact API
         RigidContactAPI.initialize_view()
@@ -88,7 +90,7 @@ class MechanicalDamageGenerator(DamageGenerator):
         
         return None
 
-    def _calculate_damage_from_impact(self, impact_info: Dict) -> float:
+    def _calculate_damage_from_impact(self, impact_info: Dict, save_force_value: bool = False) -> float:
         """
         Calculate damage based on impact energy and material properties.
         
@@ -99,6 +101,9 @@ class MechanicalDamageGenerator(DamageGenerator):
         """
         impact_energy = impact_info["impact_energy"]
         velocity_change = impact_info["velocity_change"]
+
+        if save_force_value:
+            self.force_values.append(impact_energy)
         
         # Base damage from impact energy - use a more aggressive scaling for fragile objects
         base_damage = impact_energy * self.scale
@@ -144,7 +149,11 @@ class MechanicalDamageGenerator(DamageGenerator):
             
             if impact_info is not None:
                 # Calculate damage from impact
-                impact_damage = self._calculate_damage_from_impact(impact_info)
+                if link_name == "base_link":
+                    impact_damage = self._calculate_damage_from_impact(impact_info, save_force_value=True)
+                else:
+                    impact_damage = self._calculate_damage_from_impact(impact_info)
+
                 total_damage += impact_damage
                 
                 # Store impact history for debugging
@@ -153,6 +162,8 @@ class MechanicalDamageGenerator(DamageGenerator):
                 # Keep only recent impacts (last 10)
                 if len(self._impact_history[link_name]) > 10:
                     self._impact_history[link_name] = self._impact_history[link_name][-10:]
+            elif link_name == "base_link":
+                self.force_values.append(0.0)
             
             # Add damage from sustained contact forces (currently disabled)
             contact_damage = self._update_contact_forces_damage(link_name)
@@ -178,3 +189,58 @@ class MechanicalDamageGenerator(DamageGenerator):
             self._prev_velocities[link_name] = th.zeros(3)
             self._prev_contact_states[link_name] = False
             self._impact_history[link_name] = []
+
+
+
+# from safety_benchmark.damage_generators.damage_generator import DamageGenerator
+# from omnigibson.objects.object_base import BaseObject
+# import omnigibson as og
+# import torch
+# from omnigibson.utils.usd_utils import RigidContactAPI
+# from typing import Dict
+
+# class MechanicalDamageGenerator(DamageGenerator):
+#     '''
+#     Damage generator for mechanical forces
+#     '''
+#     def __init__(self, entity: BaseObject, damage_threshold: float, scale: float):
+#         super().__init__(entity, damage_threshold, scale)
+#         # Initialize the contact API
+#         RigidContactAPI.initialize_view()
+
+#         self.force_values = []
+
+#     def generate_damage(self) -> Dict[str, float]:
+#         link_damages = {}
+#         # Tracking contact forces for each link
+#         for link_name, link in self.entity.links.items():
+#             total_force = 0.0
+
+#             # Old implementation using RigidContactAPI
+#             scene_idx = RigidContactAPI.get_scene_idx(link.prim_path)
+#             all_impulses = RigidContactAPI.get_all_impulses(scene_idx)
+#             _, row_idx = RigidContactAPI.get_body_row_idx(link.prim_path)
+#             link_impulses = all_impulses[row_idx]
+            
+#             if link_impulses is not None and len(link_impulses) > 0:
+#                 link_impulses_tensor = torch.tensor(link_impulses).clone().detach()
+#                 total_force = torch.sum(torch.norm(link_impulses_tensor, dim=-1)).item()
+
+#             # New implementation using link.contact_list()
+#             # contacts = link.contact_list()
+#             # if len(contacts) > 0:
+#             #     # Extract impulse values from contact objects
+#             #     contact_forces = torch.tensor([c.impulse.tolist() for c in contacts])
+#             #     total_force = torch.sum(torch.norm(contact_forces, dim=-1)).item()
+#             # else:
+#             #     total_force = 0.0
+
+#             if total_force >= self.damage_threshold:
+#                 link_damages[link_name] = (total_force - self.damage_threshold) * self.scale
+#             else:
+#                 link_damages[link_name] = 0.0
+            
+#             if link_name == "base_link":
+#                 self.force_values.append(total_force)
+        
+#         return link_damages

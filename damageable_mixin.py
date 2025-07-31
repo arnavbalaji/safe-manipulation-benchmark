@@ -36,15 +36,20 @@ class DamageableMixin:
             self.damage_generators.append(gen_cls(self, **self.params[generator_name]))
 
     def reset_damage_generators(self):
-        """Reset tracking state in all damage generators (useful for environment resets)."""
+        # Reset tracking in all damage generators (for env.reset())
         for generator in self.damage_generators:
             if hasattr(generator, 'reset_tracking'):
                 generator.reset_tracking()
 
     @property
     def health(self):
-        # Returning average health value across links
-        return sum(self.link_healths.values()) / len(self.link_healths)
+        # TODO: Change back to average health value across links when things are working
+        # Returns minimum health value across links
+        return min(self.link_healths.values())
+
+        # # Returning average health value across links
+        # return sum(self.link_healths.values()) / len(self.link_healths)
+        
 
     @property
     def damage_status(self):
@@ -84,7 +89,7 @@ class DamageableMixin:
                 self.damage_statuses[link_name] = status
 
     def get_impact_history(self, link_name: str = None):
-        """Get impact history from damage generators for debugging."""
+        # Get impact history from damage generators
         impact_history = {}
         for generator in self.damage_generators:
             if hasattr(generator, 'get_impact_history'):
