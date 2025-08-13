@@ -1,0 +1,721 @@
+# from safety_benchmark.damage_evaluators.damage_evaluator import DamageEvaluator
+# from omnigibson.objects.object_base import BaseObject
+# import omnigibson as og
+# import torch as th
+# from omnigibson.utils.usd_utils import RigidContactAPI
+# from typing import Dict, Optional
+# import numpy as np
+
+# class MechanicalDamageEvaluator(DamageEvaluator):
+#     """
+#     Hybrid damage generator that combines:
+#     1. Direct contact force measurements from OmniGibson
+#     2. Physics-based impact detection using velocity and energy
+#     """
+
+#     def __init__(
+#         self,
+#         entity: BaseObject,
+#         damage_threshold: float,
+#         scale: float,
+#         material_properties: Optional[Dict] = None,
+#     ):
+#         super().__init__(entity, damage_threshold, scale)
+#         self.entity = entity
+        
+#         # Initialize material properties with defaults
+#         # self.material_properties = material_properties
+#         self.material_properties = material_properties or {
+#             "fragility": 1.0,  # How easily object breaks (0.1 = very tough, 10.0 = very fragile)
+#             "elasticity": 0.3,  # Energy absorption (0.0 = full absorption, 1.0 = perfect bounce)
+#             "density": 1000.0,  # kg/m³, affects impact energy calculation
+#             "velocity_threshold": 0.05,  # Min velocity change to consider as impact (m/s)
+#             "energy_threshold": 0.01,  # Min kinetic energy to consider as impact (J)
+#         }
+        
+#         self.force_values = []
+#         self.prev_velocities = {}
+        
+#         # Initialize velocity tracking for each link
+#         for link_name in self.entity.links.keys():
+#             self.prev_velocities[link_name] = th.zeros(3)
+
+#         # Initialize the contact API
+#         RigidContactAPI.initialize_view()
+
+#     def _calculate_kinetic_energy(self, velocity: th.Tensor, mass: float) -> float:
+#         """Calculate kinetic energy: KE = 0.5 * mass * velocity^2"""
+#         return 0.5 * mass * th.sum(velocity ** 2).item()
+
+#     def _detect_impact(self, link, link_name: str, current_velocity: th.Tensor) -> Dict:
+#         """
+#         Detect impacts using both velocity changes and absolute velocity.
+#         Specifically focuses on detecting sudden stops from high speeds (like hitting the floor after a fall).
+#         """
+#         prev_velocity = self.prev_velocities[link_name]
+        
+#         # Calculate speeds (magnitudes of velocity)
+#         prev_speed = th.norm(prev_velocity)
+#         current_speed = th.norm(current_velocity)
+        
+#         # Calculate deceleration (negative means slowing down)
+#         speed_change = current_speed - prev_speed
+        
+#         # Calculate how abrupt the speed change was relative to previous speed
+#         # Higher ratio means more sudden stop
+#         deceleration_ratio = -speed_change / (prev_speed + 1e-6)  # Add small epsilon to avoid division by zero
+        
+#         # Calculate energies
+#         mass = link.mass if hasattr(link, 'mass') else self.material_properties["density"] * 0.001
+#         pre_impact_energy = self._calculate_kinetic_energy(prev_velocity, mass)
+#         post_impact_energy = self._calculate_kinetic_energy(current_velocity, mass)
+        
+#         # Get height for potential energy
+#         height = link.get_position()[2]  # z-coordinate
+#         potential_energy = mass * 9.81 * height  # mgh
+        
+#         # Update velocity for next frame
+#         self.prev_velocities[link_name] = current_velocity
+
+#         return {
+#             "prev_speed": prev_speed,
+#             "current_speed": current_speed,
+#             "speed_change": speed_change,
+#             "deceleration_ratio": deceleration_ratio,
+#             "pre_impact_energy": pre_impact_energy,
+#             "post_impact_energy": post_impact_energy,
+#             "potential_energy": potential_energy,
+#             "mass": mass
+#         }
+
+#     def _calculate_impact_damage(self, impact_info: Dict, contact_force: float) -> float:
+#         """
+#         Calculate damage using both contact force and impact physics.
+#         Focuses on sudden decelerations, especially from high speeds.
+#         """
+#         # Get impact characteristics
+#         prev_speed = impact_info["prev_speed"]
+#         speed_change = impact_info["speed_change"]
+#         deceleration_ratio = impact_info["deceleration_ratio"]
+#         pre_impact_energy = impact_info["pre_impact_energy"]
+#         post_impact_energy = impact_info["post_impact_energy"]
+#         potential_energy = impact_info["potential_energy"]
+        
+#         # Energy lost in impact
+#         energy_dissipated = max(0, pre_impact_energy - post_impact_energy)
+        
+#         # Detect sudden stop from high speed
+#         # 1. Was moving fast (prev_speed > threshold)
+#         # 2. Significant speed decrease (negative speed_change)
+#         # 3. Change was abrupt (high deceleration_ratio)
+#         was_moving_fast = prev_speed > 2.0  # Adjust this threshold as needed
+#         significant_deceleration = deceleration_ratio > 0.7  # Ratio > 0.7 means speed decreased by >70%
+        
+#         # Calculate impact severity
+#         impact_severity = 0.0
+#         if was_moving_fast and significant_deceleration:
+#             # Higher severity for faster initial speeds and more abrupt stops
+#             impact_severity = prev_speed * deceleration_ratio
+        
+#         # Calculate damage components
+#         force_based_damage = max(0, (contact_force - self.damage_threshold) * self.scale)
+        
+#         # Energy-based damage now considers:
+#         # 1. Energy dissipation
+#         # 2. Impact severity (from sudden stops)
+#         # 3. Potential energy
+#         energy_based_damage = (energy_dissipated + (impact_severity * 10.0) + (potential_energy * 0.1)) * \
+#                             self.material_properties["fragility"] * self.scale
+        
+#         # Combine damages - take the maximum as we want to catch both
+#         # high-force impacts and high-energy collisions
+#         total_damage = max(force_based_damage, energy_based_damage)
+        
+#         # Apply material properties
+#         total_damage *= (1.0 - self.material_properties["elasticity"])
+        
+#         return total_damage
+
+#     def generate_damage(self) -> Dict[str, float]:
+#         """
+#         Generate damage values using hybrid approach combining:
+#         1. Direct contact force measurements
+#         2. Physics-based impact detection
+#         """
+#         link_damages: Dict[str, float] = {}
+
+#         for link_name, link in self.entity.links.items():
+#             # Get current velocity and detect impacts
+#             current_velocity = link.get_linear_velocity()
+#             impact_info = self._detect_impact(link, link_name, current_velocity)
+            
+#             # Get contact forces
+#             total_contact_force = 0.0
+#             contacts = link.contact_list()
+#             if len(contacts) > 0:
+#                 contact_forces = th.tensor([c.impulse.tolist() for c in contacts])
+#                 total_contact_force = th.sum(th.norm(contact_forces, dim=-1)).item()
+            
+#             # Calculate damage using both methods
+#             damage = self._calculate_impact_damage(impact_info, total_contact_force)
+#             link_damages[link_name] = damage
+
+#             # Store force value for base link
+#             if link_name == "base_link":
+#                 # Calculate equivalent force from energy and speed change
+#                 speed_change = abs(impact_info["speed_change"])  # Use absolute value of speed change
+#                 energy_force = impact_info["pre_impact_energy"] * 2.0 / max(0.001, speed_change)
+#                 self.force_values.append(max(total_contact_force, energy_force))
+
+#         return link_damages
+
+    
+
+# from safety_benchmark.damage_evaluators.damage_evaluator import DamageEvaluator
+# from omnigibson.objects.object_base import BaseObject
+# import omnigibson as og
+# import torch as th
+# from omnigibson.utils.usd_utils import RigidContactAPI
+# from typing import Dict, Optional
+# import numpy as np
+
+# class MechanicalDamageEvaluator(DamageEvaluator):
+#     '''
+#     Realistic damage generator for mechanical forces based on impact energy and velocity changes.
+#     
+#     This implementation tracks:
+#     1. Impact energy (kinetic energy before impact)
+#     2. Velocity changes (sudden deceleration indicating impacts)
+#     3. Material properties (fragility, elasticity)
+#     4. Proper impact detection (vs static contact)
+#     '''
+#     def __init__(self, entity: BaseObject, damage_threshold: float, scale: float, 
+#                  material_properties: Optional[Dict] = None):
+#         super().__init__(entity, damage_threshold, scale)
+        
+#         # Initialize material properties with defaults
+#         self.material_properties = material_properties or {
+#             "fragility": 1.0,  # How easily the object breaks (0.1 = very fragile, 10.0 = very tough)
+#             "elasticity": 0.3,  # How much energy is absorbed vs transferred (0.0 = no bounce, 1.0 = perfect bounce)
+#             "density": 1000.0,  # kg/m³, affects impact energy calculation
+#             "contact_threshold": 0.1,  # Minimum velocity change to consider as impact (m/s)
+#             "energy_threshold": 0.01,  # Minimum kinetic energy to consider as impact (J)
+#         }
+
+#         self.force_values = []
+        
+#         # Initialize the contact API
+#         RigidContactAPI.initialize_view()
+        
+#         # Track previous velocities for impact detection
+#         self._prev_velocities = {}
+#         self._prev_contact_states = {}
+#         self._impact_history = {}
+        
+#         # Initialize tracking for each link
+#         for link_name in self.entity.links.keys():
+#             self._prev_velocities[link_name] = th.zeros(3)
+#             self._prev_contact_states[link_name] = False
+#             self._impact_history[link_name] = []
+
+#     def _calculate_kinetic_energy(self, velocity: th.Tensor, mass: float) -> float:
+#         """Calculate kinetic energy: KE = 0.5 * mass * velocity^2"""
+#         return 0.5 * mass * th.sum(velocity ** 2).item()
+
+#     def _detect_impact(self, link_name: str, current_velocity: th.Tensor, 
+#                       current_contacts: bool) -> Optional[Dict]:
+#         """
+#         Detect if an impact occurred based on velocity change and contact state.
+#         
+#         Returns:
+#             Dict with impact information if impact detected, None otherwise
+#         """
+#         prev_velocity = self._prev_velocities[link_name]
+#         prev_contacts = self._prev_contact_states[link_name]
+        
+#         # Calculate velocity change
+#         velocity_change = th.norm(current_velocity - prev_velocity).item()
+        
+#         # Impact detection criteria:
+#         # 1. Sudden velocity change (deceleration)
+#         # 2. Contact state changed from no contact to contact
+#         # 3. Velocity change exceeds threshold
+#         # 4. Was moving before impact (prev_velocity magnitude > threshold)
+#         is_impact = (
+#             velocity_change > self.material_properties["contact_threshold"] and
+#             not prev_contacts and current_contacts and
+#             th.norm(prev_velocity) > self.material_properties["contact_threshold"]  # Was moving before impact
+#         )
+        
+#         if is_impact:
+#             # Calculate impact energy using velocity before impact
+#             link = self.entity.links[link_name]
+#             mass = link.mass if hasattr(link, 'mass') else self.material_properties["density"] * 0.001
+#             impact_energy = self._calculate_kinetic_energy(prev_velocity, mass)
+            
+#             return {
+#                 "velocity_change": velocity_change,
+#                 "impact_energy": impact_energy,
+#                 "pre_impact_velocity": prev_velocity.clone(),
+#                 "post_impact_velocity": current_velocity.clone(),
+#                 "timestamp": og.sim.current_time
+#             }
+        
+#         return None
+
+#     def _calculate_damage_from_impact(self, impact_info: Dict, save_force_value: bool = False) -> float:
+#         """
+#         Calculate damage based on impact energy and material properties.
+#         
+#         Uses a realistic damage model:
+#         - Damage scales with impact energy
+#         - Material fragility affects damage multiplier
+#         - Elasticity reduces damage (energy absorbed)
+#         """
+#         impact_energy = impact_info["impact_energy"]
+#         velocity_change = impact_info["velocity_change"]
+
+#         if save_force_value:
+#             self.force_values.append(impact_energy)
+        
+#         # Base damage from impact energy - use a more aggressive scaling for fragile objects
+#         base_damage = impact_energy * self.scale
+        
+#         # Apply material properties
+#         fragility_multiplier = self.material_properties["fragility"]
+#         elasticity_reduction = 1.0 - self.material_properties["elasticity"]
+        
+#         # For very fragile objects (like glass), increase damage significantly
+#         if fragility_multiplier > 3.0:
+#             fragility_multiplier *= 2.0  # Double the damage for very fragile objects
+        
+#         # Final damage calculation
+#         damage = base_damage * fragility_multiplier * elasticity_reduction
+        
+#         # Apply threshold - only damage if impact is significant
+#         if impact_energy < self.material_properties["energy_threshold"]:
+#             damage = 0.0
+        
+#         return max(0.0, damage)
+
+#     def _update_contact_forces_damage(self, link_name: str) -> float:
+#         """
+#         Calculate damage from sustained contact forces (for crushing, etc.)
+#         This should be ZERO for normal static contact like a wine glass sitting on a table.
+#         """
+#         # For now, return 0 to eliminate any damage from static contact
+#         # This can be expanded later for crushing scenarios if needed
+#         return 0.0
+
+#     def generate_damage(self) -> Dict[str, float]:
+#         link_damages = {}
+        
+#         for link_name, link in self.entity.links.items():
+#             total_damage = 0.0
+            
+#             # Get current state
+#             current_velocity = link.get_linear_velocity()
+#             current_contacts = len(link.contact_list()) > 0
+            
+#             # Detect impacts
+#             impact_info = self._detect_impact(link_name, current_velocity, current_contacts)
+            
+#             if impact_info is not None:
+#                 # Calculate damage from impact
+#                 if link_name == "base_link":
+#                     impact_damage = self._calculate_damage_from_impact(impact_info, save_force_value=True)
+#                 else:
+#                     impact_damage = self._calculate_damage_from_impact(impact_info)
+
+#                 total_damage += impact_damage
+                
+#                 # Store impact history for debugging
+#                 self._impact_history[link_name].append(impact_info)
+                
+#                 # Keep only recent impacts (last 10)
+#                 if len(self._impact_history[link_name]) > 10:
+#                     self._impact_history[link_name] = self._impact_history[link_name][-10:]
+#             elif link_name == "base_link":
+#                 self.force_values.append(0.0)
+            
+#             # Add damage from sustained contact forces (currently disabled)
+#             contact_damage = self._update_contact_forces_damage(link_name)
+#             total_damage += contact_damage
+            
+#             # Update tracking state
+#             self._prev_velocities[link_name] = current_velocity.clone()
+#             self._prev_contact_states[link_name] = current_contacts
+            
+#             link_damages[link_name] = total_damage
+        
+#         return link_damages
+
+#     def get_impact_history(self, link_name: str = None) -> Dict:
+#         """Get impact history for debugging and analysis."""
+#         if link_name is None:
+#             return self._impact_history
+#         return self._impact_history.get(link_name, [])
+
+#     def reset_tracking(self):
+#         """Reset all tracking state (useful for environment resets)."""
+#         for link_name in self.entity.links.keys():
+#             self._prev_velocities[link_name] = th.zeros(3)
+#             self._prev_contact_states[link_name] = False
+#             self._impact_history[link_name] = []
+
+
+# from safety_benchmark.damage_evaluators.damage_evaluator import DamageEvaluator
+# from omnigibson.objects.object_base import BaseObject
+# import omnigibson as og
+# import torch as th
+# from omnigibson.utils.usd_utils import RigidContactAPI
+# from typing import Dict, Optional
+# import numpy as np
+
+# class MechanicalDamageEvaluator(DamageEvaluator):
+    # """
+    # Combined damage generator that merges the best of both approaches:
+    # 1. Sudden deceleration detection (from implementation 2)
+    # 2. Object-object collision detection via contact forces (from implementation 1)
+    # 3. Physics-based impact energy calculations
+    # 4. Material property considerations
+    # """
+    
+    # def __init__(
+    #     self,
+    #     entity: BaseObject,
+    #     damage_threshold: float,
+    #     scale: float,
+    #     material_properties: Optional[Dict] = None,
+    # ):
+    #     super().__init__(entity, damage_threshold, scale)
+    #     self.entity = entity
+        
+    #     # Initialize material properties with defaults
+    #     self.material_properties = material_properties or {
+    #         "fragility": 1.0,  # How easily object breaks (0.1 = very tough, 10.0 = very fragile)
+    #         "elasticity": 0.3,  # Energy absorption (0.0 = full absorption, 1.0 = perfect bounce)
+    #         "density": 1000.0,  # kg/m³, affects impact energy calculation
+    #         "velocity_threshold": 0.05,  # Min velocity change to consider as impact (m/s)
+    #         "energy_threshold": 0.01,  # Min kinetic energy to consider as impact (J)
+    #         "contact_threshold": 0.1,  # Minimum velocity change for contact-based impact detection
+    #     }
+        
+    #     self.force_values = []
+    #     self.prev_velocities = {}
+        
+    #     # Initialize velocity tracking for each link
+    #     for link_name in self.entity.links.keys():
+    #         self.prev_velocities[link_name] = th.zeros(3)
+
+    #     # Initialize the contact API
+    #     RigidContactAPI.initialize_view()
+        
+    #     # Track previous velocities for impact detection (from implementation 2)
+    #     self._prev_velocities = {}
+    #     self._prev_contact_states = {}
+    #     self._impact_history = {}
+        
+    #     # Initialize tracking for each link
+    #     for link_name in self.entity.links.keys():
+    #         self._prev_velocities[link_name] = th.zeros(3)
+    #         self._prev_contact_states[link_name] = False
+    #         self._impact_history[link_name] = []
+
+    # def _calculate_kinetic_energy(self, velocity: th.Tensor, mass: float) -> float:
+    #     """Calculate kinetic energy: KE = 0.5 * mass * velocity^2"""
+    #     return 0.5 * mass * th.sum(velocity ** 2).item()
+
+    # def _detect_contact_impact(self, link, link_name: str, current_velocity: th.Tensor) -> Dict:
+    #     """
+    #     Detect impacts using contact force measurements (from implementation 1).
+    #     This handles object-object collisions and robot-object collisions.
+    #     """
+    #     prev_velocity = self.prev_velocities[link_name]
+        
+    #     # Calculate speeds (magnitudes of velocity)
+    #     prev_speed = th.norm(prev_velocity)
+    #     current_speed = th.norm(current_velocity)
+        
+    #     # Calculate deceleration (negative means slowing down)
+    #     speed_change = current_speed - prev_speed
+        
+    #     # Calculate how abrupt the speed change was relative to previous speed
+    #     # Higher ratio means more sudden stop
+    #     deceleration_ratio = -speed_change / (prev_speed + 1e-6)  # Add small epsilon to avoid division by zero
+        
+    #     # Calculate energies
+    #     mass = link.mass if hasattr(link, 'mass') else self.material_properties["density"] * 0.001
+    #     pre_impact_energy = self._calculate_kinetic_energy(prev_velocity, mass)
+    #     post_impact_energy = self._calculate_kinetic_energy(current_velocity, mass)
+        
+    #     # Get height for potential energy
+    #     height = link.get_position()[2]  # z-coordinate
+    #     potential_energy = mass * 9.81 * height  # mgh
+        
+    #     # Update velocity for next frame
+    #     self.prev_velocities[link_name] = current_velocity
+
+    #     return {
+    #         "prev_speed": prev_speed,
+    #         "current_speed": current_speed,
+    #         "speed_change": speed_change,
+    #         "deceleration_ratio": deceleration_ratio,
+    #         "pre_impact_energy": pre_impact_energy,
+    #         "post_impact_energy": post_impact_energy,
+    #         "potential_energy": potential_energy,
+    #         "mass": mass
+    #     }
+
+    # def _detect_sudden_deceleration(self, link_name: str, current_velocity: th.Tensor, 
+    #                               current_contacts: bool) -> Optional[Dict]:
+    #     """
+    #     Detect sudden deceleration impacts (like dropping a bowl on the floor).
+    #     Focuses on detecting when objects moving at high speed suddenly stop.
+        
+    #     Uses hysteresis to prevent false positives from small fluctuations.
+    #     Based on the principle that the largest force readings occur during deceleration.
+    #     """
+    #     prev_velocity = self._prev_velocities[link_name]
+    #     prev_contacts = self._prev_contact_states[link_name]
+        
+    #     # Calculate speeds (magnitudes of velocity)
+    #     prev_speed = th.norm(prev_velocity)
+    #     current_speed = th.norm(current_velocity)
+        
+    #     # Calculate deceleration (negative means slowing down)
+    #     speed_change = current_speed - prev_speed
+        
+    #     # Calculate deceleration ratio (how abrupt the stop was)
+    #     deceleration_ratio = -speed_change / (prev_speed + 1e-6)  # Add small epsilon to avoid division by zero
+        
+    #     # Get link mass for energy calculations
+    #     link = self.entity.links[link_name]
+    #     mass = link.mass if hasattr(link, 'mass') else self.material_properties["density"] * 0.001
+        
+    #     # Calculate kinetic energy before and after
+    #     pre_impact_energy = self._calculate_kinetic_energy(prev_velocity, mass)
+    #     post_impact_energy = self._calculate_kinetic_energy(current_velocity, mass)
+        
+    #     # Energy lost in deceleration (this is what causes damage)
+    #     energy_dissipated = max(0, pre_impact_energy - post_impact_energy)
+        
+    #     # Deceleration detection criteria with hysteresis
+    #     # Based on Shawn Hargreaves' hysteresis principle for stable decision making
+    #     # https://shawnhargreaves.com/blog/hysteresis.html
+        
+    #     # Thresholds for deceleration detection
+    #     min_speed_threshold = 1.0  # Must be moving at least 1 m/s before impact
+    #     min_deceleration_ratio = 0.5  # Must lose at least 50% of speed
+    #     min_energy_threshold = 0.1  # Must have significant kinetic energy
+        
+    #     # Hysteresis region to prevent flickering
+    #     hysteresis_amount = 0.1
+        
+    #     # Check if this is a significant deceleration event
+    #     was_moving_fast = prev_speed > (min_speed_threshold + hysteresis_amount)
+    #     significant_deceleration = deceleration_ratio > (min_deceleration_ratio + hysteresis_amount)
+    #     has_significant_energy = pre_impact_energy > (min_energy_threshold + hysteresis_amount)
+        
+    #     # Additional check: if we're already in a deceleration state, use lower thresholds
+    #     # This prevents premature termination of deceleration detection
+    #     if hasattr(self, '_in_deceleration_state') and self._in_deceleration_state.get(link_name, False):
+    #         was_moving_fast = prev_speed > (min_speed_threshold - hysteresis_amount)
+    #         significant_deceleration = deceleration_ratio > (min_deceleration_ratio - hysteresis_amount)
+    #         has_significant_energy = pre_impact_energy > (min_energy_threshold - hysteresis_amount)
+        
+    #     # Detect deceleration impact
+    #     is_deceleration_impact = (
+    #         was_moving_fast and 
+    #         significant_deceleration and 
+    #         has_significant_energy and
+    #         speed_change < 0  # Must be slowing down
+    #     )
+        
+    #     # Update deceleration state
+    #     if not hasattr(self, '_in_deceleration_state'):
+    #         self._in_deceleration_state = {}
+        
+    #     if is_deceleration_impact:
+    #         self._in_deceleration_state[link_name] = True
+    #     elif prev_speed < (min_speed_threshold - hysteresis_amount):
+    #         # Reset state when speed drops below threshold
+    #         self._in_deceleration_state[link_name] = False
+        
+    #     if is_deceleration_impact:
+    #         # Calculate impact severity based on deceleration characteristics
+    #         # Higher severity for faster initial speeds and more abrupt stops
+    #         impact_severity = prev_speed * deceleration_ratio
+            
+    #         return {
+    #             "velocity_change": speed_change,
+    #             "deceleration_ratio": deceleration_ratio,
+    #             "impact_energy": pre_impact_energy,
+    #             "energy_dissipated": energy_dissipated,
+    #             "impact_severity": impact_severity,
+    #             "pre_impact_velocity": prev_velocity.clone(),
+    #             "post_impact_velocity": current_velocity.clone(),
+    #             "pre_impact_speed": prev_speed,
+    #             "post_impact_speed": current_speed,
+    #             "mass": mass,
+    #             "timestamp": og.sim.current_time
+    #         }
+        
+    #     return None
+
+    # def _calculate_combined_damage(self, contact_impact_info: Dict, decel_impact_info: Optional[Dict], 
+    #                              contact_force: float) -> float:
+    #     """
+    #     Calculate damage using both approaches:
+    #     1. Contact force measurements and impact detection (from implementation 1)
+    #     2. Sudden deceleration detection (from implementation 2)
+    #     """
+    #     # Get contact impact characteristics (from implementation 1)
+    #     prev_speed = contact_impact_info["prev_speed"]
+    #     speed_change = contact_impact_info["speed_change"]
+    #     deceleration_ratio = contact_impact_info["deceleration_ratio"]
+    #     pre_impact_energy = contact_impact_info["pre_impact_energy"]
+    #     post_impact_energy = contact_impact_info["post_impact_energy"]
+    #     potential_energy = contact_impact_info["potential_energy"]
+        
+    #     # Energy lost in impact
+    #     energy_dissipated = max(0, pre_impact_energy - post_impact_energy)
+        
+    #     # Detect sudden stop from high speed (from implementation 1)
+    #     was_moving_fast = prev_speed > 2.0  # Adjust this threshold as needed
+    #     significant_deceleration = deceleration_ratio > 0.7  # Ratio > 0.7 means speed decreased by >70%
+        
+    #     # Calculate impact severity
+    #     impact_severity = 0.0
+    #     if was_moving_fast and significant_deceleration:
+    #         # Higher severity for faster initial speeds and more abrupt stops
+    #         impact_severity = prev_speed * deceleration_ratio
+        
+    #     # Calculate damage components
+    #     force_based_damage = max(0, (contact_force - self.damage_threshold) * self.scale)
+        
+    #     # Energy-based damage from contact impact (from implementation 1)
+    #     contact_energy_damage = (energy_dissipated + (impact_severity * 100.0) + (potential_energy * 0.1)) * \
+    #                           self.material_properties["fragility"] * self.scale
+        
+    #     # Sudden deceleration damage (from implementation 2)
+    #     decel_damage = 0.0
+    #     if decel_impact_info is not None:
+    #         # Get deceleration-specific information
+    #         impact_energy = decel_impact_info["impact_energy"]
+    #         energy_dissipated = decel_impact_info["energy_dissipated"]
+    #         impact_severity = decel_impact_info["impact_severity"]
+    #         deceleration_ratio = decel_impact_info["deceleration_ratio"]
+    #         pre_impact_speed = decel_impact_info["pre_impact_speed"]
+            
+    #         # Calculate damage based on deceleration characteristics
+    #         # The key insight: damage is proportional to the energy dissipated during deceleration
+    #         # This is what happens when you drop a bowl - it loses kinetic energy rapidly
+            
+    #         # Base damage from energy dissipation (this is what causes the "impact force")
+    #         base_damage = energy_dissipated * self.scale
+            
+    #         # Additional damage from impact severity (faster initial speed + more abrupt stop = more damage)
+    #         severity_damage = impact_severity * self.scale * 0.5
+            
+    #         # Apply material properties
+    #         fragility_multiplier = self.material_properties["fragility"]
+    #         elasticity_reduction = 1.0 - self.material_properties["elasticity"]
+            
+    #         # For very fragile objects (like glass), increase damage significantly
+    #         if fragility_multiplier > 3.0:
+    #             fragility_multiplier *= 2.0  # Double the damage for very fragile objects
+            
+    #         # Combine damage components
+    #         decel_damage = (base_damage + severity_damage) * fragility_multiplier * elasticity_reduction
+            
+    #         # Apply threshold - only damage if deceleration is significant
+    #         if energy_dissipated < self.material_properties["energy_threshold"]:
+    #             decel_damage = 0.0
+        
+    #     # Combine damages - take the maximum as we want to catch both
+    #     # high-force impacts and high-energy collisions
+    #     total_damage = max(force_based_damage, contact_energy_damage, decel_damage)
+        
+    #     # Apply material properties
+    #     total_damage *= (1.0 - self.material_properties["elasticity"])
+        
+    #     return max(0.0, total_damage)
+
+    # def generate_damage(self) -> Dict[str, float]:
+    #     """
+    #     Generate damage values using combined approach:
+    #     1. Direct contact force measurements
+    #     2. Physics-based impact detection using velocity and energy
+    #     3. Contact-based impact detection for object-object collisions
+    #     """
+    #     link_damages: Dict[str, float] = {}
+
+    #     for link_name, link in self.entity.links.items():
+    #         # Get current velocity and detect impacts using both methods
+    #         current_velocity = link.get_linear_velocity()
+            
+    #         # Method 1: Contact-based impact detection (from implementation 1)
+    #         contact_impact_info = self._detect_contact_impact(link, link_name, current_velocity)
+            
+    #         # Method 2: Sudden deceleration detection (from implementation 2)
+    #         current_contacts = len(link.contact_list()) > 0
+    #         decel_impact_info = self._detect_sudden_deceleration(link_name, current_velocity, current_contacts)
+            
+    #         # Get contact forces (from implementation 1)
+    #         total_contact_force = 0.0
+    #         contacts = link.contact_list()
+    #         if len(contacts) > 0:
+    #             contact_forces = th.tensor([c.impulse.tolist() for c in contacts])
+    #             total_contact_force = th.sum(th.norm(contact_forces, dim=-1)).item()
+            
+    #         # Calculate combined damage
+    #         damage = self._calculate_combined_damage(contact_impact_info, decel_impact_info, total_contact_force)
+    #         link_damages[link_name] = damage
+
+    #         # Store force value for base link
+    #         if link_name == "base_link":
+    #             # Calculate equivalent force from deceleration (this is what you want for dropped objects)
+    #             if decel_impact_info is not None:
+    #                 # Use energy dissipation as the primary force indicator
+    #                 # This represents the "impact force" when an object decelerates rapidly
+    #                 deceleration_force = decel_impact_info["energy_dissipated"] * 20.0  # Scale up by 10x (was 10.0, now 100.0)
+    #                 self.force_values.append(max(total_contact_force, deceleration_force))
+    #             else:
+    #                 # Fall back to contact force if no deceleration detected
+    #                 # Scale down other forces by 10x to make deceleration forces more prominent
+    #                 speed_change = abs(contact_impact_info["speed_change"])
+    #                 energy_force = (contact_impact_info["pre_impact_energy"] * 2.0 / max(0.001, speed_change)) * 0.1  # Scale down by 10x
+    #                 scaled_contact_force = total_contact_force * 1.0  # Scale down contact force by 10x
+    #                 self.force_values.append(max(scaled_contact_force, energy_force))
+            
+    #         # Update tracking state for deceleration-based detection
+    #         self._prev_velocities[link_name] = current_velocity.clone()
+    #         self._prev_contact_states[link_name] = current_contacts
+            
+    #         # Store impact history for debugging
+    #         if decel_impact_info is not None:
+    #             self._impact_history[link_name].append(decel_impact_info)
+    #             # Keep only recent impacts (last 10)
+    #             if len(self._impact_history[link_name]) > 10:
+    #                 self._impact_history[link_name] = self._impact_history[link_name][-10:]
+
+    #     return link_damages
+
+    # def get_impact_history(self, link_name: str = None) -> Dict:
+    #     """Get impact history for debugging and analysis."""
+    #     if link_name is None:
+    #         return self._impact_history
+    #     return self._impact_history.get(link_name, [])
+
+    # def reset_tracking(self):
+    #     """Reset all tracking state (useful for environment resets)."""
+    #     for link_name in self.entity.links.keys():
+    #         self.prev_velocities[link_name] = th.zeros(3)
+    #         self._prev_velocities[link_name] = th.zeros(3)
+    #         self._prev_contact_states[link_name] = False
+    #         self._impact_history[link_name] = []
+        
+    #     # Reset deceleration state tracking
+    #     if hasattr(self, '_in_deceleration_state'):
+    #         self._in_deceleration_state = {}

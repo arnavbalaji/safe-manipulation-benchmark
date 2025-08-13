@@ -3,9 +3,9 @@ from abc import ABC, abstractmethod
 from typing import Dict
 
 
-class DamageGenerator(ABC):
+class DamageEvaluator(ABC):
     '''
-    Damage Generator abstract class
+    Damage Evaluator abstract class
     '''
     def __init__(self, entity: BaseObject, damage_threshold: float, scale: float):
         self.damage_threshold = damage_threshold

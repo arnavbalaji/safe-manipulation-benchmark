@@ -329,7 +329,7 @@
                     ],
                     "grasping_mode": "assisted",
                     "params": {
-                        "damage_generators": [
+                        "damage_evaluators": [
                             "mechanical"
                         ],
                         "health_thresholds": [
@@ -364,7 +364,7 @@
                         1.0
                     ],
                     "params": {
-                        "damage_generators": [
+                        "damage_evaluators": [
                             "mechanical"
                         ],
                         "health_thresholds": [
@@ -399,7 +399,7 @@
                         1.2000000476837158
                     ],
                     "params": {
-                        "damage_generators": [
+                        "damage_evaluators": [
                             "mechanical"
                         ],
                         "health_thresholds": [

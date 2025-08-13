@@ -1,6 +1,6 @@
-from safety_benchmark.params.test_params import PARAMS, DAMAGE_GENERATORS
+from safety_benchmark.params.test_params import PARAMS, DAMAGE_EVALUATORS
 
 __all__ = [
     'PARAMS',
-    'DAMAGE_GENERATORS',
+    'DAMAGE_EVALUATORS',
 ] 

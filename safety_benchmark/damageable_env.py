@@ -78,7 +78,7 @@ class DamageableEnvironment(Environment):
     def __init__(self, configs, in_vec_env=False):
         # Initialize the damageable environment
         super().__init__(configs, in_vec_env)
-        self.damage_generators_initialized = False
+        self.damage_evaluators_initialized = False
 
     def load(self):
         # Load scene, objects, and robots
@@ -104,19 +104,19 @@ class DamageableEnvironment(Environment):
                 obj._initialize_health()
 
     def reset(self):
-        """Reset the environment and damage generators."""
+        """Reset the environment and damage evaluators."""
         # Reset the base environment
         obs = super().reset()
         
-        # Reset damage generators for all objects
+        # Reset damage evaluators for all objects
         for obj in self.scene.objects:
-            if hasattr(obj, "reset_damage_generators"):
-                obj.reset_damage_generators()
+            if hasattr(obj, "reset_damage_evaluators"):
+                obj.reset_damage_evaluators()
             if hasattr(obj, "_initialize_health"):
                 obj._initialize_health()
         
-        # Reset damage generator initialization flag
-        self.damage_generators_initialized = False
+        # Reset damage evaluator initialization flag
+        self.damage_evaluators_initialized = False
         
         return obs
 
@@ -183,12 +183,12 @@ class DamageableEnvironment(Environment):
 
     def step(self, action):
         # Step function wrapper for damage generation
-        if not self.damage_generators_initialized:
-            # Initializing damage generators if this is the first env step
+        if not self.damage_evaluators_initialized:
+            # Initializing damage evaluators if this is the first env step
             for obj in self.scene.objects:
-                if hasattr(obj, "_initialize_damage_generators"):
-                    obj._initialize_damage_generators()
-            self.damage_generators_initialized = True
+                if hasattr(obj, "_initialize_damage_evaluators"):
+                    obj._initialize_damage_evaluators()
+            self.damage_evaluators_initialized = True
 
         obs, reward, terminated, truncated, info = super().step(action) # Stepping the base env
         

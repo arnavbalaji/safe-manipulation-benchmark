@@ -1,5 +1,5 @@
-from safety_benchmark.damage_generators import DamageGenerator, MechanicalDamageGenerator
-from safety_benchmark.params.test_params import PARAMS, DAMAGE_GENERATORS
+from safety_benchmark.damage_evaluators import DamageEvaluator, MechanicalDamageEvaluator, ThermalDamageEvaluator
+from safety_benchmark.params.test_params import PARAMS, DAMAGE_EVALUATORS
 from safety_benchmark.damageable_mixin import (
     DamageableDatasetObject,
     DamageablePrimitiveObject,
@@ -11,8 +11,8 @@ from safety_benchmark.damageable_mixin import (
 
 __all__ = [
     # Base classes
-    'DamageGenerator',
-    'MechanicalDamageGenerator',
+    'DamageEvaluator',
+    'MechanicalDamageEvaluator',
     
     # Damageable object classes
     'DamageableDatasetObject',
@@ -24,5 +24,5 @@ __all__ = [
     
     # Parameters
     'PARAMS',
-    'DAMAGE_GENERATORS',
+    'DAMAGE_EVALUATORS',
 ] 

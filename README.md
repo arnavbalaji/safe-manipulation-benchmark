@@ -106,7 +106,7 @@ You can define custom material properties for any object:
 
 ```python
 custom_params = {
-    "damage_generators": ["mechanical"],
+    "damage_evaluators": ["mechanical"],
     "health_thresholds": [90.0, 60.0, 30.0],
     "mechanical": {
         "damage_threshold": 0.0,

@@ -7,7 +7,7 @@ from omnigibson.objects.light_object import LightObject
 from omnigibson.objects.stateful_object import StatefulObject
 from omnigibson.robots.franka import FrankaPanda
 from omnigibson.robots.tiago import Tiago
-from safety_benchmark.params.test_params import PARAMS, DAMAGE_GENERATORS
+from safety_benchmark.params.test_params import PARAMS, DAMAGE_EVALUATORS
 
 
 class DamageableMixin:
@@ -15,10 +15,14 @@ class DamageableMixin:
     Mixin adding damage functionality to the OmniGibson object classes'
     '''
     def __init__(self, *args, **kwargs):
+        # Filter out usd_path if it exists, since robots construct their own path
+        if 'usd_path' in kwargs:
+            del kwargs['usd_path']
+        
         super().__init__(*args, **kwargs)
-        # Store params dict, set empty damage_generators list
+        # Store params dict, set empty damage_evaluators list
         self.params = kwargs.get('params', {})
-        self.damage_generators = []
+        self.damage_evaluators = []
 
         # Set thresholds
         thresholds = self.params.get("health_thresholds", [90.0, 60.0, 30.0])
@@ -29,17 +33,17 @@ class DamageableMixin:
         self.link_healths = {link_name: 100.0 for link_name in self.links.keys()}
         self.damage_statuses = {link_name: "none" for link_name in self.links.keys()}
 
-    def _initialize_damage_generators(self):
-        # Set damage generators once sim is playing
-        for generator_name in self.params.get("damage_generators", []):
-            gen_cls = DAMAGE_GENERATORS[generator_name] # Getting correct damage generator
-            self.damage_generators.append(gen_cls(self, **self.params[generator_name]))
+    def _initialize_damage_evaluators(self):
+        # Set damage evaluators once sim is playing
+        for evaluator_name in self.params.get("damage_evaluators", []):
+            eval_cls = DAMAGE_EVALUATORS[evaluator_name] # Getting correct damage evaluator
+            self.damage_evaluators.append(eval_cls(self, **self.params[evaluator_name]))
 
-    def reset_damage_generators(self):
-        # Reset tracking in all damage generators (for env.reset())
-        for generator in self.damage_generators:
-            if hasattr(generator, 'reset_tracking'):
-                generator.reset_tracking()
+    def reset_damage_evaluators(self):
+        # Reset tracking in all damage evaluators (for env.reset())
+        for evaluator in self.damage_evaluators:
+            if hasattr(evaluator, 'reset_tracking'):
+                evaluator.reset_tracking()
 
     @property
     def health(self):
@@ -67,9 +71,9 @@ class DamageableMixin:
             return "none"
 
     def update_health(self):
-        # Updates health based on the damage generators
-        for generator in self.damage_generators:
-            link_damages = generator.generate_damage()
+        # Updates health based on the damage evaluators
+        for evaluator in self.damage_evaluators:
+            link_damages = evaluator.generate_damage()
             for link_name, damage in link_damages.items():
                 # Update link healths
                 new_health = max(0.0, self.link_healths[link_name] - damage)
@@ -89,11 +93,11 @@ class DamageableMixin:
                 self.damage_statuses[link_name] = status
 
     def get_impact_history(self, link_name: str = None):
-        # Get impact history from damage generators
+        # Get impact history from damage evaluators
         impact_history = {}
-        for generator in self.damage_generators:
-            if hasattr(generator, 'get_impact_history'):
-                history = generator.get_impact_history(link_name)
+        for evaluator in self.damage_evaluators:
+            if hasattr(evaluator, 'get_impact_history'):
+                history = evaluator.get_impact_history(link_name)
                 if link_name is None:
                     impact_history.update(history)
                 else:
@@ -121,7 +125,18 @@ class DamageableStatefulObject(DamageableMixin, StatefulObject):
     pass
 
 class DamageableFrankaPanda(DamageableMixin, FrankaPanda):
-    pass
+    @property
+    def usd_path(self):
+        # Override to use the original FrankaPanda model path, not the damageable version
+        import os
+        from omnigibson.macros import gm
+        return os.path.join(gm.ASSET_PATH, "models/franka/franka_panda/usd/franka_panda.usda")
 
 class DamageableTiago(DamageableMixin, Tiago):
-    pass
+    @property
+    def usd_path(self):
+        # Override to use the original Tiago model path, not the damageable version
+        model = "tiago"  # Use the original model name, not the class name
+        import os
+        from omnigibson.macros import gm
+        return os.path.join(gm.ASSET_PATH, f"models/{model}/usd/{model}.usda")

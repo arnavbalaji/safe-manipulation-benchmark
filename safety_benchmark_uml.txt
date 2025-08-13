@@ -19,21 +19,21 @@ Environment <|-- DamageableEnvironment
 DatasetObject <|-- DamageableDatasetObject
 DamageableMixin <|-- DamageableDatasetObject
 
-' Abstract and concrete damage generators
-abstract class DamageGenerator {
+' Abstract and concrete damage evaluators
+abstract class DamageEvaluator {
     -damage_threshold : float
     -scale : float
     +generate_damage() : Dict<link_name, damage_amount>
 }
 
-class MechanicalDamageGenerator
-DamageGenerator <|-- MechanicalDamageGenerator
+class MechanicalDamageEvaluator
+DamageEvaluator <|-- MechanicalDamageEvaluator
 
 ' Mixin class for damageable behavior
 class DamageableMixin {
     -link_healths : Dict<link_name, health>
     -damage_statuses : Dict<link_name, status>
-    -damage_generators : List<DamageGenerator>
+    -damage_evaluators : List<DamageEvaluator>
     +health : property
     +damage_status : property
     +update_health()
@@ -64,14 +64,14 @@ end note
 
 ' Associations
 DamageableEnvironment --> "scene.objects" DamageableDatasetObject : contains
-DamageableMixin --> "*" DamageGenerator : uses
+DamageableMixin --> "*" DamageEvaluator : uses
 
 ' Notes about parameters
 note right of DamageableMixin
   Initialized with a `params` dict. For example:
   
   {
-    "damage_generators": ["mechanical"],
+    "damage_evaluators": ["mechanical"],
     "health_thresholds": [90.0, 60.0, 30.0],
     "mechanical": {
         "damage_threshold": 0.0,
@@ -79,9 +79,9 @@ note right of DamageableMixin
     }
   }
 
-  Each generator config (e.g. "mechanical")
-  is passed to the corresponding generator class,
-  like MechanicalDamageGenerator.
+  Each evaluator config (e.g. "mechanical")
+is passed to the corresponding evaluator class,
+  like MechanicalDamageEvaluator.
 end note
 
 @enduml

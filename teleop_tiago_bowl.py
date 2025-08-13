@@ -37,7 +37,7 @@ OBJECT_CONFIGS = {
         "model": "zanmar",
         "position": [0.1, 0.0, 3.0],
         "orientation": [0, 0, 0, 1],
-        "scale": [1.2, 1.2, 1.2],
+        "scale": [1.5, 1.5, 1.5],
         "damage_params": PARAMS["baseball"]
     },
     "bowl": {
@@ -61,7 +61,7 @@ OBJECT_CONFIGS = {
         "category": "coffee_table",
         "model": "aoojzy",
         "position": [0.0, 0.0, 0.0],
-        "orientation": [0, 0, 0, 1],
+        "orientation": [0, 0, 0.7071068, 0.7071068],
         "scale": [1.0, 1.0, 1.0],
         "damage_params": PARAMS["coffee_table"]
     }
@@ -89,23 +89,24 @@ def main():
     # Compile config
     cfg = dict(scene=scene_cfg, robots=[robot0_cfg])
 
-    objects = [OBJECT_CONFIGS["coffee_table"], OBJECT_CONFIGS["bowl"]]
+    chosen_object = "bowl"
+
+    objects = [OBJECT_CONFIGS["coffee_table"], OBJECT_CONFIGS[chosen_object]]
     cfg["objects"] = objects
 
     # Create the environment
     env = DamageableEnvironment(configs=cfg)
 
-    # Load saved simulation state if it exists
-
     # Choose robot controller to use
     robot = env.robots[0]
     controller_choices = {
-        "base": "JointController",
+        "base": "HolonomicBaseJointController",
         "arm_left": "InverseKinematicsController",
         "arm_right": "InverseKinematicsController",
         "gripper_left": "MultiFingerGripperController",
         "gripper_right": "MultiFingerGripperController",
         "camera": "JointController",
+        "trunk": "JointController",  # Added trunk controller which was missing
     }
 
     # Update the control mode of the robot
@@ -119,7 +120,7 @@ def main():
 
     # Because the controllers have been updated, we need to update the initial state so the correct controller state
     # is preserved
-    env.scene.update_initial_state()
+    env.scene.update_initial_file()
     
 
     # Update the simulator's viewer camera's pose so it points towards the robot
@@ -145,15 +146,19 @@ def main():
     for _ in range(20):  # Increased settling steps
         og.sim.step()
 
-    save_state_path = "safety_benchmark/grasp_save_state_bowl.json"
-    if os.path.exists(save_state_path):
-        print(f"🔄 Loading saved simulation state from: {save_state_path}")
-        og.sim.restore(scene_files=[save_state_path])
-        env.inialize_damageable_objects()
-        print("✅ Successfully loaded saved simulation state")
-    else:
-        print(f"📝 No saved state found at: {save_state_path}")
-        print("Starting with fresh environment...")
+    # save_state_path = "safe-manipulation-benchmark/grasp_save_state_bowl2.json"
+    # print(f"🔄 Loading saved simulation state from: {save_state_path}")
+    # og.sim.restore(scene_files=[save_state_path])
+    # env.inialize_damageable_objects()
+    # print("✅ Successfully loaded saved simulation state")
+    # if os.path.exists(save_state_path):
+    #     print(f"🔄 Loading saved simulation state from: {save_state_path}")
+    #     og.sim.restore(scene_files=[save_state_path])
+    #     env.inialize_damageable_objects()
+    #     print("✅ Successfully loaded saved simulation state")
+    # else:
+    #     print(f"📝 No saved state found at: {save_state_path}")
+    #     print("Starting with fresh environment...")
 
 
     for _ in range(20):  # Increased settling steps
@@ -192,7 +197,7 @@ def main():
     
     # Function to save simulation state with breakpoint
     def save_sim_state():
-        filepath = f"safety_benchmark/grasp_save_state_baseball2.json"
+        filepath = f"safe-manipulation-benchmark/grasp_save_state_bowl2.json"
         og.sim.save(json_paths=[filepath])
         print(f"✅ Simulation state saved to: {filepath}")
         breakpoint()
@@ -239,13 +244,17 @@ def main():
     # Clean up camera mover
     camera_mover.clear()
 
-    force_values = obj.damage_generators[0].force_values
+    force_values = obj.damage_evaluators[0].force_values
 
     # Save video
     height, width = images[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    avi_path = f'videos_and_images/baseball_grasp_teleop2.avi'
-    mp4_path = f'videos_and_images/baseball_grasp_teleop2.mp4'
+    
+    # Create videos_and_images directory if it doesn't exist
+    os.makedirs('videos_and_images', exist_ok=True)
+    
+    avi_path = f'videos_and_images/{chosen_object}_grasp_teleop.avi'
+    mp4_path = f'videos_and_images/{chosen_object}_grasp_teleop.mp4'
     out = cv2.VideoWriter(avi_path, fourcc, 30, (width, height))
 
     for i, image in enumerate(images):
@@ -253,7 +262,7 @@ def main():
         frame_copy = image.copy()
         y_pos = 30
         cv2.putText(frame_copy, f"Object Health: {healths[i]:.2f}", (10, y_pos),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
         # Handle link health wrapping
         y_pos += 30
@@ -266,17 +275,17 @@ def main():
         #         current_line = test_line
         #     else:
         #         cv2.putText(frame_copy, current_line, (10, y_pos),
-        #                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        #                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
         #         y_pos += 25
         #         current_line = word
         # if current_line:
         #     cv2.putText(frame_copy, current_line, (10, y_pos),
-        #                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        #                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
         #     y_pos += 25
 
         # Add damage status
         cv2.putText(frame_copy, f"Damage Status: {damage_statuses[i]}", (10, y_pos),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
         out.write(np.ascontiguousarray(frame_copy, dtype=np.uint8))
     out.release()
 
@@ -327,7 +336,7 @@ def main():
     )
 
     # Save the animation as a video file - using exact working configuration
-    force_mp4 = 'videos_and_images/force_plot.mp4'
+    force_mp4 = f'videos_and_images/{chosen_object}_force_plot.mp4'
     # Save animation using working configuration from animate_values.py
     writer = animation.FFMpegWriter(
         fps=30,
@@ -338,7 +347,7 @@ def main():
     plt.close()
 
     # Combine videos side by side using mpeg4 codec
-    combined_mp4 = 'videos_and_images/combined_view.mp4'
+    combined_mp4 = f'videos_and_images/{chosen_object}_combined_view.mp4'
     subprocess.run([
         'ffmpeg', '-y',
         '-i', mp4_path,
