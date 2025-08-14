@@ -62,8 +62,14 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "damage_threshold": 0.0,
-            "scale": 0.1,
+            "damage_threshold": 3.0,
+            "scale": 0.01,
+            "enable_deceleration_detection": False,  # Disable for robots to avoid false positives
+            "link_thresholds": {
+                "wheel": {"damage_threshold": 5.0, "scale": 0.02},
+                "arm": {"damage_threshold": 2.0, "scale": 0.01},
+                "gripper": {"damage_threshold": 1.0, "scale": 0.02}
+            },
             # "material_properties": {
             #     "fragility": 0.3,  # Robots are moderately durable
             #     "elasticity": 0.2,  # Low bounce (metal/plastic)

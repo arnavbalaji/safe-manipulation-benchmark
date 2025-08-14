@@ -19,7 +19,7 @@ class MechanicalDamageEvaluator(DamageEvaluator):
     - Applies damage threshold and scale
     """
     
-    def __init__(self, entity: BaseObject, damage_threshold: float, scale: float):
+    def __init__(self, entity: BaseObject, damage_threshold: float, scale: float, link_thresholds: Dict[str, dict] = None, enable_deceleration_detection: bool = True):
         super().__init__(entity, damage_threshold, scale)
         self.entity = entity
         
@@ -35,6 +35,13 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         
         # Store force values for base link
         self.force_values = []
+        
+        # Flag to enable/disable deceleration-based impact detection
+        # Useful for robots where normal movements can trigger false positives
+        self.enable_deceleration_detection = enable_deceleration_detection
+        
+        # Optional per-link overrides for thresholds and scale (substring match, case-insensitive)
+        self.link_thresholds = {k.lower(): v for k, v in (link_thresholds or {}).items()}
 
     def _detect_deceleration(self, link_name: str, current_velocity: th.Tensor) -> float:
         """
@@ -78,6 +85,8 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         """
         link_damages = {}
 
+        max_force_this_timestep = 0.0
+        
         for link_name, link in self.entity.links.items():
             # Get current velocity
             current_velocity = link.get_linear_velocity()
@@ -89,26 +98,47 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                 contact_forces = th.tensor([c.impulse.tolist() for c in contacts])
                 contact_force = th.sum(th.norm(contact_forces, dim=-1)).item() * 1.25
             
-            # Detect deceleration and calculate impact force
-            impact_force = self._detect_deceleration(link_name, current_velocity) * 12.5
+            # Detect deceleration and calculate impact force (only if enabled)
+            impact_force = 0.0
+            if self.enable_deceleration_detection:
+                impact_force = self._detect_deceleration(link_name, current_velocity) * 12.5
             
             # Take the maximum of contact force and impact force
             total_force = max(contact_force, impact_force)
             
+            # Only track maximum force for wheel links (for debugging)
+            if "torso" in link_name.lower():
+                max_force_this_timestep = max(max_force_this_timestep, total_force)
+            
             # Calculate damage: (force - threshold) * scale, minimum 0
-            damage = max(0.0, (total_force - self.damage_threshold) * self.scale)
+            active_threshold = self.damage_threshold
+            active_scale = self.scale
+            if hasattr(self, 'link_thresholds') and self.link_thresholds:
+                lname = link_name.lower()
+                matches = [k for k in self.link_thresholds.keys() if k in lname]
+                if matches:
+                    best = max(matches, key=len)
+                    override = self.link_thresholds[best]
+                    if 'damage_threshold' in override:
+                        active_threshold = override['damage_threshold']
+                    if 'scale' in override:
+                        active_scale = override['scale']
+            damage = max(0.0, (total_force - active_threshold) * active_scale)
             
             # Store damage for this link
             link_damages[link_name] = damage
             
-            # Store force value for base link
-            if link_name == "base_link":
-                # print("Contact force: ", contact_force, "Impact force: ", impact_force)
-                self.force_values.append(total_force)
-            
             # Update previous velocity for next frame
             self.prev_velocities[link_name] = current_velocity.clone()
 
+        # Only append force values if we have torso links and detected forces
+        if max_force_this_timestep > 0:
+            self.force_values.append(max_force_this_timestep)
+            print(f"Max torso force: {max_force_this_timestep:.3f}")
+        else:
+            # Append 0 if no torso forces detected
+            self.force_values.append(0.0)
+        
         return link_damages
 
     def reset_tracking(self):
