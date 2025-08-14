@@ -117,7 +117,15 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                 lname = link_name.lower()
                 matches = [k for k in self.link_thresholds.keys() if k in lname]
                 if matches:
-                    best = max(matches, key=len)
+                    # Find the longest match, and if there are ties, prefer the first one listed in params
+                    max_len = max(len(k) for k in matches)
+                    longest_matches = [k for k in matches if len(k) == max_len]
+                    # Use the first one that appears in the original link_thresholds dict (preserving order)
+                    best = None
+                    for k in self.link_thresholds.keys():
+                        if k.lower() in longest_matches:
+                            best = k.lower()
+                            break
                     override = self.link_thresholds[best]
                     if 'damage_threshold' in override:
                         active_threshold = override['damage_threshold']
