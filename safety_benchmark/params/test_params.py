@@ -66,9 +66,9 @@ PARAMS = {
             "scale": 0.01,
             "enable_deceleration_detection": False,  # Disable for robots to avoid false positives
             "link_thresholds": {
-                "wheel": {"damage_threshold": 5.0, "scale": 0.02},
-                "arm": {"damage_threshold": 2.0, "scale": 0.01},
-                "gripper": {"damage_threshold": 1.0, "scale": 0.02}
+                "wheel": {"damage_threshold": 5.5, "scale": 0.05},
+                "arm": {"damage_threshold": 0.5, "scale": 0.1},
+                "gripper": {"damage_threshold": 0.5, "scale": 0.1}
             },
             # "material_properties": {
             #     "fragility": 0.3,  # Robots are moderately durable

@@ -107,8 +107,8 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             total_force = max(contact_force, impact_force)
             
             # Only track maximum force for wheel links (for debugging)
-            if "torso" in link_name.lower():
-                max_force_this_timestep = max(max_force_this_timestep, total_force)
+            # if "arm" in link_name.lower() or "gripper" in link_name.lower():
+            max_force_this_timestep = max(max_force_this_timestep, total_force)
             
             # Calculate damage: (force - threshold) * scale, minimum 0
             active_threshold = self.damage_threshold
@@ -139,12 +139,12 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             # Update previous velocity for next frame
             self.prev_velocities[link_name] = current_velocity.clone()
 
-        # Only append force values if we have torso links and detected forces
+        # Only append force values if we have arm/gripper links and detected forces
         if max_force_this_timestep > 0:
             self.force_values.append(max_force_this_timestep)
-            print(f"Max torso force: {max_force_this_timestep:.3f}")
+            # print(f"Max arm/gripper force: {max_force_this_timestep:.3f}")
         else:
-            # Append 0 if no torso forces detected
+            # Append 0 if no arm/gripper forces detected
             self.force_values.append(0.0)
         
         return link_damages

@@ -64,6 +64,36 @@ OBJECT_CONFIGS = {
         "orientation": [0, 0, 0.7071068, 0.7071068],
         "scale": [1.0, 1.0, 1.0],
         "damage_params": PARAMS["coffee_table"]
+    },
+    "coffee_table2": {
+        "type": "DatasetObject",    
+        "name": "coffee_table2",
+        "category": "coffee_table",
+        "model": "aoojzy",
+        "position": [1.0, 0.0, 0.0],
+        "orientation": [0, 0, 0.7071068, 0.7071068],
+        "scale": [1.0, 1.0, 0.2],
+        "damage_params": PARAMS["coffee_table"]
+    },
+    "coffee_table3": {
+        "type": "DatasetObject",    
+        "name": "coffee_table3",
+        "category": "coffee_table",
+        "model": "aoojzy",
+        "position": [-1.0, 0.0, 0.0],
+        "orientation": [0, 0, 0.7071068, 0.7071068],
+        "scale": [1.0, 1.0, 0.2],
+        "damage_params": PARAMS["coffee_table"]
+    },
+    "coffee_table4": {
+        "type": "DatasetObject",    
+        "name": "coffee_table4",
+        "category": "coffee_table",
+        "model": "aoojzy",
+        "position": [0.0, -0.5, 0.0],
+        "orientation": [0, 0, 0.7071068, 0.7071068],
+        "scale": [1.0, 1.0, 0.2],
+        "damage_params": PARAMS["coffee_table"]
     }
 }
 
@@ -89,9 +119,9 @@ def main():
     # Compile config
     cfg = dict(scene=scene_cfg, robots=[robot0_cfg])
 
-    chosen_object = "bowl"
+    chosen_object = "baseball"
 
-    objects = [OBJECT_CONFIGS["coffee_table"], OBJECT_CONFIGS[chosen_object]]
+    objects = [OBJECT_CONFIGS["coffee_table"], OBJECT_CONFIGS["coffee_table2"], OBJECT_CONFIGS["coffee_table3"], OBJECT_CONFIGS["coffee_table4"], OBJECT_CONFIGS[chosen_object]]
     cfg["objects"] = objects
 
     # Create the environment
@@ -236,9 +266,14 @@ def main():
         images.append(cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR))
 
         obj = env.scene.object_registry("name", "target_object")
+        # obj = env.robots[0]
         healths.append(obj.health)
         damage_statuses.append(obj.damage_status)
         link_healths.append(obj.link_healths.copy())
+        # print(obj.link_healths)
+        # breakpoint()
+        # print(obj.link_healths)
+
 
 
     # Clean up camera mover
@@ -266,7 +301,7 @@ def main():
 
         # Handle link health wrapping
         y_pos += 30
-        # link_health_text = f"Link Health: {', '.join([f'{key}: {value:.2f}' for key, value in link_healths[i].items()])}"
+        # link_health_text = f"Link Health: {', '.join([f'{key}: {value:.2f}' for key, value in link_healths[i].items() if 'arm' in key or 'gripper' in key])}"
         # words = link_health_text.split()
         # current_line = ""
         # for word in words:

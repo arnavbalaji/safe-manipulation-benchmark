@@ -2,191 +2,326 @@ import torch as th
 import cv2
 import numpy as np
 import os
+import subprocess
+
+# Set matplotlib backend to non-interactive before importing pyplot
+import matplotlib
+matplotlib.use('Agg')
+
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 import omnigibson as og
+import omnigibson.lazy as lazy
 from omnigibson import object_states
 from omnigibson.macros import gm
-
+from omnigibson.robots import REGISTERED_ROBOTS
+from omnigibson.object_states import OnTop
+from omnigibson.utils.ui_utils import KeyboardRobotController
 from safety_benchmark.damageable_env import DamageableEnvironment
 from safety_benchmark.params.test_params import PARAMS
 
 # Make sure object states are enabled
 gm.ENABLE_OBJECT_STATES = True
+# Don't use GPU dynamics and use flatcache for performance boost
+gm.USE_GPU_DYNAMICS = False
+gm.ENABLE_FLATCACHE = True
 
 
-def main(random_selection=False, headless=False, short_exec=False):
+def main():
     """
-    Demo of temperature change and thermal damage
-    Loads a stove (toggled on) and five apples
-    The apples are arranged in a line on the stove, each slightly further from the heat source
-    Shows how temperature changes and damage accumulates based on distance from heat source
+    Minimal teleop demo with Tiago in an empty scene with stove and apple.
     """
     og.log.info(f"Demo {__file__}\n    " + "*" * 80 + "\n    Description:\n" + main.__doc__ + "*" * 80)
 
-    # Define specific objects we want to load in with the scene directly
-    obj_configs = []
+    # Always use empty scene and Tiago robot
+    scene_cfg = {"type": "Scene"}
+    robot0_cfg = dict()
+    robot0_cfg["type"] = "Tiago"
+    robot0_cfg["obs_modalities"] = ["rgb"]
+    robot0_cfg["action_type"] = "continuous"
+    robot0_cfg["action_normalize"] = True
+    robot0_cfg["position"] = [0., 0.0, 0.0]  # Safe distance to reach stove without physics explosions
+    robot0_cfg["orientation"] = [0, 0, -1, 1]  # Facing the stove (same as original working script)
+    robot0_cfg["grasping_mode"] = "assisted"
+    robot0_cfg["damage_params"] = PARAMS["tiago_robot"]
 
-    # Light
-    obj_configs.append(
-        dict(
-            type="LightObject",
-            light_type="Sphere",
-            name="light",
-            radius=0.01,
-            intensity=1e8,
-            position=[-2.0, -2.0, 1.0],
-        )
-    )
+    # Compile config
+    cfg = dict(scene=scene_cfg, robots=[robot0_cfg])
 
-    # Stove
-    obj_configs.append(
-        dict(
-            type="DatasetObject",
-            name="stove",
-            category="stove",
-            model="yhjzwg",
-            bounding_box=[1.185, 0.978, 1.387],
-            position=[0, 0, 0.69],
-        )
-    )
-
-    # 5 Apples
-    for i in range(5):
-        obj_configs.append(
-            dict(
-                type="DatasetObject",
-                name=f"apple{i}",
-                category="apple",
-                model="agveuv",
-                bounding_box=[0.065, 0.065, 0.077],
-                position=[0, i * 0.1, 5.0],
-                damage_params=PARAMS["apple"],
-            )
-        )
-
-    # Create the scene config to load -- empty scene with desired objects
-    cfg = {
-        "scene": {
-            "type": "Scene",
+    # Define objects - stove in same position as coffee table, apple positioned away from heat
+    objects = [
+        {
+            "type": "DatasetObject",
+            "name": "stove",
+            "category": "stove",
+            "model": "yhjzwg",
+            "position": [0.0, -1.0, 0.0],  # Move to first row for easier robot access
+            "bounding_box": [0.8, 0.66, 0.65],  # Even smaller bbox to match desired scale
+            "orientation": [0, 0, 0.7071068, 0.7071068],  # Same orientation as coffee table
+            "initial_state": {
+                "joints": {"door": 0.0},  # 0.0 = closed, 1.0 = open
+                "toggleable": True,  # Allow stove to be turned on/off
+                "temperature": 200.0  # Set initial temperature for heating
+            },
         },
-        "objects": obj_configs,
-    }
+        {
+            "type": "DatasetObject",
+            "name": "apple",
+            "category": "apple",
+            "model": "agveuv",
+            "bounding_box": [0.1, 0.1, 0.12],  # Made apple a bit smaller
+            "position": [0.25, -0.8, 0.8],  # Positioned on top of the stove surface
+            "initial_state": {
+                "OnTop": "stove"  # Ensure apple is on top of the stove
+            },
+            "damage_params": PARAMS["apple"],
+        }
+    ]
+    cfg["objects"] = objects
 
     # Create the environment
     env = DamageableEnvironment(configs=cfg)
 
-    # Get reference to relevant objects
+    # Choose robot controller to use
+    robot = env.robots[0]
+    controller_choices = {
+        "base": "HolonomicBaseJointController",  # Correct for TIAGo's omnidirectional base
+        "arm_left": "InverseKinematicsController",
+        "arm_right": "InverseKinematicsController",
+        "gripper_left": "MultiFingerGripperController",
+        "gripper_right": "MultiFingerGripperController",
+        "camera": "JointController",
+        "trunk": "JointController",  # Added trunk controller which was missing
+    }
+
+    # Update the control mode of the robot
+    controller_config = {component: {"name": name} for component, name in controller_choices.items()}
+    
+    # Fix gripper controller configuration for Tiago
+    controller_config["gripper_left"]["inverted"] = True
+    controller_config["gripper_right"]["inverted"] = True
+    
+    robot.reload_controllers(controller_config=controller_config)
+
+    # Because the controllers have been updated, we need to update the initial state so the correct controller state
+    # is preserved
+    env.scene.update_initial_file()
+
+    # Reset environment and robot
+    env.reset()
+    robot.reset()
+
+    # Get references to objects
     stove = env.scene.object_registry("name", "stove")
-    apples = list(env.scene.object_registry("category", "apple"))
-
-    # Set camera to appropriate viewing pose
-    og.sim.viewer_camera.set_position_orientation(
-        position=th.tensor([0.46938863, -3.97887141, 1.64106008]),
-        orientation=th.tensor([0.63311689, 0.00127259, 0.00155577, 0.77405359]),
-    )
-
-    # Let objects settle
-    for _ in range(25):
-        env.step(th.empty(0))
+    apple = env.scene.object_registry("name", "apple")
 
     # Turn on the stove
     stove.states[object_states.ToggledOn].set_value(True)
 
-    # Set initial temperature of the apples to room temperature (20°C)
-    for apple in apples:
+    # Ensure the oven door is closed (some datasets default to open)
+    if object_states.Open in stove.states:
+        stove.states[object_states.Open].set_value(False)
+    else:
+        # Fallback: explicitly set any joint containing "door" or "oven" to zero position
+        for jname, joint in stove.joints.items():
+            if "door" in jname.lower() or "oven" in jname.lower():
+                joint.set_joint_position(0.0)
+
+    # Set initial temperature of the apple to room temperature (20°C)
         apple.states[object_states.Temperature].set_value(20.0)
 
-    # Position the apples in a line, each slightly further from the heat source
-    heat_source_pos = stove.states[object_states.HeatSourceOrSink].link.get_position_orientation()[0]
-    for i, apple in enumerate(apples):
-        apple.set_position_orientation(
-            position=heat_source_pos + th.tensor([i * 0.1, i * 0.1, 0.1])  # Move each apple 0.1 units further in x direction
-        )
+    # Let physics settle
+    for _ in range(20):  # Increased settling steps
+        og.sim.step()
 
-    # Lists to store data for video
-    images = []
-    temperatures = []
-    healths = []
+    for _ in range(20):  # Increased settling steps
+        og.sim.step()
 
-    # Main simulation loop
-    print("\nMonitoring apple temperatures and health:")
-    print("Step |  0cm  | 10cm  | 20cm  | 30cm  | 40cm")  # Distances from heat source
-    print("-" * 45)
+    # Add physics damping to prevent objects from flying away
+    # Set solver iterations on objects to reduce bouncing and explosions
+    for obj in env.scene.objects:
+        if hasattr(obj, 'solver_position_iteration_count'):
+            obj.solver_position_iteration_count = 8  # Increase position iterations for stability
+        if hasattr(obj, 'solver_velocity_iteration_count'):
+            obj.solver_velocity_iteration_count = 1  # Reduce velocity iterations to prevent explosions
+
+    # Create teleop controller
+    action_generator = KeyboardRobotController(robot=robot)
     
-    for step in range(50):
-        env.step(th.empty(0))
-        
-        # Get RGB image from camera
+    # Register custom binding to reset the environment
+    action_generator.register_custom_keymapping(
+        key=lazy.carb.input.KeyboardInput.R,
+        description="Reset the robot",
+        callback_fn=lambda: env.reset(),
+    )
+
+    # Enable camera teleoperation with custom key bindings
+    from omnigibson.utils.ui_utils import CameraMover
+    class CustomCameraMover(CameraMover):
+        @property
+        def input_to_command(self):
+            """
+            Returns:
+                dict: Mapping from relevant keypresses to corresponding delta command to apply to the camera pose
+            """
+            return {
+                lazy.carb.input.KeyboardInput.D: th.tensor([self.delta, 0, 0]),
+                lazy.carb.input.KeyboardInput.A: th.tensor([-self.delta, 0, 0]),
+                lazy.carb.input.KeyboardInput.W: th.tensor([0, 0, -self.delta]),
+                lazy.carb.input.KeyboardInput.S: th.tensor([0, 0, self.delta]),
+                lazy.carb.input.KeyboardInput.G: th.tensor([0, -self.delta, 0]),
+            }
+    
+    camera_mover = CustomCameraMover(cam=og.sim.viewer_camera, delta=0.1)
+    camera_mover.print_info()
+
+    # Print out relevant keyboard info
+    action_generator.print_keyboard_teleop_info()
+
+    # Other helpful user info
+    print("Running thermal damage demo.")
+    print("Use robot controls to push the apple onto the hot stove")
+    print("Press ESC to quit")
+    print()
+    print("Base Control:")
+    print("  1, 2: Switch between base joints (x, y, rotation)")
+    print("  [, ]: Move selected joint backward/forward")
+    print()
+    print("Arm Control:")
+    print("  Arrow keys: Move arm end-effector")
+    print("  P, ;: Move arm up/down")
+    print("  N, B: Rotate arm")
+    print("  O, U: Rotate arm")
+    print("  V, C: Rotate arm")
+    print()
+    print("Gripper Control:")
+    print("  T: Toggle gripper open/close")
+
+    # Loop control until user quits
+    max_steps = 2000
+    step = 0
+
+    images = []
+    healths = []
+    temperatures = []
+
+    while step != max_steps:
+        action = action_generator.get_teleop_action()
+        env.step(action=action)
+        step += 1
+
         rgb_img = og.sim.viewer_camera.get_obs()[0]["rgb"]
         rgb_img = rgb_img.cpu().numpy()[:, :, :3]
         rgb_img = cv2.resize(rgb_img, (512, 512))
         images.append(cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR))
 
-        # Get temperatures and health values
-        temps = [apple.states[object_states.Temperature].get_value() for apple in apples]
-        health_vals = [apple.health for apple in apples]
+        # Get apple health and temperature
+        apple_temp = apple.states[object_states.Temperature].get_value()
+        apple_health = apple.health
+        
+        healths.append(apple_health)
+        temperatures.append(apple_temp)
 
-        temperatures.append(temps)
-        healths.append(health_vals)
+    # Clean up camera mover
+    camera_mover.clear()
 
-        if step % 10 == 0:  # Print every 10 steps
-            print(f"{step:4d} |" + "|".join(f"{t:6.1f}" for t in temps))
-
-    # Create video
-    os.makedirs('videos_and_images', exist_ok=True)
+    # Save video
     height, width = images[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter('videos_and_images/thermal_damage.avi', fourcc, 5.0, (width, height))  # Reduced to 10 fps for slower playback
+    
+    # Create videos_and_images directory if it doesn't exist
+    os.makedirs('videos_and_images', exist_ok=True)
 
-    # Add data to video frames
+    avi_path = 'videos_and_images/thermal_damage_teleop.avi'
+    mp4_path = 'videos_and_images/thermal_damage_teleop.mp4'
+    out = cv2.VideoWriter(avi_path, fourcc, 30, (width, height))
+
     for i, image in enumerate(images):
-        frame = image.copy()
-        
-        # Create a semi-transparent overlay for text background on the right side
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (width-200, 0), (width, height), (255, 255, 255), -1)
-        frame = cv2.addWeighted(overlay, 0.3, frame, 0.7, 0)
-
+        # Add health captions
+        frame_copy = image.copy()
         y_pos = 30
-        font_size = 0.5  # Smaller font size
-        font_color = (0, 0, 0)  # Black text
-        x_pos = width - 190  # Right side position
+        cv2.putText(frame_copy, f"Apple Health: {healths[i]:.2f}", (10, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
-        # Add temperature values
-        cv2.putText(frame, "Temperatures:", (x_pos, y_pos),
-                    cv2.FONT_HERSHEY_SIMPLEX, font_size, font_color, 1)
-        y_pos += 20
-        for j, temp in enumerate(temperatures[i]):
-            cv2.putText(frame, f"{j*10}cm: {temp:5.1f}", (x_pos, y_pos),
-                        cv2.FONT_HERSHEY_SIMPLEX, font_size, font_color, 1)
-            y_pos += 15
+        # Add temperature
+        y_pos += 30
+        cv2.putText(frame_copy, f"Apple Temp: {temperatures[i]:.1f}", (10, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
-        # Add health values
-        y_pos += 10
-        cv2.putText(frame, "Health Values:", (x_pos, y_pos),
-                    cv2.FONT_HERSHEY_SIMPLEX, font_size, font_color, 1)
-        y_pos += 20
-        for j, health in enumerate(healths[i]):
-            cv2.putText(frame, f"{j*10}cm: {health:5.2f}", (x_pos, y_pos),
-                        cv2.FONT_HERSHEY_SIMPLEX, font_size, font_color, 1)
-            y_pos += 15
-
-        out.write(frame)
-
+        out.write(np.ascontiguousarray(frame_copy, dtype=np.uint8))
     out.release()
 
-    # Convert AVI to MP4
-    import subprocess
-    mp4_path = 'videos_and_images/thermal_damage.mp4'
+    # Convert AVI to MP4 using ffmpeg
     subprocess.run([
-        'ffmpeg', '-y', '-i', 'videos_and_images/thermal_damage.avi',
+        'ffmpeg', '-y', '-i', avi_path,
         '-c:v', 'mpeg4', mp4_path
     ], check=True)
 
     # Clean up AVI file
-    os.remove('videos_and_images/thermal_damage.avi')
+    os.remove(avi_path)
 
-    # Always close env at the end
+    # Create temperature value animation
+    # Set up the figure and axis with matching dimensions
+    fig, ax = plt.subplots(figsize=(6.83, 6.83))  # Makes it match 512x512 with default DPI of 75
+    line, = ax.plot([], [], lw=2)
+
+    # Set the limits of the plot
+    ax.set_xlim(1, len(temperatures))
+    ax.set_ylim(min(temperatures), max(temperatures) * 1.1)
+    ax.set_xlabel('Timestep')
+    ax.set_ylabel('Temperature (°C)')
+    ax.set_title('Apple Temperature Over Time')
+    plt.tight_layout()  # Adjust layout to fit in figure
+
+    # Initialization function
+    def init():
+        line.set_data([], [])
+        return line,
+
+    # Animation function which updates the figure
+    def animate(i):
+        x = list(range(1, i + 2))
+        y = temperatures[:i + 1]
+        line.set_data(x, y)
+        return line,
+
+    # Create an animation object
+    ani = animation.FuncAnimation(
+        fig, animate, 
+        init_func=init,
+        frames=len(temperatures),
+        interval=1000/30,
+        blit=True
+    )
+
+    # Save the animation as a video file - using exact working configuration
+    temp_mp4 = 'videos_and_images/thermal_damage_temp_plot.mp4'
+    # Save animation using working configuration from teleop_tiago_bowl.py
+    writer = animation.FFMpegWriter(
+        fps=30,
+        codec='mpeg4',
+        extra_args=['-vcodec', 'mpeg4', '-qscale', '5']
+    )
+    ani.save(temp_mp4, writer=writer)
+    plt.close()
+
+    # Combine videos side by side using mpeg4 codec
+    combined_mp4 = 'videos_and_images/thermal_damage_combined_view.mp4'
+    subprocess.run([
+        'ffmpeg', '-y',
+        '-i', mp4_path,
+        '-i', temp_mp4,
+        '-filter_complex',
+        '[0:v][1:v]scale2ref=oh*dar:ih[v0][v1];[v0][v1]hstack=inputs=2[v]',  # Scale videos to match height
+        '-map', '[v]',
+        '-vcodec', 'mpeg4',  # Use mpeg4 codec
+        '-q:v', '5',         # Quality scale (fixed ambiguous -qscale)
+        combined_mp4
+    ], check=True)
+
+    # Always shut down the environment cleanly at the end
+    og.clear()
     og.shutdown()
 
 
