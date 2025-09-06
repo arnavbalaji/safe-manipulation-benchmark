@@ -27,7 +27,11 @@ abstract class DamageEvaluator {
 }
 
 class MechanicalDamageEvaluator
+class ThermalDamageEvaluator
+class ElectricalDamageEvaluator
 DamageEvaluator <|-- MechanicalDamageEvaluator
+DamageEvaluator <|-- ThermalDamageEvaluator
+DamageEvaluator <|-- ElectricalDamageEvaluator
 
 ' Mixin class for damageable behavior
 class DamageableMixin {
@@ -63,6 +67,7 @@ note right of DamageableDatasetObject
 end note
 
 ' Associations
+omnigibson.Environment --> "scene.objects" DamageableDatasetObject : loads
 DamageableEnvironment --> "scene.objects" DamageableDatasetObject : contains
 DamageableMixin --> "*" DamageEvaluator : uses
 
@@ -71,17 +76,25 @@ note right of DamageableMixin
   Initialized with a `params` dict. For example:
   
   {
-    "damage_evaluators": ["mechanical"],
+    "damage_evaluators": ["mechanical", "thermal", "electrical"],
     "health_thresholds": [90.0, 60.0, 30.0],
     "mechanical": {
+        "damage_threshold": 0.0,
+        "scale": 1.0
+    },
+    "thermal": {
+        "damage_threshold": 0.0,
+        "scale": 1.0
+    },
+    "electrical": {
         "damage_threshold": 0.0,
         "scale": 1.0
     }
   }
 
-  Each evaluator config (e.g. "mechanical")
-is passed to the corresponding evaluator class,
-  like MechanicalDamageEvaluator.
+  Each evaluator config (e.g. "mechanical", "thermal", "electrical")
+  is passed to the corresponding evaluator class,
+  like MechanicalDamageEvaluator, ThermalDamageEvaluator, or ElectricalDamageEvaluator.
 end note
 
 @enduml

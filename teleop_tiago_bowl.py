@@ -121,7 +121,7 @@ def main():
 
     chosen_object = "baseball"
 
-    objects = [OBJECT_CONFIGS["coffee_table"], OBJECT_CONFIGS["coffee_table2"], OBJECT_CONFIGS["coffee_table3"], OBJECT_CONFIGS["coffee_table4"], OBJECT_CONFIGS[chosen_object]]
+    objects = [OBJECT_CONFIGS["coffee_table"], OBJECT_CONFIGS[chosen_object]]
     cfg["objects"] = objects
 
     # Create the environment
@@ -247,8 +247,9 @@ def main():
     print("Press ESC to quit")
 
     # Loop control until user quits
-    max_steps = 400
+    max_steps = 200
     step = 0
+    fps = 10
 
     images = []
     healths = []
@@ -290,13 +291,13 @@ def main():
     
     avi_path = f'videos_and_images/{chosen_object}_grasp_teleop.avi'
     mp4_path = f'videos_and_images/{chosen_object}_grasp_teleop.mp4'
-    out = cv2.VideoWriter(avi_path, fourcc, 30, (width, height))
+    out = cv2.VideoWriter(avi_path, fourcc, fps, (width, height))
 
     for i, image in enumerate(images):
         # Add health captions
         frame_copy = image.copy()
         y_pos = 30
-        cv2.putText(frame_copy, f"Object Health: {healths[i]:.2f}", (10, y_pos),
+        cv2.putText(frame_copy, f"Robot Health: {healths[i]:.2f}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
         # Handle link health wrapping
@@ -319,7 +320,7 @@ def main():
         #     y_pos += 25
 
         # Add damage status
-        cv2.putText(frame_copy, f"Damage Status: {damage_statuses[i]}", (10, y_pos),
+        cv2.putText(frame_copy, f"Robot Damage Status: {damage_statuses[i]}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
         out.write(np.ascontiguousarray(frame_copy, dtype=np.uint8))
     out.release()
@@ -366,7 +367,7 @@ def main():
         fig, animate, 
         init_func=init,
         frames=len(force_values),
-        interval=1000/30,
+        interval=1000/fps,
         blit=True
     )
 
@@ -374,7 +375,7 @@ def main():
     force_mp4 = f'videos_and_images/{chosen_object}_force_plot.mp4'
     # Save animation using working configuration from animate_values.py
     writer = animation.FFMpegWriter(
-        fps=30,
+        fps=fps,
         codec='mpeg4',
         extra_args=['-vcodec', 'mpeg4', '-qscale', '5']
     )

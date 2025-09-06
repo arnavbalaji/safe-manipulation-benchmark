@@ -1,13 +1,14 @@
 from safety_benchmark.damage_evaluators.mechanical_damage_evaluator import MechanicalDamageEvaluator
 from safety_benchmark.damage_evaluators.thermal_damage_evaluator import ThermalDamageEvaluator
+from safety_benchmark.damage_evaluators.electrical_damage_evaluator import ElectricalDamageEvaluator
 
 PARAMS = {
     "bowl": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "damage_threshold": 0.2,
-            "scale": 15.0,  # Increased scale for more aggressive damage
+            "damage_threshold": 2.0,
+            "scale": 8.0,  # Increased scale for more aggressive damage
             # "material_properties": {
             #     "fragility": 10.0,  # Very fragile (glass)
             #     "elasticity": 0.05,  # Very low bounce (glass doesn't bounce much)
@@ -22,8 +23,8 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [80.0, 50.0, 10.0],
         "mechanical": {
-            "damage_threshold": 3.0,
-            "scale": 0.01,
+            "damage_threshold": 1.0,
+            "scale": 0.001,
             # "material_properties": {
             #     "fragility": 0.5,  # Baseballs are somewhat durable
             #     "elasticity": 0.8,  # High bounce
@@ -62,22 +63,32 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "damage_threshold": 3.0,
-            "scale": 0.01,
-            "enable_deceleration_detection": False,  # Disable for robots to avoid false positives
+            "damage_threshold": 0.0,
+            "scale": 1.0,
             "link_thresholds": {
-                "wheel": {"damage_threshold": 5.5, "scale": 0.05},
-                "arm": {"damage_threshold": 0.5, "scale": 0.1},
-                "gripper": {"damage_threshold": 0.5, "scale": 0.1}
-            },
-            # "material_properties": {
-            #     "fragility": 0.3,  # Robots are moderately durable
-            #     "elasticity": 0.2,  # Low bounce (metal/plastic)
-            #     "density": 1500.0,  # Metal/plastic density
-            #     "contact_threshold": 0.3,  # Moderately sensitive
-            #     "energy_threshold": 0.05,  # Moderate energy threshold
-            #     "velocity_threshold": 0.05,  # Min velocity change to consider as impact (m/s)
-            # }
+                "arm": {
+                    "damage_threshold": 1.0,
+                    "scale": 0.1,
+                },
+                "base": {
+                    "damage_threshold": 8.0,
+                    "scale": 0.01,
+                },
+                "wheel": {
+                    "damage_threshold": 5.0,
+                    "scale": 0.01,
+                },
+                "gripper": {
+                    "damage_threshold": 0.75,
+                    "scale": 0.1,
+                }
+            }
+        },
+        "electrical": {
+            "damage_threshold": 1.0,  # Minimum particles to cause damage
+            "scale": 1.0,  # Damage amount when threshold is exceeded
+            "water_system_name": "sludge",
+            "proximity_threshold": 1.0,  # 2cm proximity for manual detection
         }
     },
     "default": {
@@ -100,5 +111,6 @@ PARAMS = {
 
 DAMAGE_EVALUATORS = {
     "mechanical": MechanicalDamageEvaluator,
-    "thermal": ThermalDamageEvaluator
+    "thermal": ThermalDamageEvaluator,
+    "electrical": ElectricalDamageEvaluator
 }

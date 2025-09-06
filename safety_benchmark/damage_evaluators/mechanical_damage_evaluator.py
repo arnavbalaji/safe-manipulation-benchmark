@@ -2,118 +2,72 @@ from safety_benchmark.damage_evaluators.damage_evaluator import DamageEvaluator
 from omnigibson.objects.object_base import BaseObject
 import omnigibson as og
 import torch as th
-from omnigibson.utils.usd_utils import RigidContactAPI
 from typing import Dict
 import numpy as np
 
 class MechanicalDamageEvaluator(DamageEvaluator):
     """
-    Evaluates damage based on mechanical forces.
-    
-    Tracks:
-    1. Contact forces from OmniGibson
-    2. Sudden decelerations (velocity high to low)
-    
-    Calculates damage based on:
-    - Max of contact force and deceleration impact force
-    - Applies damage threshold and scale
+    Evaluates damage based on mechanical forces from OmniGibson.
     """
-    
-    def __init__(self, entity: BaseObject, damage_threshold: float, scale: float, link_thresholds: Dict[str, dict] = None, enable_deceleration_detection: bool = True):
+    def __init__(self, entity: BaseObject, damage_threshold: float, scale: float, link_thresholds: Dict[str, dict] = None, enable_deceleration_detection: bool = None):
         super().__init__(entity, damage_threshold, scale)
         self.entity = entity
         
-        # Store previous velocities for deceleration detection
-        self.prev_velocities = {}
-        
-        # Initialize velocity tracking for each link
-        for link_name in self.entity.links.keys():
-            self.prev_velocities[link_name] = th.zeros(3)
-        
-        # Initialize the contact API
-        RigidContactAPI.initialize_view()
-        
-        # Store force values for base link
+        # Store force values
         self.force_values = []
         
-        # Flag to enable/disable deceleration-based impact detection
-        # Useful for robots where normal movements can trigger false positives
-        self.enable_deceleration_detection = enable_deceleration_detection
+        # Track forces during current environment step
+        self.current_env_step_forces = []
         
-        # Optional per-link overrides for thresholds and scale (substring match, case-insensitive)
+        # Per-link overrides for thresholds and scale
         self.link_thresholds = {k.lower(): v for k, v in (link_thresholds or {}).items()}
-
-    def _detect_deceleration(self, link_name: str, current_velocity: th.Tensor) -> float:
-        """
-        Detect sudden deceleration and calculate impact force.
         
-        Returns:
-            Impact force (0 if no significant deceleration detected)
-        """
-        prev_velocity = self.prev_velocities[link_name]
-        
-        # Calculate speeds
-        prev_speed = th.norm(prev_velocity)
-        current_speed = th.norm(current_velocity)
-        
-        # Calculate deceleration
-        speed_change = current_speed - prev_speed
-        
-        # Deceleration threshold (must lose at least 1 m/s)
-        deceleration_threshold = 1.0
-        
-        # Check if this is a significant deceleration
-        if speed_change < -deceleration_threshold and prev_speed > deceleration_threshold:
-            # Calculate impact force using F = ma
-            # a = change in velocity since last frame
-            link = self.entity.links[link_name]
-            mass = link.mass if hasattr(link, 'mass') else 1.0  # Default mass if not available
-            
-            # Impact force = mass * velocity change magnitude
-            impact_force = mass * abs(speed_change)
-            return impact_force
-        
-        return 0.0
+        # Initialize for relative force calculation
+        self.initial_impulse_forces = {}
+        self.initial_normal_forces = {}
 
     def generate_damage(self) -> Dict[str, float]:
         """
-        Generate damage values using simple approach:
-        1. Get contact forces from OmniGibson
-        2. Detect decelerations and calculate impact forces
-        3. Take max of both forces
-        4. Apply threshold and scale
+        Generate damage values using OmniGibson's contact forces.
         """
         link_damages = {}
-
         max_force_this_timestep = 0.0
         
         for link_name, link in self.entity.links.items():
-            # Get current velocity
-            current_velocity = link.get_linear_velocity()
-            
             # Get contact forces from OmniGibson
-            contact_force = 0.0
+            impulse_force = 0.0
+            normal_force = 0.0
+            
             contacts = link.contact_list()
             if len(contacts) > 0:
+                # Get both impulse and normal forces from contacts
                 contact_forces = th.tensor([c.impulse.tolist() for c in contacts])
-                contact_force = th.sum(th.norm(contact_forces, dim=-1)).item() * 1.25
-            
-            # Detect deceleration and calculate impact force (only if enabled)
-            impact_force = 0.0
-            if self.enable_deceleration_detection:
-                impact_force = self._detect_deceleration(link_name, current_velocity) * 12.5
-            
-            # Take the maximum of contact force and impact force
-            total_force = max(contact_force, impact_force)
-            
-            # Only track maximum force for wheel links (for debugging)
-            # if "arm" in link_name.lower() or "gripper" in link_name.lower():
-            max_force_this_timestep = max(max_force_this_timestep, total_force)
-            
-            # Calculate damage: (force - threshold) * scale, minimum 0
+                contact_normals = th.tensor([c.normal.tolist() for c in contacts])
+                
+                # Calculate current impulse and normal forces
+                impulse_force = th.norm(th.sum(contact_forces, dim=0)).item()
+                normal_force = th.norm(th.sum(contact_normals, dim=0)).item()
+                
+                # Set initial values if being called for the first time
+                if link_name not in self.initial_impulse_forces:
+                    self.initial_impulse_forces[link_name] = impulse_force
+                if link_name not in self.initial_normal_forces:
+                    self.initial_normal_forces[link_name] = normal_force
+                
+                # Calculate relative forces (floor at 0)
+                relative_impulse = max(0.0, impulse_force - self.initial_impulse_forces[link_name])
+                relative_normal = max(0.0, normal_force - self.initial_normal_forces[link_name])
+                
+                # Combine relative forces
+                contact_force = relative_impulse + relative_normal
+            else:
+                contact_force = 0.0
+
             active_threshold = self.damage_threshold
             active_scale = self.scale
-            if hasattr(self, 'link_thresholds') and self.link_thresholds:
+            
+            # Check for per-link overrides
+            if self.link_thresholds:
                 lname = link_name.lower()
                 matches = [k for k in self.link_thresholds.keys() if k in lname]
                 if matches:
@@ -131,25 +85,58 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                         active_threshold = override['damage_threshold']
                     if 'scale' in override:
                         active_scale = override['scale']
-            damage = max(0.0, (total_force - active_threshold) * active_scale)
+            
+            # Calculate damage
+            damage = max(0.0, (contact_force - active_threshold) * active_scale)
             
             # Store damage for this link
             link_damages[link_name] = damage
-            
-            # Update previous velocity for next frame
-            self.prev_velocities[link_name] = current_velocity.clone()
 
-        # Only append force values if we have arm/gripper links and detected forces
+            max_force_this_timestep = max(max_force_this_timestep, contact_force)
+
+        # Track forces for current environment step
         if max_force_this_timestep > 0:
-            self.force_values.append(max_force_this_timestep)
-            # print(f"Max arm/gripper force: {max_force_this_timestep:.3f}")
+            self.current_env_step_forces.append(max_force_this_timestep)
         else:
-            # Append 0 if no arm/gripper forces detected
-            self.force_values.append(0.0)
+            self.current_env_step_forces.append(0.0)
         
         return link_damages
 
+    def aggregate_forces_for_env_step(self):
+        """
+        Aggregate forces for the current environment step.
+        """
+        if not self.current_env_step_forces:
+            # No forces this env step, append 0
+            self.force_values.append(0.0)
+        else:
+            # # Use MAXIMUM force from this env step instead of sum (for testing thresholds)
+            # max_force = max(self.current_env_step_forces)
+            # self.force_values.append(max_force)
+
+            total_force = sum(self.current_env_step_forces)
+            self.force_values.append(total_force)
+        
+        # Reset for next environment step
+        self.current_env_step_forces = []
+
     def reset_tracking(self):
-        """Reset velocity tracking state."""
-        for link_name in self.entity.links.keys():
-            self.prev_velocities[link_name] = th.zeros(3)
+        """Reset force tracking state."""
+        self.current_env_step_forces = []
+        self.initial_impulse_forces = {}
+        self.initial_normal_forces = {}
+    
+    def get_current_env_step_force(self):
+        """
+        Get the current environment step's aggregated force.
+        """
+        if not self.current_env_step_forces:
+            return 0.0
+        return sum(self.current_env_step_forces)
+    
+    @property
+    def aggregated_force_values(self):
+        """
+        Property to access the aggregated force values.
+        """
+        return self.force_values

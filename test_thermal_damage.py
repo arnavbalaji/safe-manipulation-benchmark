@@ -81,7 +81,7 @@ def main():
     cfg["objects"] = objects
 
     # Create the environment
-    env = DamageableEnvironment(configs=cfg)
+    env = DamageableEnvironment(configs=cfg, debug_physics_frequency=True)
 
     # Choose robot controller to use
     robot = env.robots[0]
