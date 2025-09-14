@@ -247,14 +247,13 @@ def main():
     print("Press ESC to quit")
 
     # Loop control until user quits
-    max_steps = 200
+    max_steps = 300
     step = 0
     fps = 10
 
     images = []
-    healths = []
-    link_healths = []
-    damage_statuses = []
+    robot_healths = []
+    obj_healths = []
 
     while step != max_steps:
         action = action_generator.get_teleop_action()
@@ -267,10 +266,8 @@ def main():
         images.append(cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR))
 
         obj = env.scene.object_registry("name", "target_object")
-        # obj = env.robots[0]
-        healths.append(obj.health)
-        damage_statuses.append(obj.damage_status)
-        link_healths.append(obj.link_healths.copy())
+        robot_healths.append(robot.health)
+        obj_healths.append(obj.health)
         # print(obj.link_healths)
         # breakpoint()
         # print(obj.link_healths)
@@ -280,7 +277,8 @@ def main():
     # Clean up camera mover
     camera_mover.clear()
 
-    force_values = obj.damage_evaluators[0].force_values
+    robot_force_values = robot.damage_evaluators[0].force_values
+    object_force_values = obj.damage_evaluators[0].force_values
 
     # Save video
     height, width = images[0].shape[:2]
@@ -297,30 +295,12 @@ def main():
         # Add health captions
         frame_copy = image.copy()
         y_pos = 30
-        cv2.putText(frame_copy, f"Robot Health: {healths[i]:.2f}", (10, y_pos),
+        cv2.putText(frame_copy, f"Robot Health: {robot_healths[i]:.2f}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
-        # Handle link health wrapping
+        # Add object health
         y_pos += 30
-        # link_health_text = f"Link Health: {', '.join([f'{key}: {value:.2f}' for key, value in link_healths[i].items() if 'arm' in key or 'gripper' in key])}"
-        # words = link_health_text.split()
-        # current_line = ""
-        # for word in words:
-        #     test_line = current_line + " " + word if current_line else word
-        #     if len(test_line) * 10 < width - 20:  # Approximate character width
-        #         current_line = test_line
-        #     else:
-        #         cv2.putText(frame_copy, current_line, (10, y_pos),
-        #                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-        #         y_pos += 25
-        #         current_line = word
-        # if current_line:
-        #     cv2.putText(frame_copy, current_line, (10, y_pos),
-        #                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-        #     y_pos += 25
-
-        # Add damage status
-        cv2.putText(frame_copy, f"Robot Damage Status: {damage_statuses[i]}", (10, y_pos),
+        cv2.putText(frame_copy, f"Object Health: {obj_healths[i]:.2f}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
         out.write(np.ascontiguousarray(frame_copy, dtype=np.uint8))
     out.release()
@@ -334,7 +314,7 @@ def main():
     # Clean up AVI file
     os.remove(avi_path)
 
-    # Create force value animation
+    # Create force value animation for ROBOT
     import matplotlib.pyplot as plt
     import matplotlib.animation as animation
 
@@ -343,11 +323,12 @@ def main():
     line, = ax.plot([], [], lw=2)
 
     # Set the limits of the plot
-    ax.set_xlim(1, len(force_values))
-    ax.set_ylim(min(force_values), max(force_values) * 1.1)
+    ax.set_xlim(1, len(robot_force_values))
+    ax.set_ylim(min(robot_force_values) if robot_force_values else 0,
+                (max(robot_force_values) * 1.1) if robot_force_values else 1)
     ax.set_xlabel('Timestep')
     ax.set_ylabel('Force')
-    ax.set_title('Force Values Over Time')
+    ax.set_title('Robot Forces Over Time')
     plt.tight_layout()  # Adjust layout to fit in figure
 
     # Initialization function
@@ -358,7 +339,7 @@ def main():
     # Animation function which updates the figure
     def animate(i):
         x = list(range(1, i + 2))
-        y = force_values[:i + 1]
+        y = robot_force_values[:i + 1]
         line.set_data(x, y)
         return line,
 
@@ -366,33 +347,67 @@ def main():
     ani = animation.FuncAnimation(
         fig, animate, 
         init_func=init,
-        frames=len(force_values),
+        frames=len(robot_force_values),
         interval=1000/fps,
         blit=True
     )
 
     # Save the animation as a video file - using exact working configuration
-    force_mp4 = f'videos_and_images/{chosen_object}_force_plot.mp4'
+    robot_force_mp4 = f'videos_and_images/{chosen_object}_force_plot_robot.mp4'
     # Save animation using working configuration from animate_values.py
     writer = animation.FFMpegWriter(
         fps=fps,
         codec='mpeg4',
         extra_args=['-vcodec', 'mpeg4', '-qscale', '5']
     )
-    ani.save(force_mp4, writer=writer)
+    ani.save(robot_force_mp4, writer=writer)
     plt.close()
 
-    # Combine videos side by side using mpeg4 codec
+    # Create force value animation for OBJECT
+    fig, ax = plt.subplots(figsize=(6.83, 6.83))
+    line, = ax.plot([], [], lw=2)
+    ax.set_xlim(1, len(object_force_values))
+    ax.set_ylim(min(object_force_values) if object_force_values else 0,
+                (max(object_force_values) * 1.1) if object_force_values else 1)
+    ax.set_xlabel('Timestep')
+    ax.set_ylabel('Force')
+    ax.set_title('Object Forces Over Time')
+    plt.tight_layout()
+
+    def init_obj():
+        line.set_data([], [])
+        return line,
+
+    def animate_obj(i):
+        x = list(range(1, i + 2))
+        y = object_force_values[:i + 1]
+        line.set_data(x, y)
+        return line,
+
+    ani_obj = animation.FuncAnimation(
+        fig, animate_obj,
+        init_func=init_obj,
+        frames=len(object_force_values),
+        interval=1000/fps,
+        blit=True
+    )
+
+    object_force_mp4 = f'videos_and_images/{chosen_object}_force_plot_object.mp4'
+    ani_obj.save(object_force_mp4, writer=writer)
+    plt.close()
+
+    # Combine teleop + robot force + object force videos side by side using mpeg4 codec
     combined_mp4 = f'videos_and_images/{chosen_object}_combined_view.mp4'
     subprocess.run([
         'ffmpeg', '-y',
         '-i', mp4_path,
-        '-i', force_mp4,
+        '-i', robot_force_mp4,
+        '-i', object_force_mp4,
         '-filter_complex',
-        '[0:v][1:v]scale2ref=oh*dar:ih[v0][v1];[v0][v1]hstack=inputs=2[v]',  # Scale videos to match height
+        '[1:v]scale=512:512[v1];[2:v]scale=512:512[v2];[0:v][v1][v2]hstack=inputs=3[v]',
         '-map', '[v]',
-        '-vcodec', 'mpeg4',  # Use mpeg4 codec
-        '-q:v', '5',         # Quality scale (fixed ambiguous -qscale)
+        '-vcodec', 'mpeg4',
+        '-q:v', '5',
         combined_mp4
     ], check=True)
 

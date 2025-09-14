@@ -23,7 +23,7 @@ class ThermalDamageEvaluator(DamageEvaluator):
     def generate_damage(self):
         damage = 0.0
         current_temperature = self.entity.states[object_states.Temperature].get_value()
-        temperature_change = current_temperature - self.start_temperature
+        temperature_change = (current_temperature - self.start_temperature)
 
         if temperature_change > self.damage_threshold:
             damage = self.scale * (temperature_change - self.damage_threshold)

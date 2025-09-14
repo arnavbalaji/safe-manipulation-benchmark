@@ -30,7 +30,7 @@ gm.ENABLE_FLATCACHE = True
 
 def main():
     """
-    Minimal teleop demo with Tiago in an empty scene with stove and apple.
+    Minimal teleop demo with Tiago in an empty scene with stove and egg.
     """
     og.log.info(f"Demo {__file__}\n    " + "*" * 80 + "\n    Description:\n" + main.__doc__ + "*" * 80)
 
@@ -49,7 +49,7 @@ def main():
     # Compile config
     cfg = dict(scene=scene_cfg, robots=[robot0_cfg])
 
-    # Define objects - stove in same position as coffee table, apple positioned away from heat
+    # Define objects - stove in same position as coffee table, egg positioned away from heat
     objects = [
         {
             "type": "DatasetObject",
@@ -59,23 +59,54 @@ def main():
             "position": [0.0, -1.0, 0.0],  # Move to first row for easier robot access
             "bounding_box": [0.8, 0.66, 0.65],  # Even smaller bbox to match desired scale
             "orientation": [0, 0, 0.7071068, 0.7071068],  # Same orientation as coffee table
+            "abilities": {
+                "heatSource": {
+                    "temperature": 200.0,
+                    "heating_rate": 0.1,  # Much slower heating
+                    "distance_threshold": 0.2,
+                    "requires_toggled_on": True
+                },
+                "toggleable": {},
+            },
             "initial_state": {
                 "joints": {"door": 0.0},  # 0.0 = closed, 1.0 = open
                 "toggleable": True,  # Allow stove to be turned on/off
-                "temperature": 200.0  # Set initial temperature for heating
+                "temperature": 200.0,  # Set initial temperature for heating
+                # Remove the heating_rate from here - it doesn't work
             },
+            # Add heat source configuration here instead
+            # "states": {
+            #     "HeatSourceOrSink": {
+            #         "temperature": 200.0,
+            #         "heating_rate": 0.001,  # This should work
+            #         "distance_threshold": 0.2
+            #     }
+            # }
         },
         {
             "type": "DatasetObject",
-            "name": "apple",
-            "category": "apple",
-            "model": "agveuv",
-            "bounding_box": [0.1, 0.1, 0.12],  # Made apple a bit smaller
-            "position": [0.25, -0.8, 0.8],  # Positioned on top of the stove surface
+            "name": "egg",
+            "category": "egg",
+            "model": "brkitw",
+            "bounding_box": [0.07, 0.06, 0.06],
+            # "position": [0.25, -0.8, 0.8],  # Positioned on top of the stove surface
+            "position": [0.2, -1.1, 0.8],
             "initial_state": {
-                "OnTop": "stove"  # Ensure apple is on top of the stove
+                "OnTop": "stove"  # Ensure egg is on top of the stove
             },
             "damage_params": PARAMS["apple"],
+        },
+        {
+            "type": "DatasetObject",
+            "name": "pan",
+            "category": "frying_pan",
+            "model": "aewpzn",
+            "position": [0.2, -1.1, 0.8],  # Positioned on top of the stove surface
+            # "bounding_box": [0.25, 0.25, 0.05],  # Make the pan smaller
+            "initial_state": {
+                "OnTop": "stove"  # Ensure pan is on top of the stove
+            },
+            "damage_params": PARAMS["pan"],
         }
     ]
     cfg["objects"] = objects
@@ -114,7 +145,8 @@ def main():
 
     # Get references to objects
     stove = env.scene.object_registry("name", "stove")
-    apple = env.scene.object_registry("name", "apple")
+    egg = env.scene.object_registry("name", "egg")
+    pan = env.scene.object_registry("name", "pan")
 
     # Turn on the stove
     stove.states[object_states.ToggledOn].set_value(True)
@@ -128,8 +160,8 @@ def main():
             if "door" in jname.lower() or "oven" in jname.lower():
                 joint.set_joint_position(0.0)
 
-    # Set initial temperature of the apple to room temperature (20°C)
-        apple.states[object_states.Temperature].set_value(20.0)
+    # Set initial temperature of the egg to room temperature (20°C)
+    egg.states[object_states.Temperature].set_value(20.0)
 
     # Let physics settle
     for _ in range(20):  # Increased settling steps
@@ -180,31 +212,33 @@ def main():
     action_generator.print_keyboard_teleop_info()
 
     # Other helpful user info
-    print("Running thermal damage demo.")
-    print("Use robot controls to push the apple onto the hot stove")
-    print("Press ESC to quit")
-    print()
-    print("Base Control:")
-    print("  1, 2: Switch between base joints (x, y, rotation)")
-    print("  [, ]: Move selected joint backward/forward")
-    print()
-    print("Arm Control:")
-    print("  Arrow keys: Move arm end-effector")
-    print("  P, ;: Move arm up/down")
-    print("  N, B: Rotate arm")
-    print("  O, U: Rotate arm")
-    print("  V, C: Rotate arm")
-    print()
-    print("Gripper Control:")
-    print("  T: Toggle gripper open/close")
+    # print("Running thermal damage demo.")
+    # print("Use robot controls to push the egg onto the hot stove")
+    # print("Press ESC to quit")
+    # print()
+    # print("Base Control:")
+    # print("  1, 2: Switch between base joints (x, y, rotation)")
+    # print("  [, ]: Move selected joint backward/forward")
+    # print()
+    # print("Arm Control:")
+    # print("  Arrow keys: Move arm end-effector")
+    # print("  P, ;: Move arm up/down")
+    # print("  N, B: Rotate arm")
+    # print("  O, U: Rotate arm")
+    # print("  V, C: Rotate arm")
+    # print()
+    # print("Gripper Control:")
+    # print("  T: Toggle gripper open/close")
 
     # Loop control until user quits
-    max_steps = 2000
+    max_steps = 1000
     step = 0
 
     images = []
     healths = []
     temperatures = []
+    pan_healths = []
+    pan_temperatures = []
 
     while step != max_steps:
         action = action_generator.get_teleop_action()
@@ -216,12 +250,18 @@ def main():
         rgb_img = cv2.resize(rgb_img, (512, 512))
         images.append(cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR))
 
-        # Get apple health and temperature
-        apple_temp = apple.states[object_states.Temperature].get_value()
-        apple_health = apple.health
+        # Get egg health and temperature
+        egg_temp = egg.states[object_states.Temperature].get_value()
+        egg_health = egg.health
         
-        healths.append(apple_health)
-        temperatures.append(apple_temp)
+        # Get pan health and temperature
+        pan_temp = pan.states[object_states.Temperature].get_value()
+        pan_health = pan.health
+        
+        healths.append(egg_health)
+        temperatures.append(egg_temp)
+        pan_healths.append(pan_health)
+        pan_temperatures.append(pan_temp)
 
     # Clean up camera mover
     camera_mover.clear()
@@ -241,12 +281,20 @@ def main():
         # Add health captions
         frame_copy = image.copy()
         y_pos = 30
-        cv2.putText(frame_copy, f"Apple Health: {healths[i]:.2f}", (10, y_pos),
+        cv2.putText(frame_copy, f"Egg Health: {healths[i]:.2f}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
         # Add temperature
         y_pos += 30
-        cv2.putText(frame_copy, f"Apple Temp: {temperatures[i]:.1f}", (10, y_pos),
+        cv2.putText(frame_copy, f"Egg Temp: {temperatures[i]:.1f}", (10, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+
+        # Add pan health and temperature
+        y_pos += 30
+        cv2.putText(frame_copy, f"Pan Health: {pan_healths[i]:.2f}", (10, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+        y_pos += 30
+        cv2.putText(frame_copy, f"Pan Temp: {pan_temperatures[i]:.1f}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
         out.write(np.ascontiguousarray(frame_copy, dtype=np.uint8))
@@ -264,33 +312,45 @@ def main():
     # Create temperature value animation
     # Set up the figure and axis with matching dimensions
     fig, ax = plt.subplots(figsize=(6.83, 6.83))  # Makes it match 512x512 with default DPI of 75
-    line, = ax.plot([], [], lw=2)
+    line_egg, = ax.plot([], [], lw=2, label='Egg')
+    line_pan, = ax.plot([], [], lw=2, label='Pan')
 
     # Set the limits of the plot
-    ax.set_xlim(1, len(temperatures))
-    ax.set_ylim(min(temperatures), max(temperatures) * 1.1)
+    max_len = max(len(temperatures), len(pan_temperatures))
+    all_temps = (temperatures + pan_temperatures) if (temperatures and pan_temperatures) else (temperatures or pan_temperatures)
+    if all_temps:
+        ymin = min(all_temps)
+        ymax = max(all_temps) * 1.1
+    else:
+        ymin, ymax = 0, 1
+    ax.set_xlim(1, max_len)
+    ax.set_ylim(ymin, ymax)
     ax.set_xlabel('Timestep')
     ax.set_ylabel('Temperature (°C)')
-    ax.set_title('Apple Temperature Over Time')
+    ax.set_title('Object Temperatures Over Time')
     plt.tight_layout()  # Adjust layout to fit in figure
+    ax.legend()
 
     # Initialization function
     def init():
-        line.set_data([], [])
-        return line,
+        line_egg.set_data([], [])
+        line_pan.set_data([], [])
+        return line_egg, line_pan
 
     # Animation function which updates the figure
     def animate(i):
         x = list(range(1, i + 2))
-        y = temperatures[:i + 1]
-        line.set_data(x, y)
-        return line,
+        y_egg = temperatures[:i + 1]
+        y_pan = pan_temperatures[:i + 1]
+        line_egg.set_data(x, y_egg)
+        line_pan.set_data(x, y_pan)
+        return line_egg, line_pan
 
     # Create an animation object
     ani = animation.FuncAnimation(
         fig, animate, 
         init_func=init,
-        frames=len(temperatures),
+        frames=max_len,
         interval=1000/30,
         blit=True
     )

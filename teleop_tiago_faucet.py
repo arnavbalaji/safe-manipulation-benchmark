@@ -29,30 +29,40 @@ from safety_benchmark.params.test_params import PARAMS
 # The sludge system that handles water particles from the faucet requires GPU dynamics
 gm.USE_GPU_DYNAMICS = True
 gm.ENABLE_FLATCACHE = True
+gm.ENABLE_HQ_RENDERING = False
 
 OBJECT_CONFIGS = {
     "faucet": {
         "type": "DatasetObject",
         "name": "faucet",
-        "category": "beer_tap",  # Using beer_tap as it's available
-        "model": "zcrgvq",  # Trying a different beer tap model
+        "category": "beer_tap",
+        "model": "zcrgvq",
         "position": [0.0, 0.0, 0.0],
-        "orientation": [0, 0, 1, 0],  # Rotated 180 degrees around Z-axis
+        "orientation": [0, 0, 1, 0],
         "scale": [1.0, 1.0, 1.0],
         "initial_state": {
-            "toggleable": True,  # Allow faucet to be turned on/off
+            "toggleable": True,
         },
     },
     "sink": {
         "type": "DatasetObject",    
         "name": "sink",
-        "category": "furniture_sink",  # Using the correct category
-        "model": "zexzrc",  # Using a working sink model
-        "position": [0.0, -0.5, 0.0],  # Position below the faucet
+        "category": "furniture_sink",
+        "model": "zexzrc",
+        "position": [0.0, -0.5, 0.0],
         "orientation": [0, 0, 0.7071068, 0.7071068],
-        "scale": [0.7, 0.7, 0.7],  # Shrunk the sink table
+        "scale": [1.0, 1.0, 0.7],
     },
-    # Removed bowl object - keeping only faucet and sink
+    # Add requested BEHAVIOR bowl model jblalf
+    "bowl": {
+        "type": "DatasetObject",
+        "name": "bowl",
+        "category": "bowl",
+        "model": "jpvcjv",
+        "position": [-0.2, -0.5, 3.0],
+        "orientation": [0, 0, 0, 1],
+        "scale": [1.0, 1.0, 1.0],
+    },
 }
 
 # Alternative configurations if the primary ones fail
@@ -60,19 +70,19 @@ ALTERNATIVE_CONFIGS = {
     "sink_czyfhq": {
         "type": "DatasetObject",    
         "name": "sink",
-        "category": "furniture_sink",  # Using the correct category
-        "model": "czyfhq",  # Alternative sink model
+        "category": "furniture_sink",
+        "model": "czyfhq",
         "position": [0.0, -0.5, 0.0],
         "orientation": [0, 0, 0.7071068, 0.7071068],
-        "scale": [0.7, 0.7, 0.7],  # Shrunk the sink table
+        "scale": [0.7, 0.7, 0.7],
     },
     "faucet_alt": {
         "type": "DatasetObject",
         "name": "faucet",
-        "category": "beer_tap",  # Alternative faucet model
+        "category": "beer_tap",
         "model": "vgaluf",
         "position": [0.0, 0.0, 0.0],
-        "orientation": [0, 0, 1, 0],  # Rotated 180 degrees around Z-axis
+        "orientation": [0, 0, 1, 0],
         "scale": [1.0, 1.0, 1.0],
         "initial_state": {
             "toggleable": True,
@@ -81,16 +91,15 @@ ALTERNATIVE_CONFIGS = {
     "faucet_alt2": {
         "type": "DatasetObject",
         "name": "faucet",
-        "category": "beer_tap",  # Third alternative faucet model
+        "category": "beer_tap",
         "model": "bebcmz",
         "position": [0.0, 0.0, 0.0],
-        "orientation": [0, 0, 1, 0],  # Rotated 180 degrees around Z-axis
+        "orientation": [0, 0, 1, 0],
         "scale": [1.0, 1.0, 1.0],
         "initial_state": {
             "toggleable": True,
         },
     },
-    # Removed bowl alternatives - keeping only faucet and sink
 }
 
 
@@ -144,6 +153,7 @@ def try_load_objects_with_fallback():
                         print("🚨 Falling back to empty scene with just robot")
                         return []
 
+
 def main():
     """
     Minimal teleop demo with Tiago in an empty scene with a faucet.
@@ -151,42 +161,35 @@ def main():
     og.log.info(f"Demo {__file__}\n    " + "*" * 80 + "\n    Description:\n" + main.__doc__ + "*" * 80)
 
     # Always use empty scene and Tiago robot
-    scene_cfg = {"type": "Scene", "scene_id": "empty"}  # Ensure completely empty scene
+    scene_cfg = {"type": "Scene", "scene_id": "empty"}
     
-    # LOADING FROM SAVED STATE -------------------------------------------------------------
-    # Set scene_file to load from the saved state JSON
-    scene_cfg["scene_file"] = "safe-manipulation-benchmark/faucet_save_state.json"
-    # -------------------------------------------------------------------------------------
+    # Do not load from saved state; build scene from OBJECT_CONFIGS
+    # scene_cfg["scene_file"] = None
     
     robot0_cfg = dict()
     robot0_cfg["type"] = "Tiago"
     robot0_cfg["obs_modalities"] = ["rgb"]
     robot0_cfg["action_type"] = "continuous"
     robot0_cfg["action_normalize"] = True
-    robot0_cfg["position"] = [0., 0.5, 0.0]  # Position closer to the smaller sink
-    robot0_cfg["orientation"] = [0, 0, -1, 1]  # Facing the sink
+    robot0_cfg["position"] = [0., -1.3, 0.0]
+    robot0_cfg["orientation"] = [0, 0, 1, 1]
     robot0_cfg["grasping_mode"] = "assisted"
     robot0_cfg["damage_params"] = PARAMS["tiago_robot"]
 
     # Compile config
     cfg = dict(scene=scene_cfg, robots=[robot0_cfg])
+    cfg["rendering_frequency"] = 60
 
     # CRITICAL: When loading from scene_file, the Scene constructor will automatically
     # populate _init_objs from the JSON, so we must NOT add objects to cfg["objects"]
     # or the Environment will try to load them again, causing duplicate name errors.
-    if "scene_file" not in scene_cfg or scene_cfg["scene_file"] is None:
-        # Fresh scene - add objects manually
-        objects = try_load_objects_with_fallback()
-        if objects:
-            cfg["objects"] = objects
-    else:
-        # Loading from saved state - ensure no objects in cfg to prevent duplicates
-        cfg["objects"] = []
+    # Fresh scene - add objects manually
+    objects = try_load_objects_with_fallback()
+    if objects:
+        cfg["objects"] = objects
 
     # Create the environment
-    print("🔄 Loading saved simulation state from: safe-manipulation-benchmark/faucet_save_state.json")
     env = DamageableEnvironment(configs=cfg)
-    print("✅ Successfully loaded saved simulation state")
 
     # Choose robot controller to use
     robot = env.robots[0]
@@ -230,15 +233,36 @@ def main():
         print("✅ Faucet loaded successfully")
     except:
         faucet = None
-        print("❌ Faucet not available - demo cannot continue")
-        return
+        print("⚠️ Faucet not available")
     
-    # Bowl removed - no need to handle bowl positioning
-    
+    # No bowl in the scene
+
     # Let physics settle
     for _ in range(20):
         og.sim.step()
 
+    # Turn faucet ON at start if available (guard for missing state)
+    if faucet is not None and ToggledOn in faucet.states:
+        try:
+            if not faucet.states[ToggledOn].get_value():
+                faucet.states[ToggledOn].set_value(True)
+            print("🚰 Faucet turned ON at start")
+        except Exception as e:
+            print(f"⚠️ Could not turn faucet on at start: {e}")
+    else:
+        # Fallback: try any object with ToggledOn
+        try:
+            toggle_targets = [obj for obj in env.scene.objects if ToggledOn in obj.states]
+            for obj in toggle_targets:
+                if not obj.states[ToggledOn].get_value():
+                    obj.states[ToggledOn].set_value(True)
+            if toggle_targets:
+                print(f"🚰 Turned ON {len(toggle_targets)} toggleable object(s) at start")
+        except Exception as e:
+            print(f"⚠️ Fallback toggle failed: {e}")
+
+    # Default visuals; no prototype-hiding edits
+    
     # Create teleop controller
     action_generator = KeyboardRobotController(robot=robot)
     
@@ -247,10 +271,6 @@ def main():
     class CustomCameraMover(CameraMover):
         @property
         def input_to_command(self):
-            """
-            Returns:
-                dict: Mapping from relevant keypresses to corresponding delta command to apply to the camera pose
-            """
             return {
                 lazy.carb.input.KeyboardInput.D: th.tensor([self.delta, 0, 0]),
                 lazy.carb.input.KeyboardInput.A: th.tensor([-self.delta, 0, 0]),
@@ -290,23 +310,9 @@ def main():
         callback_fn=toggle_faucet,
     )
     
-    # Function to save simulation state
-    def save_sim_state():
-        filepath = f"safe-manipulation-benchmark/faucet_save_state.json"
-        og.sim.save(json_paths=[filepath])
-        print(f"✅ Simulation state saved to: {filepath}")
-        breakpoint()  # Pause execution for debugging
-    
-    # Register TAB key for state saving
-    action_generator.register_custom_keymapping(
-        key=lazy.carb.input.KeyboardInput.TAB,
-        description="Save simulation state",
-        callback_fn=save_sim_state,
-    )
-
     # Print out relevant keyboard info
     action_generator.print_keyboard_teleop_info()
-
+    
     # Other helpful user info
     print("Running faucet demo.")
     print("Press F to toggle faucet on/off")
@@ -316,32 +322,23 @@ def main():
     water_contact_counts = []
     water_system = None
     
-    # Initialize electrical damage tracking
-    electrical_damages = []
-    
     # Initialize robot health tracking (like other scripts)
     robot_healths = []
     robot_link_healths = []
     robot_damage_statuses = []
     
     # Try to get the water/sludge system for contact tracking
-    try:
-        # Common names for water systems in OmniGibson
-        possible_water_systems = ["sludge", "water", "fluid"]
-        for system_name in possible_water_systems:
-            if env.scene.is_physical_particle_system(system_name):
-                water_system = env.scene.get_system(system_name)
-                print(f"✅ Found water system: {system_name}")
-                break
-        
-        if water_system is None:
-            print("⚠️ No water system found - contact tracking disabled")
-        else:
-            print(f"✅ Water contact tracking enabled with system: {water_system.name}")
-    except Exception as e:
-        print(f"⚠️ Error setting up water contact tracking: {e}")
-        water_system = None
-    
+    # Use existing faucet fluid system
+    water_system = None
+    possible_water_systems = ["sludge", "water", "fluid"]
+    for system_name in possible_water_systems:
+        if env.scene.is_physical_particle_system(system_name):
+            water_system = env.scene.get_system(system_name)
+            print(f"✅ Found water system: {system_name}")
+            break
+    assert water_system is not None, "No water system found"
+    print(f"✅ Water contact tracking enabled with system: {water_system.name}")
+
     # Print water contact tracking status after initialization
     if water_system is not None:
         print(f"💧 Water contact tracking enabled - monitoring {water_system.name} system")
@@ -350,7 +347,7 @@ def main():
         print("⚠️ Water contact tracking disabled - no water system found")
 
     # Loop control until user quits
-    max_steps = 500
+    max_steps = 250
     step = 0
     fps = 10
 
@@ -360,46 +357,28 @@ def main():
         action = action_generator.get_teleop_action()
         env.step(action=action)
         step += 1
+        # Ensure faucet remains ON every step
+        if faucet is not None and ToggledOn in faucet.states:
+            if not faucet.states[ToggledOn].get_value():
+                faucet.states[ToggledOn].set_value(True)
 
         rgb_img = og.sim.viewer_camera.get_obs()[0]["rgb"]
         rgb_img = rgb_img.cpu().numpy()[:, :, :3]
         rgb_img = cv2.resize(rgb_img, (512, 512))
         images.append(cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR))
 
-        # Track water contact with robot
+        # Track water contact with robot (supported path via ContactParticles)
         if water_system is not None:
-            try:
-                # Get water particles in contact with the robot using ContactParticles state
-                # This works even when faucet is OFF - detects existing water particles in the sink
-                contacting_particles = robot.states[ContactParticles].get_value(system=water_system)
-                water_contact_count = len(contacting_particles)
-                water_contact_counts.append(water_contact_count)
-                
-                # Get electrical damage information if available
-                if hasattr(robot, 'damage_evaluators'):
-                    electrical_damage = 0.0
-                    for evaluator in robot.damage_evaluators:
-                        if hasattr(evaluator, '__class__') and 'Electrical' in evaluator.__class__.__name__:
-                            link_damages = evaluator.generate_damage()
-                            electrical_damage = sum(link_damages.values())
-                            break
-                else:
-                    electrical_damage = 0.0
-                
-                # Store electrical damage for video display
-                electrical_damages.append(electrical_damage)
-                
-                # Print real-time contact info (optional - can be commented out for performance)
-                if step % 30 == 0:  # Print every 30 steps to avoid spam
-                    faucet_state = "ON" if faucet and faucet.states[ToggledOn].get_value() else "OFF"
-                    print(f"Step {step}: Faucet {faucet_state}, Robot touching {water_contact_count} water particles, Electrical damage: {electrical_damage:.2f}")
-            except Exception as e:
-                print(f"⚠️ Error tracking water contact: {e}")
-                water_contact_counts.append(0)
-                electrical_damages.append(0.0)
+            # Get water particles in contact with the robot using ContactParticles state
+            contacting_particles = robot.states[ContactParticles].get_value(system=water_system)
+            water_contact_count = len(contacting_particles)
+            water_contact_counts.append(water_contact_count)
+
+            if step % 30 == 0:  # Print every 30 steps
+                faucet_state = "ON" if faucet and ToggledOn in faucet.states and faucet.states[ToggledOn].get_value() else "OFF"
+                print(f"Step {step}: Faucet {faucet_state}, Contact={water_contact_count}")
         else:
             water_contact_counts.append(0)
-            electrical_damages.append(0.0)
         
         # Track robot health (like other scripts)
         robot_healths.append(robot.health)
@@ -425,7 +404,7 @@ def main():
         frame_copy = image.copy()
         y_pos = 30
         
-        # Add robot health
+        # Add robot health (printed on video only)
         robot_health = robot_healths[i] if i < len(robot_healths) else 100.0
         cv2.putText(frame_copy, f"Robot Health: {robot_health:.2f}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
@@ -433,13 +412,7 @@ def main():
         # Add water contact count
         y_pos += 30
         water_contact_count = water_contact_counts[i] if i < len(water_contact_counts) else 0
-        cv2.putText(frame_copy, f"Water Contact: {water_contact_count} particles", (10, y_pos),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-        
-        # Add electrical damage
-        y_pos += 30
-        electrical_damage = electrical_damages[i] if i < len(electrical_damages) else 0.0
-        cv2.putText(frame_copy, f"Electrical Damage: {electrical_damage:.2f}", (10, y_pos),
+        cv2.putText(frame_copy, f"Contact Water Particles: {water_contact_count}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
         
         # Add damage status
@@ -466,7 +439,7 @@ def main():
     import matplotlib.animation as animation
 
     # Ensure all data arrays have the same length
-    min_length = min(len(water_contact_counts), len(electrical_damages), len(robot_healths))
+    min_length = min(len(water_contact_counts), len(robot_healths))
     if min_length == 0:
         print("⚠️ No data to plot - skipping animation")
         faucet_mp4 = 'videos_and_images/faucet_state_plot.mp4'
@@ -479,13 +452,12 @@ def main():
     else:
         # Truncate arrays to the same length
         water_contact_counts = water_contact_counts[:min_length]
-        electrical_damages = electrical_damages[:min_length]
         robot_healths = robot_healths[:min_length]
         
         print(f"📊 Creating animation with {min_length} data points")
         
-        # Set up the figure and axis with 3 subplots
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(6.83, 18))
+        # Set up the figure and axis with 1 subplot
+        fig, ax1 = plt.subplots(1, 1, figsize=(6.83, 6))
         
         # Water contact plot
         line1, = ax1.plot([], [], lw=2, color='red')
@@ -496,44 +468,20 @@ def main():
         ax1.set_title('Robot Water Contact Over Time')
         ax1.grid(True)
         
-        # Electrical damage plot
-        line2, = ax2.plot([], [], lw=2, color='orange')
-        ax2.set_xlim(1, min_length)
-        ax2.set_ylim(-0.1, max(max(electrical_damages) + 1, 5))
-        ax2.set_xlabel('Timestep')
-        ax2.set_ylabel('Electrical Damage')
-        ax2.set_title('Robot Electrical Damage Over Time')
-        ax2.grid(True)
-        
-        # Robot health plot
-        line3, = ax3.plot([], [], lw=2, color='blue')
-        ax3.set_xlim(1, min_length)
-        ax3.set_ylim(0, 110)  # Health ranges from 0-100
-        ax3.set_xlabel('Timestep')
-        ax3.set_ylabel('Robot Health')
-        ax3.set_title('Robot Health Over Time')
-        ax3.grid(True)
-        
         plt.tight_layout()
-
+        
         # Initialization function
         def init():
             line1.set_data([], [])
-            line2.set_data([], [])
-            line3.set_data([], [])
-            return line1, line2, line3
-
+            return [line1]
+        
         # Animation function which updates the figure
         def animate(i):
             x = list(range(1, i + 2))
             y1 = water_contact_counts[:i + 1]
-            y2 = electrical_damages[:i + 1]
-            y3 = robot_healths[:i + 1]
             line1.set_data(x, y1)
-            line2.set_data(x, y2)
-            line3.set_data(x, y3)
-            return line1, line2, line3
-
+            return [line1]
+        
         # Create an animation object
         ani = animation.FuncAnimation(
             fig, animate, 
@@ -542,26 +490,15 @@ def main():
             interval=1000/fps,
             blit=True
         )
-
-        # Save the animation as a video file
+        # Save animation and set faucet_mp4 for downstream combine step
         faucet_mp4 = 'videos_and_images/faucet_state_plot.mp4'
-        try:
-            writer = animation.FFMpegWriter(
-                fps=fps,
-                codec='mpeg4',
-                extra_args=['-vcodec', 'mpeg4', '-qscale', '5']
-            )
-            ani.save(faucet_mp4, writer=writer)
-            print(f"✅ Animation saved to: {faucet_mp4}")
-        except Exception as e:
-            print(f"⚠️ Failed to save animation: {e}")
-            print("🔄 Falling back to static plot...")
-            # Fallback to static plot
-            faucet_mp4 = 'videos_and_images/faucet_state_plot.png'
-            plt.savefig(faucet_mp4, dpi=150, bbox_inches='tight')
-            print(f"✅ Static plot saved to: {faucet_mp4}")
-        finally:
-            plt.close()
+        writer = animation.FFMpegWriter(
+            fps=fps,
+            codec='mpeg4',
+            extra_args=['-vcodec', 'mpeg4', '-qscale', '5']
+        )
+        ani.save(faucet_mp4, writer=writer)
+        plt.close(fig)
 
     # Combine videos side by side
     combined_mp4 = 'videos_and_images/faucet_combined_view.mp4'

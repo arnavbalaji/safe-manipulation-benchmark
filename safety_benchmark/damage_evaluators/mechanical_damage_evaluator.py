@@ -43,6 +43,16 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                 # Get both impulse and normal forces from contacts
                 contact_forces = th.tensor([c.impulse.tolist() for c in contacts])
                 contact_normals = th.tensor([c.normal.tolist() for c in contacts])
+                # Debug: break if any component is negative to test directionality
+                # if (contact_forces < 0).any().item() or (contact_normals < 0).any().item():
+                #     min_imp = contact_forces.min().item()
+                #     min_norm = contact_normals.min().item()
+                #     neg_impulse_vals = contact_forces[contact_forces < 0].tolist()
+                #     neg_normal_vals = contact_normals[contact_normals < 0].tolist()
+                #     print(f"[MechanicalDamageEvaluator] Negative component detected on link '{link_name}': min_impulse={min_imp:.6f}, min_normal={min_norm:.6f}")
+                #     print(f"    neg_impulse_components={neg_impulse_vals}")
+                #     print(f"    neg_normal_components={neg_normal_vals}")
+                #     breakpoint()
                 
                 # Calculate current impulse and normal forces
                 impulse_force = th.norm(th.sum(contact_forces, dim=0)).item()

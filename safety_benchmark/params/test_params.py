@@ -55,12 +55,20 @@ PARAMS = {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 100.0,
-            "scale": 0.1,
+            "damage_threshold": 40.0,
+            "scale": 0.001,
+        }
+    },
+    "pan": {
+        "damage_evaluators": ["thermal"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "thermal": {
+            "damage_threshold": 70.0,
+            "scale": 0.0001,
         }
     },
     "tiago_robot": {
-        "damage_evaluators": ["mechanical"],
+        "damage_evaluators": ["mechanical", "electrical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
             "damage_threshold": 0.0,
@@ -85,8 +93,8 @@ PARAMS = {
             }
         },
         "electrical": {
-            "damage_threshold": 1.0,  # Minimum particles to cause damage
-            "scale": 1.0,  # Damage amount when threshold is exceeded
+            "damage_threshold": 0.0,  # Minimum particles to cause damage
+            "scale": 0.001,  # Damage amount when threshold is exceeded
             "water_system_name": "sludge",
             "proximity_threshold": 1.0,  # 2cm proximity for manual detection
         }
