@@ -7,8 +7,10 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "damage_threshold": 2.0,
-            "scale": 8.0,  # Increased scale for more aggressive damage
+            "impact_threshold": 1.0,
+            "impact_scale": 10.0,  # Increased scale for more aggressive damage
+            "crushing_threshold": 2.5,
+            "crushing_scale": 10.0,
             # "material_properties": {
             #     "fragility": 10.0,  # Very fragile (glass)
             #     "elasticity": 0.05,  # Very low bounce (glass doesn't bounce much)
@@ -23,8 +25,10 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [80.0, 50.0, 10.0],
         "mechanical": {
-            "damage_threshold": 1.0,
-            "scale": 0.001,
+            "impact_threshold": 0.015,
+            "impact_scale": 0.1,
+            "crushing_threshold": 2.0,
+            "crushing_scale": 10.0,
             # "material_properties": {
             #     "fragility": 0.5,  # Baseballs are somewhat durable
             #     "elasticity": 0.8,  # High bounce
@@ -39,8 +43,8 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "damage_threshold": 0.5,
-            "scale": 0.1,
+            "impact_threshold": 0.5,
+            "impact_scale": 0.1,
             # "material_properties": {
             #     "fragility": 0.2,  # Tables are very durable
             #     "elasticity": 0.1,  # Low bounce (wood doesn't bounce)
@@ -55,7 +59,7 @@ PARAMS = {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 40.0,
+            "damage_threshold": 60.0,
             "scale": 0.001,
         }
     },
@@ -63,7 +67,7 @@ PARAMS = {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 70.0,
+            "damage_threshold": 100.0,
             "scale": 0.0001,
         }
     },
@@ -71,24 +75,24 @@ PARAMS = {
         "damage_evaluators": ["mechanical", "electrical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "damage_threshold": 0.0,
-            "scale": 1.0,
+            "impact_threshold": 30.0,
+            "impact_scale": 0.1,
             "link_thresholds": {
                 "arm": {
-                    "damage_threshold": 1.0,
-                    "scale": 0.1,
+                    "crushing_threshold": 1.0,
+                    "crushing_scale": 0.01,
                 },
                 "base": {
-                    "damage_threshold": 8.0,
-                    "scale": 0.01,
+                    "crushing_threshold": 8.0,
+                    "crushing_scale": 0.001,
                 },
                 "wheel": {
-                    "damage_threshold": 5.0,
-                    "scale": 0.01,
+                    "crushing_threshold": 5.0,
+                    "crushing_scale": 0.001,
                 },
                 "gripper": {
-                    "damage_threshold": 0.75,
-                    "scale": 0.1,
+                    "crushing_threshold": 0.75,
+                    "crushing_scale": 0.01,
                 }
             }
         },
@@ -99,12 +103,22 @@ PARAMS = {
             "proximity_threshold": 1.0,  # 2cm proximity for manual detection
         }
     },
+    "drawer": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "impact_threshold": 10.0,
+            "impact_scale": 0.1,
+            "crushing_threshold": 1.0,
+            "crushing_scale": 0.01,
+        }
+    },
     "default": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "damage_threshold": 0.0,
-            "scale": 1.0,
+            "impact_threshold": 0.0,
+            "impact_scale": 1.0,
             # "material_properties": {
             #     "fragility": 1.0,  # Default fragility
             #     "elasticity": 0.3,  # Default elasticity

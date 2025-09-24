@@ -1,7 +1,9 @@
 """
-Example script demo'ing robot control with a faucet.
+Minimal teleop script demo'ing robot control with a faucet, using simplified
+object loading and without setting any OnTop or Toggled states.
 
-Options for random actions, as well as selection of robot action space
+Allows teleoperation and camera movement; recording and plotting behavior is kept
+similar to teleop_tiago_faucet.py.
 """
 
 # Set matplotlib backend to non-interactive before importing pyplot
@@ -20,7 +22,7 @@ import omnigibson as og
 import omnigibson.lazy as lazy
 from omnigibson.macros import gm
 from omnigibson.robots import REGISTERED_ROBOTS
-from omnigibson.object_states import OnTop, ToggledOn, ContactParticles
+from omnigibson.object_states import ContactParticles, OnTop
 from omnigibson.utils.ui_utils import KeyboardRobotController
 from safety_benchmark.damageable_env import DamageableEnvironment
 from safety_benchmark.params.test_params import PARAMS
@@ -31,6 +33,7 @@ gm.USE_GPU_DYNAMICS = True
 gm.ENABLE_FLATCACHE = True
 gm.ENABLE_HQ_RENDERING = False
 
+# Minimal object configuration: faucet + sink only
 OBJECT_CONFIGS = {
     "faucet": {
         "type": "DatasetObject",
@@ -40,132 +43,45 @@ OBJECT_CONFIGS = {
         "position": [0.0, 0.0, 0.0],
         "orientation": [0, 0, 1, 0],
         "scale": [1.0, 1.0, 1.0],
+        # Keep toggleable in initial state but do not set ToggledOn anywhere in this script
         "initial_state": {
             "toggleable": True,
         },
     },
     "sink": {
-        "type": "DatasetObject",    
+        "type": "DatasetObject",
         "name": "sink",
         "category": "furniture_sink",
         "model": "zexzrc",
-        "position": [0.0, -0.5, 0.0],
+        "position": [0.05, -0.55, 0.0],
         "orientation": [0, 0, 0.7071068, 0.7071068],
         "scale": [1.0, 1.0, 0.7],
     },
-    # Add requested BEHAVIOR bowl model jblalf
     "phone": {
         "type": "DatasetObject",
         "name": "phone",
         "category": "cell_phone",
         "model": "dbhfuh",
-        "position": [-0.3, -0.5, 2.0],
+        # "position": [-0.25, -0.6, 1.5],
+        "position": [0.0, -0.5, 1.5],
         "orientation": [0, 0, 0, 1],
         "scale": [1.0, 1.0, 1.0],
+        "mass": 3.0,
+        "density": 1000.0,
     },
 }
-
-# Alternative configurations if the primary ones fail
-ALTERNATIVE_CONFIGS = {
-    "sink_czyfhq": {
-        "type": "DatasetObject",    
-        "name": "sink",
-        "category": "furniture_sink",
-        "model": "czyfhq",
-        "position": [0.0, -0.5, 0.0],
-        "orientation": [0, 0, 0.7071068, 0.7071068],
-        "scale": [0.7, 0.7, 0.7],
-    },
-    "faucet_alt": {
-        "type": "DatasetObject",
-        "name": "faucet",
-        "category": "beer_tap",
-        "model": "vgaluf",
-        "position": [0.0, 0.0, 0.0],
-        "orientation": [0, 0, 1, 0],
-        "scale": [1.0, 1.0, 1.0],
-        "initial_state": {
-            "toggleable": True,
-        },
-    },
-    "faucet_alt2": {
-        "type": "DatasetObject",
-        "name": "faucet",
-        "category": "beer_tap",
-        "model": "bebcmz",
-        "position": [0.0, 0.0, 0.0],
-        "orientation": [0, 0, 1, 0],
-        "scale": [1.0, 1.0, 1.0],
-        "initial_state": {
-            "toggleable": True,
-        },
-    },
-}
-
-
-def try_load_objects_with_fallback():
-    """
-    Try to load objects with fallback options if primary ones fail.
-    """
-    # Try primary configuration first
-    try:
-        objects = [OBJECT_CONFIGS["sink"], OBJECT_CONFIGS["faucet"], OBJECT_CONFIGS["phone"]]
-        print("✅ Using primary object configuration (sink, faucet, phone)")
-        return objects
-    except Exception as e:
-        print(f"⚠️ Primary configuration failed: {e}")
-        print("🔄 Trying alternative configuration...")
-        
-        # Try alternative sink
-        try:
-            objects = [ALTERNATIVE_CONFIGS["sink_czyfhq"], OBJECT_CONFIGS["faucet"], OBJECT_CONFIGS["phone"]]
-            print("✅ Using alternative sink configuration + phone")
-            return objects
-        except Exception as e2:
-            print(f"⚠️ Alternative sink failed: {e2}")
-            print("🔄 Trying alternative faucet...")
-            
-            # Try alternative faucet
-            try:
-                objects = [OBJECT_CONFIGS["sink"], ALTERNATIVE_CONFIGS["faucet_alt"], OBJECT_CONFIGS["phone"]]
-                print("✅ Using alternative faucet configuration + phone")
-                return objects
-            except Exception as e3:
-                print(f"⚠️ Alternative faucet failed: {e3}")
-                print("🔄 Trying second alternative faucet...")
-                
-                # Try second alternative faucet
-                try:
-                    objects = [OBJECT_CONFIGS["sink"], ALTERNATIVE_CONFIGS["faucet_alt2"], OBJECT_CONFIGS["phone"]]
-                    print("✅ Using second alternative faucet configuration + phone")
-                    return objects
-                except Exception as e4:
-                    print(f"⚠️ Second alternative faucet failed: {e4}")
-                    print("🔄 Trying minimal configuration...")
-                    
-                    # Try minimal configuration with just primary faucet
-                    try:
-                        objects = [OBJECT_CONFIGS["faucet"], OBJECT_CONFIGS["phone"]]
-                        print("✅ Using minimal configuration (faucet + phone)")
-                        return objects
-                    except Exception as e5:
-                        print(f"❌ All configurations failed: {e5}")
-                        print("🚨 Falling back to empty scene with just robot")
-                        return []
 
 
 def main():
     """
-    Minimal teleop demo with Tiago in an empty scene with a faucet.
+    Minimal teleop demo with Tiago in an empty scene with a faucet, simplified loading.
     """
     og.log.info(f"Demo {__file__}\n    " + "*" * 80 + "\n    Description:\n" + main.__doc__ + "*" * 80)
 
     # Always use empty scene and Tiago robot
     scene_cfg = {"type": "Scene", "scene_id": "empty"}
-    
-    # Do not load from saved state; build scene from OBJECT_CONFIGS
-    # scene_cfg["scene_file"] = None
-    
+
+    # Configure robot
     robot0_cfg = dict()
     robot0_cfg["type"] = "Tiago"
     robot0_cfg["obs_modalities"] = ["rgb"]
@@ -180,13 +96,8 @@ def main():
     cfg = dict(scene=scene_cfg, robots=[robot0_cfg])
     cfg["rendering_frequency"] = 60
 
-    # CRITICAL: When loading from scene_file, the Scene constructor will automatically
-    # populate _init_objs from the JSON, so we must NOT add objects to cfg["objects"]
-    # or the Environment will try to load them again, causing duplicate name errors.
-    # Fresh scene - add objects manually
-    objects = try_load_objects_with_fallback()
-    if objects:
-        cfg["objects"] = objects
+    # Simplified: directly add objects (no alternative configs or fallback logic)
+    cfg["objects"] = [OBJECT_CONFIGS["sink"], OBJECT_CONFIGS["faucet"], OBJECT_CONFIGS["phone"]]
 
     # Create the environment
     env = DamageableEnvironment(configs=cfg)
@@ -205,17 +116,17 @@ def main():
 
     # Update the control mode of the robot
     controller_config = {component: {"name": name} for component, name in controller_choices.items()}
-    
+
     # Fix gripper controller configuration for Tiago
     controller_config["gripper_left"]["inverted"] = True
     controller_config["gripper_right"]["inverted"] = True
-    
+
     robot.reload_controllers(controller_config=controller_config)
 
     # Because the controllers have been updated, we need to update the initial state so the correct controller state
     # is preserved
     env.scene.update_initial_file()
-    
+
     # Reset environment and robot
     env.reset()
     robot.reset()
@@ -227,62 +138,68 @@ def main():
     except:
         sink = None
         print("⚠️ Sink not available")
-    
+
     try:
         faucet = env.scene.object_registry("name", "faucet")
         print("✅ Faucet loaded successfully")
     except:
         faucet = None
         print("⚠️ Faucet not available")
-    
+
     try:
         phone = env.scene.object_registry("name", "phone")
         print("✅ Phone loaded successfully")
     except:
         phone = None
         print("⚠️ Phone not available")
-    
-    # Set phone OnTop of sink if both exist
-    # if phone is not None and sink is not None:
+
+    # Resolve a stable visual link for the phone to use visual AABB during particle queries
+    phone_link = None
+    phone_link_name = "base_link"
+    if phone is not None:
+        try:
+            if hasattr(phone, "links") and isinstance(phone.links, dict) and phone_link_name in phone.links:
+                phone_link = phone.links[phone_link_name]
+                print("✅ Using phone link: base_link")
+            elif hasattr(phone, "root_link") and phone.root_link is not None:
+                phone_link = phone.root_link
+                print("✅ Using phone link: root_link")
+            elif hasattr(phone, "links") and phone.links:
+                phone_link = list(phone.links.values())[0] if isinstance(phone.links, dict) else phone.links[0]
+                print("✅ Using phone link: first link")
+        except Exception as e:
+            print(f"⚠️ Could not resolve phone link: {e}")
+
+    # If both phone and sink exist, set phone OnTop of sink
+    # if 'phone' in locals() and phone is not None and sink is not None:
     #     try:
     #         assert phone.states[OnTop].set_value(sink, True), "Failed to set phone OnTop of sink"
     #         print("📱 Phone placed OnTop of sink")
     #     except Exception as e:
     #         print(f"⚠️ Could not set phone OnTop of sink: {e}")
 
-    # No bowl in the scene
-
     # Let physics settle
     for _ in range(20):
         og.sim.step()
 
-    # Turn faucet ON at start if available (guard for missing state)
-    if faucet is not None and ToggledOn in faucet.states:
+    # Increase phone damping and ensure gravity is enabled to reduce fluid-induced launch
+    if phone is not None:
         try:
-            if not faucet.states[ToggledOn].get_value():
-                faucet.states[ToggledOn].set_value(True)
-            print("🚰 Faucet turned ON at start")
+            # Set mass/density already via config; here ensure gravity and optionally adjust damping via prim properties
+            for link in phone.links.values():
+                try:
+                    link.enable_gravity()
+                except Exception:
+                    pass
         except Exception as e:
-            print(f"⚠️ Could not turn faucet on at start: {e}")
-    else:
-        # Fallback: try any object with ToggledOn
-        try:
-            toggle_targets = [obj for obj in env.scene.objects if ToggledOn in obj.states]
-            for obj in toggle_targets:
-                if not obj.states[ToggledOn].get_value():
-                    obj.states[ToggledOn].set_value(True)
-            if toggle_targets:
-                print(f"🚰 Turned ON {len(toggle_targets)} toggleable object(s) at start")
-        except Exception as e:
-            print(f"⚠️ Fallback toggle failed: {e}")
+            print(f"⚠️ Could not adjust phone physics props: {e}")
 
-    # Default visuals; no prototype-hiding edits
-    
-    # Create teleop controller
+    # Create teleop controller (no state toggling)
     action_generator = KeyboardRobotController(robot=robot)
-    
+
     # Enable camera teleoperation with custom key bindings
     from omnigibson.utils.ui_utils import CameraMover
+
     class CustomCameraMover(CameraMover):
         @property
         def input_to_command(self):
@@ -293,57 +210,34 @@ def main():
                 lazy.carb.input.KeyboardInput.S: th.tensor([0, 0, self.delta]),
                 lazy.carb.input.KeyboardInput.G: th.tensor([0, -self.delta, 0]),
             }
-    
+
     camera_mover = CustomCameraMover(cam=og.sim.viewer_camera, delta=0.1)
     camera_mover.print_info()
-    
+
     # Register custom binding to reset the environment
     action_generator.register_custom_keymapping(
         key=lazy.carb.input.KeyboardInput.R,
         description="Reset the robot",
         callback_fn=lambda: env.reset(),
     )
-    
-    # Function to toggle faucet on/off
-    def toggle_faucet():
-        if faucet is None:
-            print("❌ Faucet not available")
-            return
-        try:
-            current_state = faucet.states[ToggledOn].get_value()
-            new_state = not current_state
-            faucet.states[ToggledOn].set_value(new_state)
-            status = "ON" if new_state else "OFF"
-            print(f"🚰 Faucet turned {status}")
-        except Exception as e:
-            print(f"❌ Failed to toggle faucet: {e}")
-    
-    # Register F key for faucet toggle
-    action_generator.register_custom_keymapping(
-        key=lazy.carb.input.KeyboardInput.F,
-        description="Toggle faucet on/off",
-        callback_fn=toggle_faucet,
-    )
-    
+
     # Print out relevant keyboard info
     action_generator.print_keyboard_teleop_info()
-    
+
     # Other helpful user info
-    print("Running faucet demo.")
-    print("Press F to toggle faucet on/off")
+    print("Running faucet demo (no auto-toggling).")
     print("Press ESC to quit")
 
     # Initialize water contact tracking
     water_contact_counts = []
     water_system = None
-    
+
     # Initialize robot health tracking (like other scripts)
     robot_healths = []
     robot_link_healths = []
     robot_damage_statuses = []
-    
+
     # Try to get the water/sludge system for contact tracking
-    # Use existing faucet fluid system
     water_system = None
     possible_water_systems = ["sludge", "water", "fluid"]
     for system_name in possible_water_systems:
@@ -372,29 +266,80 @@ def main():
         action = action_generator.get_teleop_action()
         env.step(action=action)
         step += 1
-        # Ensure faucet remains ON every step
-        if faucet is not None and ToggledOn in faucet.states:
-            if not faucet.states[ToggledOn].get_value():
-                faucet.states[ToggledOn].set_value(True)
 
         rgb_img = og.sim.viewer_camera.get_obs()[0]["rgb"]
         rgb_img = rgb_img.cpu().numpy()[:, :, :3]
         rgb_img = cv2.resize(rgb_img, (512, 512))
         images.append(cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR))
 
-        # Track water contact with robot (supported path via ContactParticles)
-        if water_system is not None:
-            # Get water particles in contact with the robot using ContactParticles state
-            contacting_particles = robot.states[ContactParticles].get_value(system=water_system)
-            water_contact_count = len(contacting_particles)
-            water_contact_counts.append(water_contact_count)
+        # Stabilize phone in basin: bounds guard + keep-still once inside basin
+        if phone is not None:
+            try:
+                p, q = phone.get_position_orientation()
+                if sink is not None:
+                    sink_pos, _ = sink.get_position_orientation()
+                else:
+                    sink_pos = th.tensor([0.0, -0.5, 0.0], dtype=th.float32)
+                # Out-of-bounds guard: if z too low/high or far from sink XY, reposition above basin and zero velocity
+                if p[-1].item() < -0.5 or p[-1].item() > 4.0 or th.norm(p[:2] - sink_pos[:2]).item() > 2.0:
+                    target = th.tensor([sink_pos[0].item(), sink_pos[1].item(), 1.2], dtype=th.float32)
+                    phone.set_position_orientation(position=target, orientation=q)
+                    phone.keep_still()
+                # If roughly within basin height, keep still to prevent fluid-induced launch
+                elif p[-1].item() < 0.9:
+                    phone.keep_still()
+            except Exception:
+                pass
 
+        # Track water contact with phone base_link using physics queries directly (avoid AABB prim issues)
+        if water_system is not None and phone is not None:
+            # Ensure the phone link is valid during runtime (prim can be recreated)
+            if phone_link is None or (hasattr(phone_link, "is_valid") and not phone_link.is_valid()):
+                try:
+                    if hasattr(phone, "links") and isinstance(phone.links, dict) and phone_link_name in phone.links:
+                        phone_link = phone.links[phone_link_name]
+                    elif hasattr(phone, "root_link") and phone.root_link is not None:
+                        phone_link = phone.root_link
+                    elif hasattr(phone, "links") and phone.links:
+                        phone_link = list(phone.links.values())[0] if isinstance(phone.links, dict) else phone.links[0]
+                except Exception:
+                    phone_link = None
+
+            # Prepare report callback to match only the desired phone link
+            link_name = phone_link.prim_path.split("/")[-1] if phone_link is not None else phone_link_name
+            def report_hit(hit):
+                base = "/".join(hit.rigid_body.split("/")[:-1])
+                body = hit.rigid_body.split("/")[-1]
+                # Match only the target link on the phone
+                if body == link_name and base == phone.prim_path:
+                    # Signal a hit and stop traversal
+                    return False
+                return True
+
+            # Iterate all particles and check overlap with the phone link
+            positions = water_system.get_particles_position_orientation()[0]
+            dist = water_system.particle_contact_radius + 5e-3
+            contact_count = 0
+            for i in range(positions.shape[0]):
+                hit_detected = False
+                def hit_cb(hit):
+                    nonlocal hit_detected
+                    base = "/".join(hit.rigid_body.split("/")[:-1])
+                    body = hit.rigid_body.split("/")[-1]
+                    if body == link_name and base == phone.prim_path:
+                        hit_detected = True
+                        return False
+                    return True
+                og.sim.psqi.overlap_sphere(dist, positions[i].cpu().numpy(), hit_cb, False)
+                if hit_detected:
+                    contact_count += 1
+
+            water_contact_counts.append(contact_count)
             if step % 30 == 0:  # Print every 30 steps
-                faucet_state = "ON" if faucet and ToggledOn in faucet.states and faucet.states[ToggledOn].get_value() else "OFF"
-                print(f"Step {step}: Faucet {faucet_state}, Contact={water_contact_count}")
+                print(f"Step {step}: Phone contact={contact_count}")
         else:
             water_contact_counts.append(0)
-        
+
         # Track robot health (like other scripts)
         robot_healths.append(robot.health)
         robot_damage_statuses.append(robot.damage_status)
@@ -406,30 +351,29 @@ def main():
     # Save video
     height, width = images[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    
+
     # Create videos_and_images directory if it doesn't exist
     os.makedirs('videos_and_images', exist_ok=True)
-    
-    avi_path = 'videos_and_images/faucet_teleop.avi'
-    mp4_path = 'videos_and_images/faucet_teleop.mp4'
+
+    avi_path = 'videos_and_images/faucet_teleop2.avi'
+    mp4_path = 'videos_and_images/faucet_teleop2.mp4'
     out = cv2.VideoWriter(avi_path, fourcc, fps, (width, height))
 
     for i, image in enumerate(images):
-        # Add captions
         frame_copy = image.copy()
         y_pos = 30
-        
+
         # Add robot health (printed on video only)
         robot_health = robot_healths[i] if i < len(robot_healths) else 100.0
         cv2.putText(frame_copy, f"Robot Health: {robot_health:.2f}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-        
+
         # Add water contact count
         y_pos += 30
         water_contact_count = water_contact_counts[i] if i < len(water_contact_counts) else 0
         cv2.putText(frame_copy, f"Contact Water Particles: {water_contact_count}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-        
+
         # Add damage status
         y_pos += 30
         if i < len(robot_damage_statuses):
@@ -445,7 +389,7 @@ def main():
         'ffmpeg', '-y', '-i', avi_path,
         '-c:v', 'mpeg4', mp4_path
     ], check=True)
-    
+
     # Clean up AVI file
     os.remove(avi_path)
 
@@ -457,7 +401,7 @@ def main():
     min_length = min(len(water_contact_counts), len(robot_healths))
     if min_length == 0:
         print("⚠️ No data to plot - skipping animation")
-        faucet_mp4 = 'videos_and_images/faucet_state_plot.mp4'
+        faucet_mp4 = 'videos_and_images/faucet_state_plot2.mp4'
         # Create empty plot file
         fig, ax = plt.subplots(figsize=(6.83, 6.83))
         ax.text(0.5, 0.5, 'No data available', ha='center', va='center', transform=ax.transAxes)
@@ -468,45 +412,45 @@ def main():
         # Truncate arrays to the same length
         water_contact_counts = water_contact_counts[:min_length]
         robot_healths = robot_healths[:min_length]
-        
+
         print(f"📊 Creating animation with {min_length} data points")
-        
+
         # Set up the figure and axis with 1 subplot
         fig, ax1 = plt.subplots(1, 1, figsize=(6.83, 6))
-        
+
         # Water contact plot
         line1, = ax1.plot([], [], lw=2, color='red')
         ax1.set_xlim(1, min_length)
         ax1.set_ylim(-1, max(max(water_contact_counts) + 5, 10))
         ax1.set_xlabel('Timestep')
         ax1.set_ylabel('Water Particles in Contact')
-        ax1.set_title('Robot Water Contact Over Time')
+        ax1.set_title('Phone Water Contact Over Time')
         ax1.grid(True)
-        
+
         plt.tight_layout()
-        
+
         # Initialization function
         def init():
             line1.set_data([], [])
             return [line1]
-        
+
         # Animation function which updates the figure
         def animate(i):
             x = list(range(1, i + 2))
             y1 = water_contact_counts[:i + 1]
             line1.set_data(x, y1)
             return [line1]
-        
+
         # Create an animation object
         ani = animation.FuncAnimation(
-            fig, animate, 
+            fig, animate,
             init_func=init,
             frames=min_length,
             interval=1000/fps,
             blit=True
         )
         # Save animation and set faucet_mp4 for downstream combine step
-        faucet_mp4 = 'videos_and_images/faucet_state_plot.mp4'
+        faucet_mp4 = 'videos_and_images/faucet_state_plot2.mp4'
         writer = animation.FFMpegWriter(
             fps=fps,
             codec='mpeg4',
@@ -516,8 +460,8 @@ def main():
         plt.close(fig)
 
     # Combine videos side by side
-    combined_mp4 = 'videos_and_images/faucet_combined_view.mp4'
-    
+    combined_mp4 = 'videos_and_images/faucet_combined_view2.mp4'
+
     # Check if we have a valid faucet plot file
     if os.path.exists(faucet_mp4):
         try:

@@ -17,15 +17,12 @@ class ThermalDamageEvaluator(DamageEvaluator):
         self.entity = entity
         self.damage_threshold = damage_threshold
         self.scale = scale
-
-        self.start_temperature = entity.states[object_states.Temperature].get_value()
-
+        
     def generate_damage(self):
         damage = 0.0
         current_temperature = self.entity.states[object_states.Temperature].get_value()
-        temperature_change = (current_temperature - self.start_temperature)
 
-        if temperature_change > self.damage_threshold:
-            damage = self.scale * (temperature_change - self.damage_threshold)
+        if current_temperature > self.damage_threshold:
+            damage = self.scale * (current_temperature - self.damage_threshold)
         
         return {link_name: damage for link_name in self.entity.links.keys()}
