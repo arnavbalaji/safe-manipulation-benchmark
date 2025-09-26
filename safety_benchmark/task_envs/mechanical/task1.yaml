@@ -1,0 +1,66 @@
+scene:
+  type: Scene
+
+robots:
+  - type: Tiago
+    obs_modalities:
+      - rgb
+    action_type: continuous
+    action_normalize: true
+    grasping_mode: assisted
+    # Optional initial pose; can be adjusted during teleop
+    position: [0.0, 0.75, 0.0]
+    orientation: [0, 0, -0.7071068, 0.7071068]
+
+objects:
+  - type: DatasetObject
+    name: commercial_kitchen_sink
+    category: commercial_kitchen_sink
+    model: xecfyh
+    # Place in front of the robot: keep x aligned, set y < robot y
+    position: [0.0, 0.0, 0.0]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 1.0, 0.6]
+  - type: DatasetObject
+    name: dish_rack
+    category: dish_rack
+    model: kxuutl
+    # Initial pose will be overwritten by OnTop placement
+    position: [-0.3, -0.05, 0.2]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 0.7, 0.7]
+  - type: DatasetObject
+    name: plate
+    category: plate
+    model: ntedfx
+    # Initial pose; final will be set OnTop of dish_rack or removed in script
+    position: [-0.15, -0.05, 0.4]
+    orientation: [0, 0, 0, 1]
+    scale: [0.6, 0.6, 0.6]
+  - type: DatasetObject
+    name: mug
+    category: mug
+    model: ycbmug
+    # Place inside the sink basin: larger +X than rack
+    position: [0.35, 0.0, 0.1]
+    orientation: [0, 0, 0, 1]
+    scale: [1.0, 1.0, 1.0]
+  - type: DatasetObject
+    name: mug_ppzttc
+    category: mug
+    model: ppzttc
+    # Offset in +Y to give space from the first mug
+    position: [0.35, 0.12, 0.1]
+    orientation: [0, 0, 0, 1]
+    scale: [1.0, 1.0, 1.0]
+  - type: DatasetObject
+    name: mug_ntgftr
+    category: mug
+    model: ntgftr
+    # Another mug in the sink with some spacing
+    position: [0.42, -0.08, 0.1]
+    orientation: [0, 0, 0, 1]
+    scale: [1.0, 1.0, 1.0]
+
+# Optional rendering frequency for smoother visuals
+rendering_frequency: 60 

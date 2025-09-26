@@ -4,7 +4,5 @@ Version: 0.1.0
 Summary: Safe Manipulation Benchmark for Robot Learning
 Author: 
 Requires-Python: >=3.7
-Requires-Dist: numpy
-Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
