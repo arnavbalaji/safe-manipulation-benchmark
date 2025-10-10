@@ -4,3 +4,5 @@
 __pycache__/
 *.py[cod]
 *$py.class
+/unit_tests/videos/
+safety_benchmark/task_envs/mechanical/task1_videos/
