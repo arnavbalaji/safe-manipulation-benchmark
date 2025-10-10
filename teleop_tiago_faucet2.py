@@ -47,6 +47,22 @@ OBJECT_CONFIGS = {
         "initial_state": {
             "toggleable": True,
         },
+        # Add explicit particle source configuration with slower speed
+        "abilities": {
+            "particleSource": {
+                "conditions": {
+                    "water": [
+                        ("TOGGLEDON", True)  # Must be toggled on for water source to be active
+                    ]
+                },
+                "initial_speed": 0.5  # Slower water flow speed
+            },
+            "particleSink": {
+                "conditions": {
+                    "water": []  # No conditions, always sinking nearby particles
+                }
+            }
+        },
     },
     "sink": {
         "type": "DatasetObject",
@@ -221,11 +237,44 @@ def main():
         callback_fn=lambda: env.reset(),
     )
 
+    # Register faucet toggle key (Q)
+    def toggle_faucet():
+        if faucet is not None and hasattr(faucet, 'states'):
+            from omnigibson.object_states import ToggledOn
+            if ToggledOn in faucet.states:
+                current_state = faucet.states[ToggledOn].get_value()
+                new_state = not current_state
+                try:
+                    faucet.states[ToggledOn].set_value(new_state)
+                    status = "ON" if new_state else "OFF"
+                    print(f"🚰 Faucet turned {status}")
+                    
+                    # Check if water system is available and report particle count
+                    if water_system is not None:
+                        particle_count = water_system.n_particles
+                        print(f"💧 Water particles in system: {particle_count}")
+                    else:
+                        print("⚠️ No water system detected - water may not flow")
+                        
+                except Exception as e:
+                    print(f"⚠️ Failed to toggle faucet: {e}")
+            else:
+                print("⚠️ Faucet does not have ToggledOn state")
+        else:
+            print("⚠️ Faucet not available for toggling")
+
+    action_generator.register_custom_keymapping(
+        key=lazy.carb.input.KeyboardInput.Q,
+        description="Toggle faucet on/off",
+        callback_fn=toggle_faucet,
+    )
+
     # Print out relevant keyboard info
     action_generator.print_keyboard_teleop_info()
 
     # Other helpful user info
     print("Running faucet demo (no auto-toggling).")
+    print("🚰 Press 'Q' to toggle the faucet on/off")
     print("Press ESC to quit")
 
     # Initialize water contact tracking

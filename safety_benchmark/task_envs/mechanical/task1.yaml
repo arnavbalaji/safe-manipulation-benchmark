@@ -1,6 +1,9 @@
 scene:
   type: Scene
 
+# Environment configuration
+initial_pos_z_offset: 0.0
+
 robots:
   - type: Tiago
     obs_modalities:
@@ -9,7 +12,7 @@ robots:
     action_normalize: true
     grasping_mode: assisted
     # Optional initial pose; can be adjusted during teleop
-    position: [0.0, 0.75, 0.0]
+    position: [0.0, 2.0, 0.0]
     orientation: [0, 0, -0.7071068, 0.7071068]
 
 objects:
@@ -21,6 +24,7 @@ objects:
     position: [0.0, 0.0, 0.0]
     orientation: [0, 0, 0.7071068, 0.7071068]
     scale: [1.0, 1.0, 0.6]
+
   - type: DatasetObject
     name: dish_rack
     category: dish_rack
@@ -29,14 +33,16 @@ objects:
     position: [-0.3, -0.05, 0.2]
     orientation: [0, 0, 0.7071068, 0.7071068]
     scale: [1.0, 0.7, 0.7]
-  - type: DatasetObject
-    name: plate
-    category: plate
-    model: ntedfx
-    # Initial pose; final will be set OnTop of dish_rack or removed in script
-    position: [-0.15, -0.05, 0.4]
-    orientation: [0, 0, 0, 1]
-    scale: [0.6, 0.6, 0.6]
+
+  # - type: DatasetObject
+  #   name: plate
+  #   category: plate
+  #   model: ntedfx
+  #   # Initial pose; final will be set OnTop of dish_rack or removed in script
+  #   position: [-0.3, -0.05, 0.8]
+  #   orientation: [0, 0, 0, 1]
+  #   scale: [0.6, 0.6, 0.6]
+
   - type: DatasetObject
     name: mug
     category: mug
@@ -45,6 +51,7 @@ objects:
     position: [0.35, 0.0, 0.1]
     orientation: [0, 0, 0, 1]
     scale: [1.0, 1.0, 1.0]
+
   - type: DatasetObject
     name: mug_ppzttc
     category: mug
@@ -53,14 +60,42 @@ objects:
     position: [0.35, 0.12, 0.1]
     orientation: [0, 0, 0, 1]
     scale: [1.0, 1.0, 1.0]
+
   - type: DatasetObject
-    name: mug_ntgftr
+    name: mug_ntgftr_1
     category: mug
     model: ntgftr
-    # Another mug in the sink with some spacing
-    position: [0.42, -0.08, 0.1]
+    # Spaced from other mugs
+    position: [0.1, 0.05, 0.1]
     orientation: [0, 0, 0, 1]
     scale: [1.0, 1.0, 1.0]
+
+  - type: DatasetObject
+    name: mug_ntgftr_2
+    category: mug
+    model: ntgftr
+    # Spaced from other mugs
+    position: [0.18, 0.12, 0.1]
+    orientation: [0, 0, 0, 1]
+    scale: [1.0, 1.0, 1.0]
+  
+  - type: DatasetObject
+    name: mug_ntgftr_3
+    category: mug
+    model: ntgftr
+    # Spaced from other mugs
+    position: [-0.15, 0.27, 0.8]
+    orientation: [0, 0, 0, 1]
+    scale: [1.0, 1.0, 1.0]
+
+  - type: DatasetObject
+    name: box_of_crackers
+    category: box_of_crackers
+    model: cmdigf
+    # Initial pose near counter; will be snapped OnTop of sink/counter in script
+    position: [-0.4, 0.25, 0.8]
+    orientation: [0, 0, 0, 1]
+    scale: [0.6, 0.6, 0.6]
 
 # Optional rendering frequency for smoother visuals
 rendering_frequency: 60 

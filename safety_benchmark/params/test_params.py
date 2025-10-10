@@ -7,18 +7,30 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 1.0,
-            "impact_scale": 10.0,  # Increased scale for more aggressive damage
-            "crushing_threshold": 2.5,
-            "crushing_scale": 10.0,
-            # "material_properties": {
-            #     "fragility": 10.0,  # Very fragile (glass)
-            #     "elasticity": 0.05,  # Very low bounce (glass doesn't bounce much)
-            #     "density": 2500.0,  # Glass density 
-            #     "contact_threshold": 0.02,  # Very sensitive to impacts
-            #     "energy_threshold": 0.001,  # Very low energy threshold for glass
-            #     "velocity_threshold": 0.05,  # Min velocity change to consider as impact (m/s)
-            # }
+            "impact_threshold": 1.5,
+            "impact_scale": 40.0,  # Increased scale for more aggressive damage
+            "crushing_threshold": 1000.0,
+            "crushing_scale": 0.0,
+        }
+    },
+    "mug": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "impact_threshold": 4.0,
+            "impact_scale": 30.0,  # Increased scale for more aggressive damage
+            "crushing_threshold": 4.0,
+            "crushing_scale": 30.0,
+        }
+    },
+    "box_of_crackers": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "impact_threshold": 6.0,
+            "impact_scale": 1.0,
+            "crushing_threshold": 10.0,
+            "crushing_scale": 5.0,
         }
     },
     "baseball": {
@@ -29,14 +41,6 @@ PARAMS = {
             "impact_scale": 0.1,
             "crushing_threshold": 2.0,
             "crushing_scale": 10.0,
-            # "material_properties": {
-            #     "fragility": 0.5,  # Baseballs are somewhat durable
-            #     "elasticity": 0.8,  # High bounce
-            #     "density": 800.0,  # Leather/rubber density
-            #     "contact_threshold": 0.2,  # Less sensitive to small impacts
-            #     "energy_threshold": 0.02,  # Higher energy threshold
-            #     "velocity_threshold": 0.05,  # Min velocity change to consider as impact (m/s)
-            # }
         }
     },
     "coffee_table": {
