@@ -1,11 +1,4 @@
 from omnigibson.envs.env_base import Environment
-# from omnigibson.objects.dataset_object import DatasetObject
-# from omnigibson.objects.primitive_object import PrimitiveObject
-# from omnigibson.objects.usd_object import USDObject
-# from omnigibson.objects.controllable_object import ControllableObject
-# from omnigibson.objects.light_object import LightObject
-# from omnigibson.objects.stateful_object import StatefulObject
-# from omnigibson.robots.franka import FrankaPanda
 from safety_benchmark.damageable_mixin import (
     DamageableDatasetObject,
     DamageablePrimitiveObject,
@@ -76,12 +69,14 @@ class DamageableEnvironment(Environment):
     '''
     OmniGibson environment wrapper to support damageable objects and robots
     '''
-    def __init__(self, configs, in_vec_env=False, debug_physics_frequency=False):
+    def __init__(self, configs, in_vec_env=False, debug_physics_frequency=False, reward_fn=None):
         # Initialize the damageable environment
         super().__init__(configs, in_vec_env)
         self.damage_evaluators_initialized = False
         self._debug_physics_frequency = debug_physics_frequency
-
+        self._reward_fn = reward_fn
+        self.lock_health = False
+        
     def load(self):
         # Load scene, objects, and robots
         # TODO: Need to add support for scenes
@@ -182,11 +177,16 @@ class DamageableEnvironment(Environment):
             obj.set_position_orientation(position=position, orientation=orientation, frame="scene")
 
         assert og.sim.is_stopped(), "Simulator must be stopped after loading objects!"
+    
+    def lock_health_changes(self):
+        self.lock_health = True
+
+    def unlock_health_changes(self):
+        self.lock_health = False
 
     def step(self, action, n_render_iterations=1):
         """
         Apply robot's action and return the next state, reward, done and info,
-        following OpenAI Gym's convention but with TRUE physics-frequency damage evaluation
         
         Args:
             action (gym.spaces.Dict or dict or th.tensor): robot actions. If a dict is specified, each entry should
@@ -202,46 +202,68 @@ class DamageableEnvironment(Environment):
                 - bool: truncated, i.e. whether this episode ended due to a time limit etc.
                 - dict: info, i.e. dictionary with any useful information
         """
-        # Initialize damage evaluators if this is the first env step
+        # # Initialize damage evaluators if this is the first env step
         if not self.damage_evaluators_initialized:
             for obj in self.scene.objects:
                 if hasattr(obj, "_initialize_damage_evaluators"):
                     obj._initialize_damage_evaluators()
             self.damage_evaluators_initialized = True
-
-        # Pre-processing before stepping simulation
-        if hasattr(self, '_pre_step'):
-            self._pre_step(action)
-
-        # 🎯 NEW: Run physics simulation with TRUE physics-frequency damage evaluation!
-        self._run_physics_with_damage_evaluation()
         
-        # Aggregate forces for user-friendly display (one value per env step)
-        self._aggregate_forces_for_env_step()
-        
-        # Get observations, rewards, etc.
-        obs, reward, terminated, truncated, info = self._post_step(action)
-        
-        # Combine terminated and truncated into done for backward compatibility
-        done = terminated or truncated
-
-        # Render any additional times requested
-        for _ in range(n_render_iterations - 1):
-            og.sim.render()
-
-        # Run final post-processing
-        if hasattr(self, '_post_step'):
-            return self._post_step(action)
-        else:
-            # Fallback to original behavior if _post_step doesn't exist
-            obs, reward, terminated, truncated, info = super().step(action)
-            
-            # Update health of all damageable objects
+        obs, reward, terminated, truncated, info = super().step(action, n_render_iterations)
+        obj_health_states = {}
+        if not self.lock_health:
             for obj in self.scene.objects:
-                if hasattr(obj, "update_health"):
+                if hasattr(obj, "update_health") and obj.name == "glass_plate":
                     obj.update_health()
+                    obj_health_states[obj.name] = obj.get_obs_dict()
+        
+            obs["object_health_states"] = obj_health_states
+            if self._reward_fn is not None:
+                reward = self._reward_fn(self, obs)
+        
+        return obs, reward, terminated, truncated, info
+
+        # # Initialize damage evaluators if this is the first env step
+        # if not self.damage_evaluators_initialized:
+        #     for obj in self.scene.objects:
+        #         if hasattr(obj, "_initialize_damage_evaluators"):
+        #             obj._initialize_damage_evaluators()
+        #     self.damage_evaluators_initialized = True
+
+        # # Pre-processing before stepping simulation
+        # if hasattr(self, '_pre_step'):
+        #     self._pre_step(action)
+
+        # # Using true physics frequency for damage evaluation
+        # # self._run_physics_with_damage_evaluation()
+        
+        # # Aggregate forces for the current step
+        # # self._aggregate_forces_for_env_step()
+        # og.sim.step()
+        
+        # # Get observations, rewards, etc.
+        # obs, reward, terminated, truncated, info = self._post_step(action)
+        
+        # # Combine terminated and truncated into done for backward compatibility
+        # done = terminated or truncated
+
+        # # Render any additional times requested
+        # for _ in range(n_render_iterations - 1):
+        #     og.sim.render()
+
+        # # Run final post-processing
+        # if hasattr(self, '_post_step'):
+        #     return self._post_step(action)
+        # else:
+        #     # Fallback to original behavior if _post_step doesn't exist
+        #     obs, reward, terminated, truncated, info = super().step(action)
+            
+        #     # Update health of all damageable objects
+        #     for obj in self.scene.objects:
+        #         if hasattr(obj, "update_health"):
+        #             obj.update_health()
                     
-            return obs, reward, terminated, truncated, info
+        #     return obs, reward, terminated, truncated, info
 
     def _run_physics_with_damage_evaluation(self):
         """
@@ -258,14 +280,13 @@ class DamageableEnvironment(Environment):
         # Debug info: Show what we're doing
         if hasattr(self, '_debug_physics_frequency') and self._debug_physics_frequency:
             print(f"🔬 Physics Frequency Debug:")
-            print(f"   Physics DT: {physics_dt:.6f}s")
-            print(f"   Action Frequency: {self.env_config.get('action_frequency', 30.0)} Hz")
-            print(f"   Physics Substeps: {num_substeps}")
-            print(f"   Effective Physics Freq: {1.0 / (physics_dt * num_substeps):.1f} Hz")
+            print(f"Physics DT: {physics_dt:.6f}s")
+            print(f"Action Frequency: {self.env_config.get('action_frequency', 30.0)} Hz")
+            print(f"Physics Substeps: {num_substeps}")
+            print(f"Effective Physics Freq: {1.0 / (physics_dt * num_substeps):.1f} Hz")
         
         # Try to hook into OmniGibson's physics events if available
         if hasattr(og.sim, 'physics_sim_view') and hasattr(og.sim.physics_sim_view, 'set_simulation_event_callback'):
-            # 🎯 ADVANCED: Use OmniGibson's physics event callbacks for true physics-frequency
             self._setup_physics_event_callbacks()
         
         # Run physics simulation with damage evaluation at each substep
@@ -273,7 +294,7 @@ class DamageableEnvironment(Environment):
             # Run one physics step
             og.sim.step()
             
-            # 🎯 CRITICAL: Evaluate damage at EVERY physics substep!
+            # Evaluate damage at EVERY physics substep!
             self._evaluate_damage_at_physics_step()
             
             # Optional: Add small delay to prevent overwhelming the system

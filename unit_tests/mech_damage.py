@@ -64,15 +64,14 @@ PARAMS = {
             "damage_threshold": 0.0,  # Minimum particles to cause damage
             "scale": 0.001,  # Damage amount when threshold is exceeded
             "water_system_name": "sludge",
-            "proximity_threshold": 1.0,  # 2cm proximity for manual detection
         }
     },
     "plate": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 0.012,
-            "impact_scale": 10000.0,  # Increased scale for more aggressive damage
+            "impact_threshold": 2.0,
+            "impact_scale": 40.0,  # Increased scale for more aggressive damage
             "crushing_threshold": 5.0,
             "crushing_scale": 1.0,
         }
@@ -254,7 +253,7 @@ def main():
         # Position near and facing the table at origin
         "position": [0.2, 1.0, 0.0],
         "orientation": [0, 0, -1, 1],  # Facing the table
-        "grasping_mode": "assisted",
+        "grasping_mode": "physical",
         "damage_params": PARAMS["tiago_robot"],
     }
 
@@ -430,7 +429,8 @@ def main():
         # Save current scene config/state
         save_dir = "safe-manipulation-benchmark/unit_tests"
         os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, f"json_files/unit_test_{base_name}_mech_temp.json")
+        # save_path = os.path.join(save_dir, f"json_files/unit_test_{base_name}_mech_temp.json")
+        save_path = f"lift_test.json"
         # Save current scene state to JSON (same pattern as test_save_load_simple.py)
         og.sim.save([save_path])
         print(f"✅ Saved scene to: {save_path}")
@@ -445,7 +445,7 @@ def main():
     action_generator.print_keyboard_teleop_info()
     print("Running mech damage teleop. Press ESC to quit.")
 
-    max_steps = 500
+    max_steps = 2000
     step = 0
     fps = 10
     frames = []
@@ -520,7 +520,7 @@ def main():
         # Robot
         r_dmg = robot.damage_evaluators[0]
         # Impact: max average over per-link values for this step; then clear
-        link_keyword = "wheel"
+        link_keyword = "gripper"
         if hasattr(r_dmg, 'impact_forces_by_link') and r_dmg.impact_forces_by_link:
             # Get max impact force across all base-related links
             base_impacts = []
@@ -534,16 +534,14 @@ def main():
             r_dmg.impact_forces_by_link = {}
         else:
             robot_impact_forces.append(0.0)
-        if hasattr(r_dmg, 'sustained_forces_by_link') and r_dmg.sustained_forces_by_link:
-            base_sustained = []
-            for link_name, forces in r_dmg.sustained_forces_by_link.items():
+        # Get sustained running total instead of per-timestep values
+        if hasattr(r_dmg, '_sustained_running_total') and r_dmg._sustained_running_total:
+            base_sustained_totals = []
+            for link_name, running_total in r_dmg._sustained_running_total.items():
                 if link_keyword in link_name.lower():
-                    base_sustained.extend(forces)
-            sustained_val = max(base_sustained) if base_sustained else 0.0
+                    base_sustained_totals.append(running_total)
+            sustained_val = max(base_sustained_totals) if base_sustained_totals else 0.0
             robot_sustained_forces.append(sustained_val)
-            # sustained_vals = r_dmg.sustained_forces_by_link.get("base_link", [])
-            # robot_sustained_forces.append(max(sustained_vals) if sustained_vals else 0.0)
-            r_dmg.sustained_forces_by_link = {}
         else:
             robot_sustained_forces.append(0.0)
         # # Sustained: per-step average max; then clear
@@ -558,15 +556,31 @@ def main():
         if target_ref is not None:
             t_dmg = target_ref.damage_evaluators[0]
             if hasattr(t_dmg, 'impact_forces_by_link') and t_dmg.impact_forces_by_link:
-                base_vals = t_dmg.impact_forces_by_link.get("base_link", [])
-                target_impact_forces.append(max(base_vals) if base_vals else 0.0)
+                if target_object_key in ("drawer", "door"):
+                    # For drawer/door, get max impact force across all links
+                    all_impact_forces = []
+                    for link_name, forces in t_dmg.impact_forces_by_link.items():
+                        all_impact_forces.extend(forces)
+                    max_impact_force = max(all_impact_forces) if all_impact_forces else 0.0
+                    target_impact_forces.append(max_impact_force)
+                else:
+                    # For other objects, use base_link
+                    base_vals = t_dmg.impact_forces_by_link.get("base_link", [])
+                    target_impact_forces.append(max(base_vals) if base_vals else 0.0)
                 t_dmg.impact_forces_by_link = {}
             else:
                 target_impact_forces.append(0.0)
-            if hasattr(t_dmg, 'sustained_forces_by_link') and t_dmg.sustained_forces_by_link:
-                base_vals = t_dmg.sustained_forces_by_link.get("base_link", [])
-                target_sustained_forces.append(max(base_vals) if base_vals else 0.0)
-                t_dmg.sustained_forces_by_link = {}
+            # Get sustained running total instead of per-timestep values
+            if hasattr(t_dmg, '_sustained_running_total') and t_dmg._sustained_running_total:
+                if target_object_key in ("drawer", "door"):
+                    # For drawer/door, get max sustained force across all links
+                    all_sustained_totals = list(t_dmg._sustained_running_total.values())
+                    max_sustained_total = max(all_sustained_totals) if all_sustained_totals else 0.0
+                    target_sustained_forces.append(max_sustained_total)
+                else:
+                    # For other objects, use base_link
+                    base_sustained_total = t_dmg._sustained_running_total.get("base_link", 0.0)
+                    target_sustained_forces.append(base_sustained_total)
             else:
                 target_sustained_forces.append(0.0)
 
@@ -711,66 +725,125 @@ def main():
             combined_mp4
         ], check=True)
 
-    # Build stacked force plots video (impact top, sustained bottom) with thick lines and larger fonts
+    # Build stacked force plots video (impact top, sustained bottom) with both robot and target forces
     forces_mp4 = os.path.join(videos_dir, f'{base_name}_forces.mp4')
-    if (target_object_key is None) and (len(robot_impact_forces) > 0):
+    if len(robot_impact_forces) > 0:
         import matplotlib.pyplot as plt
         import matplotlib.animation as animation
 
-        T_forces = max(len(robot_impact_forces), len(robot_sustained_forces))
-        # Impact figure (robot only)
+        T_forces = max(len(robot_impact_forces), len(robot_sustained_forces), 
+                      len(target_impact_forces) if target_object_key is not None else 0,
+                      len(target_sustained_forces) if target_object_key is not None else 0)
+        
+        # Impact figure (both robot and target)
         fig_imp, ax_imp = plt.subplots(figsize=(9.6, 5.4))
+        
+        # Robot impact line
         line_imp_r, = ax_imp.plot([], [], lw=4, color='tab:blue', label='Robot')
+        
+        # Target impact line (if available)
+        line_imp_t = None
+        if target_object_key is not None and len(target_impact_forces) > 0:
+            line_imp_t, = ax_imp.plot([], [], lw=4, color='tab:orange', label=target_object_key.capitalize())
+        
         ax_imp.set_xlim(0, max(1, T_forces) / fps)
+        
+        # Calculate y-axis limits considering both robot and target forces
+        all_impact_forces = robot_impact_forces + (target_impact_forces if target_object_key is not None else [])
         y_min_imp = 0.0
-        y_max_imp = max(robot_impact_forces + [0.0])
+        y_max_imp = max(all_impact_forces + [0.0])
         if y_min_imp == y_max_imp:
             y_min_imp, y_max_imp = (0.0, 1.0)
         ax_imp.set_ylim(y_min_imp, y_max_imp * 1.1)
+        
+        # Add threshold lines for both robot and target
+        robot_impact_threshold = PARAMS["tiago_robot"]["mechanical"]["impact_threshold"]
+        ax_imp.axhline(y=robot_impact_threshold, color='blue', linestyle='--', linewidth=2, alpha=0.7, label=f'Robot Impact Threshold ({robot_impact_threshold} N)')
+        
+        if target_object_key is not None:
+            target_params = PARAMS.get(target_object_key, PARAMS["default"])
+            target_impact_threshold = target_params["mechanical"]["impact_threshold"]
+            ax_imp.axhline(y=target_impact_threshold, color='orange', linestyle='--', linewidth=2, alpha=0.7, label=f'{target_object_key.capitalize()} Impact Threshold ({target_impact_threshold} N)')
+        
         ax_imp.set_xlabel('Time (s)', fontsize=16)
         ax_imp.set_ylabel('Impact Force (N)', fontsize=16)
         ax_imp.set_title('Impact Force Over Time', fontsize=20)
         ax_imp.legend(loc='best')
         plt.tight_layout()
 
-        def init_imp_r():
+        def init_imp():
             line_imp_r.set_data([], [])
-            return line_imp_r,
+            if line_imp_t is not None:
+                line_imp_t.set_data([], [])
+            return (line_imp_r, line_imp_t) if line_imp_t is not None else (line_imp_r,)
 
-        def animate_imp_r(i):
+        def animate_imp(i):
             x = [k / fps for k in range(1, i + 2)]
             y_ir = robot_impact_forces[: i + 1]
             line_imp_r.set_data(x, y_ir)
+            
+            if line_imp_t is not None:
+                y_it = target_impact_forces[: i + 1]
+                line_imp_t.set_data(x, y_it)
+                return line_imp_r, line_imp_t
             return line_imp_r,
 
-        ani_imp = animation.FuncAnimation(fig_imp, animate_imp_r, init_func=init_imp_r, frames=T_forces, interval=1000 / fps, blit=True)
+        ani_imp = animation.FuncAnimation(fig_imp, animate_imp, init_func=init_imp, frames=T_forces, interval=1000 / fps, blit=True)
 
-        # Sustained figure (robot only)
+        # Sustained figure (both robot and target)
         fig_sus, ax_sus = plt.subplots(figsize=(9.6, 5.4))
+        
+        # Robot sustained line
         line_sus_r, = ax_sus.plot([], [], lw=4, color='tab:green', label='Robot')
+        
+        # Target sustained line (if available)
+        line_sus_t = None
+        if target_object_key is not None and len(target_sustained_forces) > 0:
+            line_sus_t, = ax_sus.plot([], [], lw=4, color='tab:red', label=target_object_key.capitalize())
+        
         ax_sus.set_xlim(0, max(1, T_forces) / fps)
+        
+        # Calculate y-axis limits considering both robot and target forces
+        all_sustained_forces = robot_sustained_forces + (target_sustained_forces if target_object_key is not None else [])
         y_min_sus = 0.0
-        y_max_sus = max(robot_sustained_forces + [0.0])
+        y_max_sus = max(all_sustained_forces + [0.0])
         if y_min_sus == y_max_sus:
             y_min_sus, y_max_sus = (0.0, 1.0)
         ax_sus.set_ylim(y_min_sus, y_max_sus * 1.1)
+        
+        # Add threshold lines for both robot and target
+        robot_sustained_threshold = PARAMS["tiago_robot"]["mechanical"]["crushing_threshold"]
+        ax_sus.axhline(y=robot_sustained_threshold, color='green', linestyle='--', linewidth=2, alpha=0.7, label=f'Robot Sustained Threshold ({robot_sustained_threshold} N)')
+        
+        if target_object_key is not None:
+            target_params = PARAMS.get(target_object_key, PARAMS["default"])
+            target_sustained_threshold = target_params["mechanical"]["crushing_threshold"]
+            ax_sus.axhline(y=target_sustained_threshold, color='red', linestyle='--', linewidth=2, alpha=0.7, label=f'{target_object_key.capitalize()} Sustained Threshold ({target_sustained_threshold} N)')
+        
         ax_sus.set_xlabel('Time (s)', fontsize=16)
         ax_sus.set_ylabel('Sustained Force (N)', fontsize=16)
         ax_sus.set_title('Sustained Force Over Time', fontsize=20)
         ax_sus.legend(loc='best')
         plt.tight_layout()
 
-        def init_sus_r():
+        def init_sus():
             line_sus_r.set_data([], [])
-            return line_sus_r,
+            if line_sus_t is not None:
+                line_sus_t.set_data([], [])
+            return (line_sus_r, line_sus_t) if line_sus_t is not None else (line_sus_r,)
 
-        def animate_sus_r(i):
+        def animate_sus(i):
             x = [k / fps for k in range(1, i + 2)]
             y_sr = robot_sustained_forces[: i + 1]
             line_sus_r.set_data(x, y_sr)
+            
+            if line_sus_t is not None:
+                y_st = target_sustained_forces[: i + 1]
+                line_sus_t.set_data(x, y_st)
+                return line_sus_r, line_sus_t
             return line_sus_r,
 
-        ani_sus = animation.FuncAnimation(fig_sus, animate_sus_r, init_func=init_sus_r, frames=T_forces, interval=1000 / fps, blit=True)
+        ani_sus = animation.FuncAnimation(fig_sus, animate_sus, init_func=init_sus, frames=T_forces, interval=1000 / fps, blit=True)
 
         # Save and stack
         forces_imp_mp4 = os.path.join(videos_dir, f'{base_name}_forces_impact.mp4')
@@ -781,86 +854,6 @@ def main():
         ani_sus.save(forces_sus_mp4, writer=writer_f)
         plt.close(fig_sus)
 
-        subprocess.run([
-            'ffmpeg', '-y',
-            '-i', forces_imp_mp4,
-            '-i', forces_sus_mp4,
-            '-filter_complex',
-            '[0:v]scale=1080:360,setsar=1[top];[1:v]scale=1080:360,setsar=1[bot];[top][bot]vstack=inputs=2[v]',
-            '-map', '[v]',
-            '-c:v', 'mpeg4',
-            '-q:v', '5',
-            forces_mp4
-        ], check=True)
-    elif len(robot_impact_forces) > 0 and len(target_impact_forces) > 0:
-        import matplotlib.pyplot as plt
-        import matplotlib.animation as animation
-
-        T_forces = max(len(robot_impact_forces), len(target_impact_forces), len(robot_sustained_forces), len(target_sustained_forces))
-        # Impact figure (target only)
-        fig_imp, ax_imp = plt.subplots(figsize=(9.6, 5.4))
-        line_imp_t, = ax_imp.plot([], [], lw=4, color='tab:orange', label=target_object_key.capitalize())
-        ax_imp.set_xlim(0, max(1, T_forces) / fps)
-        y_min_imp = 0.0
-        y_max_imp = max(target_impact_forces + [0.0])
-        if y_min_imp == y_max_imp:
-            y_min_imp, y_max_imp = (0.0, 1.0)
-        ax_imp.set_ylim(y_min_imp, y_max_imp * 1.1)
-        ax_imp.set_xlabel('Time (s)', fontsize=16)
-        ax_imp.set_ylabel('Impact Force (N)', fontsize=16)
-        ax_imp.set_title('Impact Force Over Time', fontsize=20)
-        ax_imp.legend(loc='best')
-        plt.tight_layout()
-
-        def init_imp():
-            line_imp_t.set_data([], [])
-            return line_imp_t,
-
-        def animate_imp(i):
-            x = [k / fps for k in range(1, i + 2)]
-            y_it = target_impact_forces[: i + 1]
-            line_imp_t.set_data(x, y_it)
-            return line_imp_t,
-
-        ani_imp = animation.FuncAnimation(fig_imp, animate_imp, init_func=init_imp, frames=T_forces, interval=1000 / fps, blit=True)
-
-        # Sustained figure (target only)
-        fig_sus, ax_sus = plt.subplots(figsize=(9.6, 5.4))
-        line_sus_t, = ax_sus.plot([], [], lw=4, color='tab:red', label=target_object_key.capitalize())
-        ax_sus.set_xlim(0, max(1, T_forces) / fps)
-        y_min_sus = 0.0
-        y_max_sus = max(target_sustained_forces + [0.0])
-        if y_min_sus == y_max_sus:
-            y_min_sus, y_max_sus = (0.0, 1.0)
-        ax_sus.set_ylim(y_min_sus, y_max_sus * 1.1)
-        ax_sus.set_xlabel('Time (s)', fontsize=16)
-        ax_sus.set_ylabel('Sustained Force (N)', fontsize=16)
-        ax_sus.set_title('Sustained Force Over Time', fontsize=20)
-        ax_sus.legend(loc='best')
-        plt.tight_layout()
-
-        def init_sus():
-            line_sus_t.set_data([], [])
-            return line_sus_t,
-
-        def animate_sus(i):
-            x = [k / fps for k in range(1, i + 2)]
-            y_st = target_sustained_forces[: i + 1]
-            line_sus_t.set_data(x, y_st)
-            return line_sus_t,
-
-        ani_sus = animation.FuncAnimation(fig_sus, animate_sus, init_func=init_sus, frames=T_forces, interval=1000 / fps, blit=True)
-
-        # Save both animations to temporary mp4s
-        forces_imp_mp4 = os.path.join(videos_dir, f'{base_name}_forces_impact.mp4')
-        forces_sus_mp4 = os.path.join(videos_dir, f'{base_name}_forces_sustained.mp4')
-        writer_f = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
-        ani_imp.save(forces_imp_mp4, writer=writer_f)
-        plt.close(fig_imp)
-        ani_sus.save(forces_sus_mp4, writer=writer_f)
-        plt.close(fig_sus)
-
-        # Stack vertically into a 1080x720 forces video
         subprocess.run([
             'ffmpeg', '-y',
             '-i', forces_imp_mp4,
@@ -900,16 +893,9 @@ def main():
     ]
     
     # Add force-specific intermediate videos if they exist
-    if target_object_key is None:
-        # Robot-only case
-        forces_imp_mp4 = os.path.join(videos_dir, f'{base_name}_forces_impact.mp4')
-        forces_sus_mp4 = os.path.join(videos_dir, f'{base_name}_forces_sustained.mp4')
-        videos_to_cleanup.extend([forces_imp_mp4, forces_sus_mp4])
-    else:
-        # Target object case
-        forces_imp_mp4 = os.path.join(videos_dir, f'{base_name}_forces_impact.mp4')
-        forces_sus_mp4 = os.path.join(videos_dir, f'{base_name}_forces_sustained.mp4')
-        videos_to_cleanup.extend([forces_imp_mp4, forces_sus_mp4])
+    forces_imp_mp4 = os.path.join(videos_dir, f'{base_name}_forces_impact.mp4')
+    forces_sus_mp4 = os.path.join(videos_dir, f'{base_name}_forces_sustained.mp4')
+    videos_to_cleanup.extend([forces_imp_mp4, forces_sus_mp4])
     
     for video_path in videos_to_cleanup:
         if os.path.exists(video_path):

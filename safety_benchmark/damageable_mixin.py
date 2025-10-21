@@ -32,6 +32,8 @@ class DamageableMixin:
         # Initialize link healths to the maximum
         self.link_healths = {link_name: 100.0 for link_name in self.links.keys()}
         self.damage_statuses = {link_name: "none" for link_name in self.links.keys()}
+        self.damage_info = {}
+        self.previous_health = 100.0
 
     def _initialize_damage_evaluators(self):
         # Set damage evaluators once sim is playing
@@ -72,8 +74,10 @@ class DamageableMixin:
 
     def update_health(self):
         # Updates health based on the damage evaluators
+        self.damage_info = {}
         for evaluator in self.damage_evaluators:
             link_damages = evaluator.generate_damage()
+            self.damage_info[evaluator.name] = link_damages
             for link_name, damage in link_damages.items():
                 # Update link healths
                 new_health = max(0.0, self.link_healths[link_name] - damage)
@@ -103,6 +107,13 @@ class DamageableMixin:
                 else:
                     impact_history[link_name] = history
         return impact_history
+
+    def get_obs_dict(self):
+        obs_dict = {}
+        obs_dict["health"] = self.health
+        obs_dict["damage_status"] = self.damage_status
+        obs_dict["damage_info"] = self.damage_info
+        return obs_dict
 
 
 '''Damageable Object subclasses'''

@@ -18,6 +18,7 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         # Keep base init for compatibility; mechanical damage ignores the generic threshold / scale
         super().__init__(entity, damage_threshold, scale)
         self.entity = entity
+        self.name = "mechanical"
         
         # Aggregates across env steps and per-step tracking
         self.force_values = []
@@ -83,7 +84,12 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                 displacement = position_current - position_previous
                 velocity_current = displacement
                 delta_velocity = velocity_current - velocity_previous
-                impact_magnitude = th.linalg.vector_norm(delta_velocity).item()
+                
+                # Get physics timestep to convert velocity change to acceleration
+                import omnigibson as og
+                dt = og.sim.get_physics_dt()
+                acceleration = delta_velocity / dt
+                impact_magnitude = th.linalg.vector_norm(acceleration).item()
 
                 delta_velocity_norm = th.linalg.vector_norm(delta_velocity).item()
                 if delta_velocity_norm > epsilon:
@@ -127,7 +133,8 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                 if len(contacts_now) > 0:
                     for c in contacts_now:
                         try:
-                            impulses.append(th.tensor(c.impulse.tolist(), dtype=th.float32))
+                            impulse = th.tensor(c.impulse.tolist(), dtype=th.float32)
+                            impulses.append(impulse)
                         except Exception:
                             pass
                         try:
@@ -136,6 +143,9 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                             pass
             except Exception:
                 pass
+            
+            # if link_name == "base_link":
+            #     breakpoint()
             
             accel_unit = self.last_accel_dir_by_link.get(link_name, None)
             sustained_step_value = 0.0
