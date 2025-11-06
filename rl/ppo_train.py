@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import math
-import argparse
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -14,6 +13,10 @@ import random
 import omnigibson as og
 import wandb
 import matplotlib
+import cv2
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import gym
 # Force non-GUI backend for headless runs to avoid Qt/xcb errors during eval plotting
 matplotlib.use('Agg')
 
@@ -29,29 +32,45 @@ _ensure_omnigibson_on_path()
 
 
 from safety_benchmark.damageable_env import DamageableEnvironment
+from omnigibson.action_primitives.starter_semantic_action_primitives import StarterSemanticActionPrimitives
+
+# Constants
+DEFAULT_SCENE_FILE = "lift_test.json"
+EVAL_MAX_STEPS = 100
 
 def damage_reward_fn(env, obs):
+    terminated = False
     plate_health_states = obs["object_health_states"]["glass_plate"]
     total_damage = 0.0
     for damage_type, damage_info in plate_health_states["damage_info"].items():
         for link_name, damage in damage_info.items():
             total_damage += damage
     if total_damage == 0.0 and plate_health_states["health"] == 100.0:
-        return 0.0001
-    return -total_damage
+        return 0.0001, terminated
+    if plate_health_states["health"] == 0.0:
+        terminated = True
+    return -total_damage, terminated
 
 
-def distance_reward_fn(env, obs, eps=0.01):
+def distance_reward_fn(env, obs):
+    eps = 0.1
+    terminated = False
     plate_obj = env.scene.object_registry("name", "glass_plate")
     plate_pos, plate_orn = plate_obj.get_position_orientation()
     target_pos = th.tensor([-0.0966, 0.0843, 0.4593])
     distance = th.norm(plate_pos - target_pos).item()
     if distance < eps:
-        return 100.0
-    return -distance
+        terminated = True
+        return 100.0, terminated
+    return -distance, terminated
 
 def reward_fn(env, obs):
-    return damage_reward_fn(env, obs) + distance_reward_fn(env, obs)
+    return distance_reward_fn(env, obs)
+
+# def reward_fn(env, obs):
+#     damage_reward, damage_terminated = damage_reward_fn(env, obs)
+#     distance_reward, distance_terminated = distance_reward_fn(env, obs)
+#     return (damage_reward + distance_reward), damage_terminated or distance_terminated
 
 def _execute_controller_sequence(env, controller, robot, delta_pose, ignore_failure=True, max_steps=300):
     current_eef_pos = robot.get_eef_position("right")
@@ -81,8 +100,6 @@ class InitializedDamageableEnv:
     """
 
     def __init__(self, scene_file: str):
-        import omnigibson as og  # local import after setting path
-        self.og = og
 
         # Create environment from saved scene
         cfg = {"scene": {"type": "Scene", "scene_file": scene_file}}
@@ -115,9 +132,6 @@ class InitializedDamageableEnv:
         self.robot.reload_controllers(controller_config=controller_config)
         self.env.scene.update_initial_file()
 
-        from omnigibson.action_primitives.starter_semantic_action_primitives import (
-            StarterSemanticActionPrimitives,
-        )
         self.prims = StarterSemanticActionPrimitives(env=self.env, robot=self.robot, skip_curobo_initilization=True)
         self.prims.arm = "right"
 
@@ -177,17 +191,13 @@ class InitializedDamageableEnv:
         return self._extract_obs(), float(reward), bool(terminated), bool(truncated), info
 
     def _extract_obs(self) -> np.ndarray:
-        # Build observation = [proprioception, right_eef_position(3), plate_position(3)]
-        proprio, _ = self.robot.get_proprioception()
-        # Right EEF position
+        # Build observation = [right_eef_position(3), plate_position(3)]
         eef_pos = self.robot.get_eef_position("right")
-        # Plate position (zeros if not found)
         if self.plate_obj is not None:
             plate_pos, _ = self.plate_obj.get_position_orientation()
         else:
             plate_pos = th.zeros(3)
         obs_vec = th.cat([
-            proprio.float().flatten(),
             th.as_tensor(eef_pos, dtype=th.float32).flatten(),
             th.as_tensor(plate_pos, dtype=th.float32).flatten(),
         ], dim=0)
@@ -195,15 +205,11 @@ class InitializedDamageableEnv:
 
     @property
     def observation_space(self):
-        # Lazy import gym to avoid hard dependency elsewhere
-        import gym
-        # Dimension matches robot.proprioception_dim
-        obs_dim = int(self.robot.proprioception_dim) + 6  # +3 right EEF position, +3 plate position
-        return gym.spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
+        # Observation: right EEF position (3) + plate position (3) = 6
+        return gym.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
 
     @property
     def action_space(self):
-        import gym
         # Agent-facing: right arm continuous dims + 1 binary gripper dim (bounded in [-1, 1])
         low = -np.ones((self._agent_act_dim,), dtype=np.float32)
         high = np.ones((self._agent_act_dim,), dtype=np.float32)
@@ -313,150 +319,104 @@ class ActorCritic(nn.Module):
 @dataclass
 class PPOConfig:
     total_timesteps: int = 1_000_000
-    learning_rate: float = 3e-4
+    learning_rate: float = 1e-4
     gamma: float = 0.99
     gae_lambda: float = 0.95
-    num_steps: int = 2000
+    num_steps: int = 500
     update_epochs: int = 10
-    num_minibatches: int = 40
+    num_minibatches: int = 10
     clip_coef: float = 0.2
-    ent_coef: float = 0.01
+    ent_coef: float = 0.0
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     target_kl: float = 0.01
+    clip_vloss: bool = True
+    vf_clip_coef: float = 0.2
     device: str = "cuda" if th.cuda.is_available() else "cpu"
     seed: int = 1
 
 
-def _run_eval_episode(env, policy, device, eval_videos_dir, update_num):
-    """Run a single evaluation episode and save video with reward plot"""
-    import cv2
-    import subprocess
-    import matplotlib.pyplot as plt
-    import matplotlib.animation as animation
+def _run_eval_episode(env, policy, device, eval_videos_dir, update_num, capture_video=True):
+    """Run a single evaluation episode and optionally save an AVI with on-frame cumulative reward text.
+
+    Returns (total_reward, terminated, truncated, avi_path_or_None)
+    """
     import omnigibson as og
-    
+    fps = 15
+
     # Reset environment
     obs = env.reset()
     obs_tensor = th.tensor(obs, dtype=th.float32, device=device)
-    
-    frames = []
-    total_rewards = []
+
+    vw = None
+    avi_path = None
+    if capture_video:
+        import cv2 as _cv2
+        avi_path = os.path.join(eval_videos_dir, f"eval_update_{update_num}.avi")
+        fourcc = _cv2.VideoWriter_fourcc(*"XVID")
+        vw = _cv2.VideoWriter(avi_path, fourcc, fps, (640, 360))
+
     total_reward = 0.0
-    fps = 15
-    
+    final_terminated = False
+    final_truncated = False
+
     # Run evaluation episode
-    for step in range(100):
+    for step in range(EVAL_MAX_STEPS):
         with th.no_grad():
             action, _, _, _ = policy.get_action_and_value(obs_tensor.unsqueeze(0))
         action_np = action.squeeze(0).cpu().numpy()
-        
+
         obs, reward, terminated, truncated, info = env.step(action_np)
         obs_tensor = th.tensor(obs, dtype=th.float32, device=device)
-        
+
         total_reward += float(reward)
-        total_rewards.append(total_reward)
-        
-        # Capture frame (downsampled)
-        rgb = og.sim.viewer_camera.get_obs()[0]["rgb"]
-        rgb_np = rgb.cpu().numpy()[:, :, :3]
-        rgb_np = cv2.resize(rgb_np, (640, 360))
-        frames.append(cv2.cvtColor(rgb_np, cv2.COLOR_RGB2BGR))
-        
+
+        if vw is not None:
+            import cv2 as _cv2
+            rgb = og.sim.viewer_camera.get_obs()[0]["rgb"]
+            rgb_np = rgb.cpu().numpy()[:, :, :3]
+            frame = _cv2.resize(rgb_np, (640, 360))
+            frame_bgr = _cv2.cvtColor(frame, _cv2.COLOR_RGB2BGR)
+            text = f"Reward: {total_reward:.2f}"
+            _cv2.putText(frame_bgr, text, (10, 25), _cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, _cv2.LINE_AA)
+            vw.write(np.ascontiguousarray(frame_bgr, dtype=np.uint8))
+
         if terminated or truncated:
+            final_terminated = bool(terminated)
+            final_truncated = bool(truncated)
             break
-    
-    # Generate videos
-    if len(frames) > 0:
-        # Camera video
-        avi_path = os.path.join(eval_videos_dir, f"eval_update_{update_num}_camera.avi")
-        mp4_path = os.path.join(eval_videos_dir, f"eval_update_{update_num}_camera.mp4")
-        h, w = frames[0].shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        vw = cv2.VideoWriter(avi_path, fourcc, fps, (w, h))
-        for f in frames:
-            vw.write(np.ascontiguousarray(f, dtype=np.uint8))
+
+    if vw is not None:
         vw.release()
-        # Convert AVI to MP4 with mpeg4 (match rl_test.py)
-        subprocess.run(["ffmpeg", "-y", "-i", avi_path, "-c:v", "mpeg4", mp4_path], check=True)
-        os.remove(avi_path)
-        
-        # Reward plot video
-        reward_mp4 = os.path.join(eval_videos_dir, f"eval_update_{update_num}_reward.mp4")
-        if len(total_rewards) > 0:
-            T = len(total_rewards)
-            min_r = min(total_rewards)
-            max_r = max(total_rewards)
-            rng = max(1e-5, max_r - min_r)
-            y_min = min(-150, min_r)
-            y_max = 0
-            
-            # Handle NaN and infinity values
-            if not (np.isfinite(y_min) and np.isfinite(y_max)):
-                y_min, y_max = -1000.0, 1000.0
-
-            fig, ax = plt.subplots(figsize=(9.6, 5.4))
-            line_r, = ax.plot([], [], lw=6, color='tab:green', label='Cumulative Reward')
-            ax.set_xlim(0, max(1, T) / fps)
-            ax.set_ylim(y_min, y_max)
-            ax.set_xlabel('Time (s)', fontsize=20)
-            ax.set_ylabel('Cumulative Reward', fontsize=20)
-            ax.set_title(f'Evaluation Episode Reward (Update {update_num})', fontsize=26)
-            ax.legend(loc='best', fontsize=16)
-            ax.tick_params(axis='both', which='major', labelsize=16, width=1.5)
-            ax.grid(True, linewidth=1.0, alpha=0.3)
-            plt.tight_layout()
-
-            def init_reward():
-                line_r.set_data([], [])
-                return line_r,
-
-            def animate_reward(i):
-                x = [k / fps for k in range(1, i + 2)]
-                y = total_rewards[: i + 1]
-                line_r.set_data(x, y)
-                return line_r,
-
-            ani = animation.FuncAnimation(
-                fig, animate_reward, init_func=init_reward, frames=T, interval=1000 / fps, blit=True
-            )
-            writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
-            ani.save(reward_mp4, writer=writer)
-            plt.close(fig)
-        
-        # Combined video (match rl_test.py exact codec and command)
-        combined_mp4 = os.path.join(eval_videos_dir, f"eval_update_{update_num}_combined.mp4")
-        subprocess.run([
-            'ffmpeg', '-y',
-            '-i', mp4_path,
-            '-i', reward_mp4,
-            '-filter_complex',
-            '[0:v]scale=640:360,setsar=1[left];[1:v]scale=640:360,setsar=1[right];[left][right]hstack=inputs=2[v]',
-            '-map', '[v]',
-            '-c:v', 'mpeg4',
-            '-q:v', '5',
-            combined_mp4
-        ], check=True)
-
-        # Clean up intermediate files, keep only combined
-        os.remove(mp4_path)
-        os.remove(reward_mp4)
-
-        print(f"Evaluation video saved: {os.path.basename(combined_mp4)}")
-        # Clear frames and force GC to reduce memory
         try:
-            frames.clear()
+            import gc as _gc
+            _gc.collect()
         except Exception:
             pass
-        import gc as _gc
-        _gc.collect()
-        return combined_mp4
+        print(f"Evaluation video saved: {os.path.basename(avi_path)}")
+        return total_reward, final_terminated, final_truncated, avi_path
     else:
-        print("No frames captured for evaluation video")
-        return None
-    
-    # Always reset environment after evaluation
-    env.reset()
+        return total_reward, final_terminated, final_truncated, None
+
+
+def _run_eval(env, policy, device, eval_videos_dir, update_num, num_episodes=10):
+    successes = 0
+    total_returns = []
+    saved_video = None
+    for i in range(num_episodes):
+        capture = (i == 0)
+        ep_ret, terminated, truncated, avi_path = _run_eval_episode(
+            env, policy, device, eval_videos_dir, update_num, capture_video=capture
+        )
+        total_returns.append(ep_ret)
+        if capture and avi_path is not None:
+            saved_video = avi_path
+        # Success criterion per user: terminated and reward > 10
+        if bool(terminated) and (float(ep_ret) > 10.0):
+            successes += 1
+    success_rate = successes / float(max(1, num_episodes))
+    avg_return = float(np.mean(total_returns)) if len(total_returns) > 0 else 0.0
+    return success_rate, avg_return, saved_video
 
 
 def _save_learning_plots(learning_stats, eval_videos_dir, update_num):
@@ -509,7 +469,6 @@ def _save_training_debug_video(frames, total_rewards, eval_videos_dir, tag, fps=
     Matches the eval video pipeline (mpeg4, no error handling).
     """
     import cv2
-    import subprocess
     import numpy as np
     import matplotlib.pyplot as plt
     import matplotlib.animation as animation
@@ -519,18 +478,15 @@ def _save_training_debug_video(frames, total_rewards, eval_videos_dir, tag, fps=
 
     # Camera video
     avi_path = os.path.join(eval_videos_dir, f"train_debug_{tag}_camera.avi")
-    mp4_path = os.path.join(eval_videos_dir, f"train_debug_{tag}_camera.mp4")
     h, w = frames[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*"XVID")
     vw = cv2.VideoWriter(avi_path, fourcc, fps, (w, h))
     for f in frames:
         vw.write(np.ascontiguousarray(f, dtype=np.uint8))
     vw.release()
-    subprocess.run(["ffmpeg", "-y", "-i", avi_path, "-c:v", "mpeg4", mp4_path], check=True)
-    os.remove(avi_path)
 
     # Reward plot video
-    reward_mp4 = os.path.join(eval_videos_dir, f"train_debug_{tag}_reward.mp4")
+    reward_avi = os.path.join(eval_videos_dir, f"train_debug_{tag}_reward.avi")
     if len(total_rewards) > 0:
         T = len(total_rewards)
         min_r = min(total_rewards)
@@ -566,33 +522,57 @@ def _save_training_debug_video(frames, total_rewards, eval_videos_dir, tag, fps=
         ani = animation.FuncAnimation(
             fig, animate_reward, init_func=init_reward, frames=T, interval=1000 / fps, blit=True
         )
-        writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
-        ani.save(reward_mp4, writer=writer)
+        try:
+            writer = animation.AVConvWriter(fps=fps, codec='mpeg4')
+        except Exception:
+            writer = None
+        if writer is not None:
+            ani.save(reward_avi, writer=writer)
+        else:
+            # Render frames to numpy and write AVI
+            reward_h, reward_w = 720, 1080
+            rvw = cv2.VideoWriter(reward_avi, fourcc, fps, (reward_w, reward_h))
+            for i in range(T):
+                ax.set_xlim(0, max(1, T) / fps)
+                line_r.set_data([k / fps for k in range(1, i + 2)], total_rewards[: i + 1])
+                fig.canvas.draw()
+                img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+                img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+                img = cv2.resize(img, (reward_w, reward_h))
+                rvw.write(np.ascontiguousarray(img, dtype=np.uint8))
+            rvw.release()
         plt.close(fig)
 
-    # Combine camera and reward videos side by side
-    combined_mp4 = os.path.join(eval_videos_dir, f"train_debug_{tag}_combined.mp4")
-    subprocess.run([
-        'ffmpeg', '-y',
-        '-i', mp4_path,
-        '-i', reward_mp4,
-        '-filter_complex',
-        '[0:v]scale=1080:720,setsar=1[left];[1:v]scale=1080:720,setsar=1[right];[left][right]hstack=inputs=2[v]',
-        '-map', '[v]',
-        '-c:v', 'mpeg4',
-        '-q:v', '5',
-        combined_mp4
-    ], check=True)
+    # Combine camera and reward videos side by side into AVI
+    combined_avi = os.path.join(eval_videos_dir, f"train_debug_{tag}_combined.avi")
+    cam_cap = cv2.VideoCapture(avi_path)
+    rew_cap = cv2.VideoCapture(reward_avi)
+    width = 1080
+    height = 720
+    out_w = width * 2
+    out_h = height
+    out = cv2.VideoWriter(combined_avi, fourcc, fps, (out_w, out_h))
+    while True:
+        ret0, f0 = cam_cap.read()
+        ret1, f1 = rew_cap.read()
+        if not ret0 or not ret1:
+            break
+        f0 = cv2.resize(f0, (width, height))
+        f1 = cv2.resize(f1, (width, height))
+        out.write(np.hstack([f0, f1]))
+    cam_cap.release()
+    rew_cap.release()
+    out.release()
 
     # Clean up intermediate videos
     try:
-        os.remove(mp4_path)
-        os.remove(reward_mp4)
+        os.remove(avi_path)
+        os.remove(reward_avi)
     except OSError:
         pass
 
-    print(f"Training debug video saved: {os.path.basename(combined_mp4)}")
-    return combined_mp4
+    print(f"Training debug video saved: {os.path.basename(combined_avi)}")
+    return combined_avi
 
 def train(scene_file: str, cfg: PPOConfig):
     import omnigibson as og
@@ -742,7 +722,9 @@ def train(scene_file: str, cfg: PPOConfig):
             reward_t = float(reward)
             episode_step += 1
             reached_limit = episode_step >= max_episode_steps
-            done = bool(terminated or truncated or reached_limit)
+            # Manually set truncated if we exceeded the step limit (env does not set it)
+            truncated = bool(truncated or reached_limit)
+            done = bool(terminated or truncated)
             next_done = th.tensor(1.0 if done else 0.0, dtype=th.float32, device=cfg.device)
 
             rewards_buf[step] = reward_t
@@ -777,7 +759,9 @@ def train(scene_file: str, cfg: PPOConfig):
                     "episode_return": episode_return,
                     "episode_length": episode_length,
                     "episode": total_episodes,
-                    "total_steps": total_steps
+                    "total_steps": total_steps,
+                    "episode_truncated": truncated,
+                    "episode_terminated": terminated,
                 })
                 next_obs = th.tensor(env.reset(), dtype=th.float32, device=cfg.device)
                 next_done = th.tensor(0.0, dtype=th.float32, device=cfg.device)
@@ -813,7 +797,7 @@ def train(scene_file: str, cfg: PPOConfig):
 
         # Optimize policy for K epochs
         batch_size = cfg.num_steps
-        minibatch_size = batch_size // cfg.num_minibatches
+        minibatch_size = max(1, batch_size // cfg.num_minibatches)
         inds = np.arange(batch_size)
         # Track losses across epochs/minibatches for logging
         pg_losses_epoch = []
@@ -843,10 +827,13 @@ def train(scene_file: str, cfg: PPOConfig):
                 newvalue = newvalue.view(-1)
                 v_target = b_returns[mb_inds]
                 v_old = b_values[mb_inds].detach()
-                v_unclipped = (newvalue - v_target).pow(2)
-                v_clipped = v_old + (newvalue - v_old).clamp(-cfg.clip_coef, cfg.clip_coef)
-                v_clipped = (v_clipped - v_target).pow(2)
-                v_loss = 0.5 * th.max(v_unclipped, v_clipped).mean()
+                if cfg.clip_vloss:
+                    v_unclipped = (newvalue - v_target).pow(2)
+                    v_clipped = v_old + (newvalue - v_old).clamp(-cfg.vf_clip_coef, cfg.vf_clip_coef)
+                    v_clipped = (v_clipped - v_target).pow(2)
+                    v_loss = 0.5 * th.max(v_unclipped, v_clipped).mean()
+                else:
+                    v_loss = 0.5 * (newvalue - v_target).pow(2).mean()
 
                 # Entropy bonus
                 ent_loss = -cfg.ent_coef * entropy.mean()
@@ -887,7 +874,7 @@ def train(scene_file: str, cfg: PPOConfig):
         start_time = time.time()
         
         # Calculate learning progress metrics
-        avg_recent_return = np.mean(recent_returns) if recent_returns else 0.0
+        avg_recent_return = float(np.mean(recent_returns)) if recent_returns else 0.0
         total_episodes = len(learning_stats['episode_returns'])
         
         # Log training metrics to WandB
@@ -911,61 +898,43 @@ def train(scene_file: str, cfg: PPOConfig):
         # Also print key metrics to console
         print(f"Update {update}/{num_updates} | return={episode_return:.3f} | avg_recent={avg_recent_return:.3f} | best={best_return:.3f} | kl={last_approx_kl:.4f}")
 
-        # Evaluation after every update
-        print(f"Running evaluation after update {update}...")
-        eval_video_path = _run_eval_episode(env, policy, cfg.device, eval_videos_dir, update)
-        # Only log scalars in WandB (no media)
-        wandb.log({
-            "eval_steps": total_steps,
-            "eval_update": update
-        })
-        # Ensure training env is reset after eval (eval resets the shared env)
-        next_obs = th.tensor(env.reset(), dtype=th.float32, device=cfg.device)
-        next_done = th.tensor(0.0, dtype=th.float32, device=cfg.device)
-        episode_return = 0.0
-        episode_length = 0
-        episode_step = 0
-        episode_frames = []
-        episode_cum_rewards = []
-        just_evaluated = True
+        # Evaluation: first update and then every 10 updates
+        if (update == 1) or (update % 10 == 0):
+            print(f"Running evaluation after update {update}...")
+            success_rate, eval_avg_return, _ = _run_eval(env, policy, cfg.device, eval_videos_dir, update, num_episodes=10)
+            # Log evaluation metrics
+            wandb.log({
+                "eval_steps": total_steps,
+                "eval_update": update,
+                "eval_success_rate": success_rate,
+                "eval_avg_return": eval_avg_return,
+            })
+            # Ensure training env is reset after eval (eval resets the shared env)
+            next_obs = th.tensor(env.reset(), dtype=th.float32, device=cfg.device)
+            next_done = th.tensor(0.0, dtype=th.float32, device=cfg.device)
+            episode_return = 0.0
+            episode_length = 0
+            episode_step = 0
+            episode_frames = []
+            episode_cum_rewards = []
+            just_evaluated = True
+            # Proactive memory cleanup
+            try:
+                import gc as _gc
+                _gc.collect()
+                if th.cuda.is_available():
+                    th.cuda.empty_cache()
+            except Exception:
+                pass
 
     print("Training complete. Shutting down simulator.")
     wandb.finish()
     og.shutdown()
 
 
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser()
-    p.add_argument("--scene-file", type=str, default="lift_test.json", help="Path to saved OmniGibson scene JSON")
-    p.add_argument("--total-timesteps", type=int, default=50_000)
-    p.add_argument("--lr", type=float, default=3e-4)
-    p.add_argument("--num-steps", type=int, default=2000)
-    p.add_argument("--update-epochs", type=int, default=10)
-    p.add_argument("--num-minibatches", type=int, default=40)
-    p.add_argument("--gamma", type=float, default=0.99)
-    p.add_argument("--gae-lambda", type=float, default=0.95)
-    p.add_argument("--clip-coef", type=float, default=0.2)
-    p.add_argument("--vf-coef", type=float, default=0.5)
-    p.add_argument("--ent-coef", type=float, default=0.0)
-    p.add_argument("--target-kl", type=float, default=0.01)
-    return p.parse_args()
-
-
 if __name__ == "__main__":
-    args = parse_args()
-    cfg = PPOConfig(
-        total_timesteps=args.total_timesteps,
-        learning_rate=args.lr,
-        num_steps=args.num_steps,
-        update_epochs=args.update_epochs,
-        num_minibatches=args.num_minibatches,
-        gamma=args.gamma,
-        gae_lambda=args.gae_lambda,
-        clip_coef=args.clip_coef,
-        vf_coef=args.vf_coef,
-        ent_coef=args.ent_coef,
-        target_kl=args.target_kl,
-    )
-    train(scene_file=args.scene_file, cfg=cfg)
+    # Use defaults from PPOConfig; scene file constant at top
+    cfg = PPOConfig()
+    train(scene_file=DEFAULT_SCENE_FILE, cfg=cfg)
 
 

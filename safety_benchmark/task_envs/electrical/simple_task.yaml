@@ -1,0 +1,102 @@
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Rs_int
+  include_robots: false
+  load_task_relevant_only: true
+
+robots:
+  - type: Tiago
+    obs_modalities: [rgb]
+    action_type: continuous
+    action_normalize: true
+    position: [0.2, 1.0, 0.0]
+    orientation: [0, 0, -1, 1]
+    grasping_mode: assisted
+    damage_params:
+      damage_evaluators:
+        - mechanical
+        - electrical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 10000000000.0
+        scale: 1e-10
+        instant_coefficient: 1.0
+        creep_coefficient: 1.0
+        object_type: brittle
+        link_thresholds:
+          arm:
+            damage_threshold: 200.0
+            scale: 0.0001
+          gripper:
+            damage_threshold: 200.0
+            scale: 0.0001
+      electrical:
+        damage_threshold: 0.0
+        scale: 0.001
+        water_system_name: sludge
+
+objects:
+  - type: DatasetObject
+    name: coffee_table
+    category: coffee_table
+    model: aoojzy
+    position: [0.2, 0.0, 0.0]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 1.0, 1.0]
+
+  - type: DatasetObject
+    name: laptop
+    category: laptop
+    model: nvulcs
+    position: [0.2, 0.0, 0.5]
+    orientation: [0, 0, 0, 1]
+    scale: [1.0, 1.0, 1.0]
+    damage_params:
+      damage_evaluators:
+        - mechanical
+        - electrical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 200.0
+        scale: 0.1
+        instant_coefficient: 1.0
+        creep_coefficient: 0.0
+        object_type: brittle
+      electrical:
+        damage_threshold: 100.0
+        scale: 1000.0
+        water_system_name: water
+
+  - type: DatasetObject
+    name: mug
+    category: mug
+    model: ycbmug
+    position: [0.0, 0.0, 0.5]
+    orientation: [0, 0, 0, 1]
+    scale: [1.0, 1.0, 1.0]
+    damage_params:
+      damage_evaluators:
+        - mechanical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 200.0
+        scale: 0.5
+        instant_coefficient: 1.0
+        creep_coefficient: 0.0
+        object_type: brittle
+
+  - type: DatasetObject
+    name: drop_in_sink
+    category: drop_in_sink
+    model: wzpabm
+    position: [-0.5, 0.0, 0.0]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 1.0, 1.0]
+    abilities:
+      toggleable: {}
+      particleSource:
+        conditions: {water: []}
+        initial_speed: 0.2
+      particleSink:
+        conditions: {water: []}
+

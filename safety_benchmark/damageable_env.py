@@ -202,24 +202,33 @@ class DamageableEnvironment(Environment):
                 - bool: truncated, i.e. whether this episode ended due to a time limit etc.
                 - dict: info, i.e. dictionary with any useful information
         """
-        # # Initialize damage evaluators if this is the first env step
+        # Initialize damage evaluators if this is the first env step
         if not self.damage_evaluators_initialized:
             for obj in self.scene.objects:
                 if hasattr(obj, "_initialize_damage_evaluators"):
                     obj._initialize_damage_evaluators()
+            # Initialize robot damage evaluators if supported
+            for robot in getattr(self, "robots", []):
+                if hasattr(robot, "_initialize_damage_evaluators"):
+                    robot._initialize_damage_evaluators()
             self.damage_evaluators_initialized = True
         
         obs, reward, terminated, truncated, info = super().step(action, n_render_iterations)
         obj_health_states = {}
         if not self.lock_health:
+            # Update all damageable objects
             for obj in self.scene.objects:
-                if hasattr(obj, "update_health") and obj.name == "glass_plate":
+                if hasattr(obj, "update_health"):
                     obj.update_health()
                     obj_health_states[obj.name] = obj.get_obs_dict()
+            # Optionally update robots if they implement damage
+            for robot in getattr(self, "robots", []):
+                if hasattr(robot, "update_health"):
+                    robot.update_health()
         
             obs["object_health_states"] = obj_health_states
             if self._reward_fn is not None:
-                reward = self._reward_fn(self, obs)
+                reward, terminated = self._reward_fn(self, obs)
         
         return obs, reward, terminated, truncated, info
 
@@ -238,7 +247,7 @@ class DamageableEnvironment(Environment):
         # # self._run_physics_with_damage_evaluation()
         
         # # Aggregate forces for the current step
-        # # self._aggregate_forces_for_env_step()
+        # # self._()
         # og.sim.step()
         
         # # Get observations, rewards, etc.
@@ -319,22 +328,22 @@ class DamageableEnvironment(Environment):
     def _evaluate_damage_at_physics_step(self):
         """
         Evaluate damage for all damageable objects at physics frequency.
-        This ensures we capture peak forces that happen during physics steps.
+        This ensures we capture peak strains that happen during physics steps.
         """
         for obj in self.scene.objects:
             if hasattr(obj, "update_health"):
                 obj.update_health()
 
-    def _aggregate_forces_for_env_step(self):
+    def _aggregate_strains_for_env_step(self):
         """
-        Aggregate forces for all damageable objects at the end of each environment step.
-        This provides user-friendly force values that match the number of environment steps.
+        Aggregate strains for all damageable objects at the end of each environment step.
+        This provides user-friendly strain values that match the number of environment steps.
         """
         for obj in self.scene.objects:
             if hasattr(obj, "damage_evaluators"):
                 for evaluator in obj.damage_evaluators:
-                    if hasattr(evaluator, "aggregate_forces_for_env_step"):
-                        evaluator.aggregate_forces_for_env_step()
+                    if hasattr(evaluator, "aggregate_strains_for_env_step"):
+                        evaluator.aggregate_strains_for_env_step()
 
     def _pre_step(self, action):
         """Apply the pre-sim-step part of an environment step, i.e. apply the robot actions."""

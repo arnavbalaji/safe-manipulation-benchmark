@@ -50,8 +50,8 @@ PARAMS = {
         "damage_evaluators": ["electrical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "electrical": {
-            "damage_threshold": 700.0,
-            "scale": 5.0,
+            "damage_threshold": 100.0,
+            "scale": 1000.0,
             "water_system_name": "water",
             "link_thresholds": {},
         },
@@ -60,8 +60,8 @@ PARAMS = {
         "damage_evaluators": ["electrical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "electrical": {
-            "damage_threshold": 700.0,
-            "scale": 5.0,
+            "damage_threshold": 100.0,
+            "scale": 1000.0,
             "water_system_name": "water",
             "link_thresholds": {},
         },

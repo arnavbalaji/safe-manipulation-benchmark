@@ -6,3 +6,7 @@ __pycache__/
 *$py.class
 /unit_tests/videos/
 safety_benchmark/task_envs/mechanical/task1_videos/
+rl/eval_videos
+rl/eval_videos_distance_reward
+rl/eval_videos_full_reward
+rl/videos

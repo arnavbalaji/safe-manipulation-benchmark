@@ -42,8 +42,8 @@ PARAMS = {
         "damage_evaluators": ["electrical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "electrical": {
-            "damage_threshold": 0.0,
-            "scale": 0.0005,
+            "damage_threshold": 50.0,
+            "scale": 1000.0,
             "water_system_name": "water",
             "link_thresholds": {},
         },
@@ -52,8 +52,8 @@ PARAMS = {
         "damage_evaluators": ["electrical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "electrical": {
-            "damage_threshold": 700.0,
-            "scale": 5.0,
+            "damage_threshold": 100.0,
+            "scale": 1000.0,
             "water_system_name": "water",
             "link_thresholds": {},
         },
@@ -264,7 +264,7 @@ def setup_keyboard_controls(teleop, env, sink, water_system):
 def main():
     """Main function: setup environment, run teleoperation, and generate videos."""
     # Easy integration knobs - Choose target object template key from TARGET_OBJECT_CONFIGS
-    target_object_key = "laptop"  # Change this to switch between "laptop", "toy_car", or None for robot-only
+    target_object_key = None  # Change this to switch between "laptop", "toy_car", or None for robot-only
     
     # Derived names and paths based on target object
     base_name = target_object_key if target_object_key is not None else "robot_only"
@@ -399,7 +399,7 @@ def run_teleoperation(teleop, env, robot, target_obj, water_system, camera_mover
     target_contact_counts = []
     robot_contact_counts = []
 
-    steps = 500
+    steps = 2000
     print(f"Starting {steps}-step teleoperation session...")
     
     for step in range(steps):

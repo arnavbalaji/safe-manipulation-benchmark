@@ -37,27 +37,28 @@ PARAMS = {
         "damage_evaluators": ["mechanical", "electrical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 30.0,
-            "impact_scale": 0.001,
-            "crushing_threshold": 10.0,
-            "crushing_scale": 0.001,
+            "damage_threshold": 1e10,
+            "scale": 1e-10,
+            "instant_coefficient": 1.0,
+            "creep_coefficient": 1.0,
+            "object_type": "brittle",
             "link_thresholds": {
-                # "arm": {
-                #     "crushing_threshold": 1.0,
-                #     "crushing_scale": 0.01,
-                # },
+                "arm": {
+                    "damage_threshold": 200.0,
+                    "scale": 0.0001,
+                },
                 # "base": {
-                #     "crushing_threshold": 3.0,
-                #     "crushing_scale": 0.001,
+                #     "damage_threshold": 3.0,
+                #     "scale": 0.001,
                 # },
                 # "wheel": {
-                #     "crushing_threshold": 10.0,
-                #     "crushing_scale": 0.01,
+                #     "damage_threshold": 10.0,
+                #     "scale": 0.01,
                 # },
-                # "gripper": {
-                #     "crushing_threshold": 4.0,
-                #     "crushing_scale": 3.0,
-                # }
+                "gripper": {
+                    "damage_threshold": 200.0,
+                    "scale": 0.0001,
+                }
             }
         },
         "electrical": {
@@ -70,66 +71,71 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 2.0,
-            "impact_scale": 40.0,  # Increased scale for more aggressive damage
-            "crushing_threshold": 5.0,
-            "crushing_scale": 1.0,
+            "damage_threshold": 200.0,
+            "scale": 0.5,  # Increased scale for more aggressive damage
+            "instant_coefficient": 1.0,
+            "creep_coefficient": 0.0,
+            "object_type": "brittle",
         }
     },
     "baseball": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 0.015,
-            "impact_scale": 0.001,
-            "crushing_threshold": 5.0,
-            "crushing_scale": 5.0,
+            "damage_threshold": 1000,
+            "scale": 0.01,
+            "instant_coefficient": 1.0,
+            "creep_coefficient": 1.0,
+            "object_type": "ductile",
         }
     },
     "glass": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 0.012,
-            "impact_scale": 10000.0,
-            "crushing_threshold": 4.0,
-            "crushing_scale": 6.0,
+            "damage_threshold": 200.0,
+            "scale": 0.5,
+            "instant_coefficient": 1.0,
+            "creep_coefficient": 0.0,
+            "object_type": "brittle",
         }
     },
     "book": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 0.015,
-            "impact_scale": 0.001,
-            "crushing_threshold": 10.0,
-            "crushing_scale": 0.1,
+            "damage_threshold": 2000,
+            "scale": 0.01,
+            "instant_coefficient": 1.0,
+            "creep_coefficient": 0.0,
+            "object_type": "brittle",
         }
     },
     "drawer": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 100.0,
-            "impact_scale": 0.000001,
-            "crushing_threshold": 100.0,
-            "crushing_scale": 0.00001,
+            "damage_threshold": 1000.0,
+            "scale": 1e-18,
+            "instant_coefficient": 1.0,
+            "creep_coefficient": 0.0,
             "link_thresholds": {
                 "link_3": {
-                    "crushing_threshold": 6.0,
-                    "crushing_scale": 5.0,
+                    "damage_threshold": 1000.0,
+                    "scale": 0.01,
                 }
-            }
+            },
+            "object_type": "brittle",
         }
     },
     "default": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 0.0,
-            "impact_scale": 1.0,
-            "crushing_threshold": 1000.0,
-            "crushing_scale": 0.0,
+            "damage_threshold": 0.0,
+            "scale": 1.0,
+            "instant_coefficient": 1.0,
+            "creep_coefficient": 1.0,
         }
     },
 }
@@ -229,9 +235,11 @@ def main():
 
     # Easy integration knobs
     # - Choose target object template key from TARGET_OBJECT_CONFIGS (e.g., "plate", "bowl", "baseball")
-    target_object_key = "plate"
+    target_object_key = "drawer"
     # - Toggle whether to load from a previously saved scene file or build fresh from scene_cfg
     use_saved_scene_file = True
+    # - Toggle whether to track robot health/strain (only meaningful when target_object_key is not None)
+    track_robot_health = True
     # - Explicit head joint init [head_1_joint (yaw), head_2_joint (pitch)] in radians. Set to None to skip.
     # head_joint_init = [0.0, -0.45]
 
@@ -253,12 +261,59 @@ def main():
         # Position near and facing the table at origin
         "position": [0.2, 1.0, 0.0],
         "orientation": [0, 0, -1, 1],  # Facing the table
-        "grasping_mode": "physical",
+        "grasping_mode": "assisted",
         "damage_params": PARAMS["tiago_robot"],
     }
 
     _can_load_saved = (target_object_key is not None) and use_saved_scene_file and os.path.exists(saved_path)
-    if target_object_key is None:
+    # Special case: if target is plate, load the scene exactly like rl_test.py
+    if target_object_key == "plate":
+        save_path = "lift_test.json"
+        if not os.path.exists(save_path):
+            print(f"Error: Saved state file '{save_path}' not found!")
+            print("Please run test_save.py first to create the state file.")
+            return
+        print(f"Loading simulation state from: {save_path}")
+
+        # Overwrite damage params in lift_test.json to current PARAMS before loading (same mapping as other scenes)
+        try:
+            with open(save_path, "r") as f:
+                scene_dict = json.load(f)
+            init_info = scene_dict["objects_info"]["init_info"]
+
+            def set_params(entry_args, params_dict):
+                entry_args["params"] = params_dict
+
+            for key, entry in init_info.items():
+                args = entry.get("args", {})
+                name = args.get("name", "")
+                category = args.get("category", "")
+                class_name = entry.get("class_name", "")
+
+                if name.startswith("robot_") or class_name == "DamageableTiago":
+                    set_params(args, PARAMS["tiago_robot"])  # robot
+                elif name == "coffee_table":
+                    set_params(args, PARAMS.get("coffee_table", PARAMS["default"]))
+                elif name == "target_object" or name == "glass_plate" or category == "plate":
+                    # Use the currently selected target's params if available, else fallback by category or default
+                    if target_object_key in PARAMS:
+                        set_params(args, PARAMS[target_object_key])
+                    elif category in PARAMS:
+                        set_params(args, PARAMS[category])
+                    else:
+                        set_params(args, PARAMS["default"])
+                else:
+                    # Generic: if category maps directly to PARAMS, apply it
+                    if category in PARAMS:
+                        set_params(args, PARAMS[category])
+
+            with open(save_path, "w") as f:
+                json.dump(scene_dict, f)
+        except Exception as e:
+            print(f"Warning: Could not rewrite params in {save_path}: {e}")
+
+        cfg = {"scene": {"type": "Scene", "scene_file": save_path}}
+    elif target_object_key is None:
         # Build scene with only robot and coffee table
         cfg = dict(scene=scene_cfg, robots=[robot0_cfg], objects=[OBJECT_CONFIGS["coffee_table"]])
     elif _can_load_saved:
@@ -308,8 +363,24 @@ def main():
         else:
             cfg["objects"] = [OBJECT_CONFIGS["coffee_table"], target_cfg]
 
+    # Match rl_test.py: ensure a fresh simulator before creating the environment
+    if og.sim is None:
+        minimal_cfg = {
+            "env": {"action_timestep": 1.0 / 60.0, "physics_timestep": 1.0 / 120.0},
+            "scene": {"type": "Scene"},
+            "robots": [],
+        }
+        _tmp_env = DamageableEnvironment(configs=minimal_cfg)
+        _tmp_env.reset()
+        og.clear()
+    else:
+        og.sim.stop()
+        og.clear()
+
     # Create the environment
     env = DamageableEnvironment(configs=cfg)
+    # Reset immediately after creation, like rl_test.py
+    env.reset()
 
     # Configure robot controllers similar to other teleop scripts
     robot = env.robots[0]
@@ -329,18 +400,30 @@ def main():
     # Increase gripper force by raising joint stiffness / damping on the gripper controllers
     controller_config["gripper_left"]["motor_type"] = "position"
     controller_config["gripper_right"]["motor_type"] = "position"
-    controller_config["gripper_left"]["isaac_kp"] = 20000.0
-    controller_config["gripper_left"]["isaac_kd"] = 1000.0
-    controller_config["gripper_right"]["isaac_kp"] = 20000.0
-    controller_config["gripper_right"]["isaac_kd"] = 1000.0
+    controller_config["gripper_left"]["isaac_kp"] = 4000.0
+    controller_config["gripper_left"]["isaac_kd"] = 2000.0
+    controller_config["gripper_right"]["isaac_kp"] = 4000.0
+    controller_config["gripper_right"]["isaac_kd"] = 2000.0
     
     robot.reload_controllers(controller_config=controller_config)
+
+    # Increase friction on gripper fingers to reduce slip during grasp
+    try:
+        for _link_name, _link in robot.links.items():
+            _n = _link_name.lower()
+            if ("gripper" in _n) or ("finger" in _n):
+                try:
+                    _link.set_attribute("physxMaterial:staticFriction", 2.0)
+                    _link.set_attribute("physxMaterial:dynamicFriction", 2.0)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     # Persist initial state after controller reload
     env.scene.update_initial_file()
 
-    # Reset before teleoperation
-    env.reset()
+    # Reset before teleoperation (robot already loaded from scene); optional extra reset for clean start
     robot.reset()
 
     # Set TIAGo head link poses at start (world frame)
@@ -445,9 +528,9 @@ def main():
     action_generator.print_keyboard_teleop_info()
     print("Running mech damage teleop. Press ESC to quit.")
 
-    max_steps = 2000
+    max_steps = 500
     step = 0
-    fps = 10
+    fps = 30
     frames = []
     # Ego camera recording
     frames_ego = []
@@ -463,11 +546,24 @@ def main():
             target_ref = env.scene.object_registry("name", "glass_plate")
         if target_ref is None:
             target_ref = env.scene.object_registry("name", base_name)
+    # Enable CCD and raise friction on target to further reduce slip
+    try:
+        if target_ref is not None:
+            for _tlink in target_ref.links.values():
+                try:
+                    _tlink.ccd_enabled = True
+                except Exception:
+                    pass
+                try:
+                    _tlink.set_attribute("physxMaterial:staticFriction", 1.5)
+                    _tlink.set_attribute("physxMaterial:dynamicFriction", 1.5)
+                except Exception:
+                    pass
+    except Exception:
+        pass
     # Force metrics tracking (impact and sustained per step)
-    robot_impact_forces = []
-    robot_sustained_forces = []
-    target_impact_forces = []
-    target_sustained_forces = []
+    robot_strains = []
+    target_strains = []
     # Damage status per step (for dynamic overlay color)
     target_statuses = []
     while step != max_steps:
@@ -509,80 +605,60 @@ def main():
             ego_bgr = cv2.copyMakeBorder(ego_bgr, border, border, border, border, cv2.BORDER_CONSTANT, value=bgr)
             frames_ego.append(ego_bgr)
 
-        # Record health
-        robot_healths.append(float(getattr(robot, "health", 100.0)))
+        # Record health (conditionally track robot based on track_robot_health)
+        should_track_robot = track_robot_health or (target_object_key is None)
+        if should_track_robot:
+            robot_healths.append(float(getattr(robot, "health", 100.0)))
         if target_ref is not None:
             target_healths.append(float(getattr(target_ref, "health", 100.0)))
             # Record current damage status string
             target_statuses.append(getattr(target_ref, "damage_status"))
 
-        # Record forces (impact per-step and sustained per-step), max over links when available
-        # Robot
-        r_dmg = robot.damage_evaluators[0]
-        # Impact: max average over per-link values for this step; then clear
-        link_keyword = "gripper"
-        if hasattr(r_dmg, 'impact_forces_by_link') and r_dmg.impact_forces_by_link:
-            # Get max impact force across all base-related links
-            base_impacts = []
-            for link_name, forces in r_dmg.impact_forces_by_link.items():
-                if link_keyword in link_name.lower():
-                    base_impacts.extend(forces)
-            impact_val = max(base_impacts) if base_impacts else 0.0
-            robot_impact_forces.append(impact_val)
-            # impact_vals = r_dmg.impact_forces_by_link.get("base_link", [])
-            # robot_impact_forces.append(max(impact_vals) if impact_vals else 0.0)
-            r_dmg.impact_forces_by_link = {}
-        else:
-            robot_impact_forces.append(0.0)
-        # Get sustained running total instead of per-timestep values
-        if hasattr(r_dmg, '_sustained_running_total') and r_dmg._sustained_running_total:
-            base_sustained_totals = []
-            for link_name, running_total in r_dmg._sustained_running_total.items():
-                if link_keyword in link_name.lower():
-                    base_sustained_totals.append(running_total)
-            sustained_val = max(base_sustained_totals) if base_sustained_totals else 0.0
-            robot_sustained_forces.append(sustained_val)
-        else:
-            robot_sustained_forces.append(0.0)
-        # # Sustained: per-step average max; then clear
-        # if hasattr(r_dmg, 'sustained_forces_by_link') and r_dmg.sustained_forces_by_link:
-        #     sustained_vals = r_dmg.sustained_forces_by_link.get("base_link", [])
-        #     robot_sustained_forces.append(max(sustained_vals) if sustained_vals else 0.0)
-        #     r_dmg.sustained_forces_by_link = {}
-        # else:
-        #     robot_sustained_forces.append(0.0)   
+        # Record strain (per-step): take max over per-link last_strain_by_link after this env step
+        # For robot, only include links with "arm" or "gripper" in their names
+        if should_track_robot:
+            r_dmg = robot.damage_evaluators[0]
+            if hasattr(r_dmg, "last_strain_by_link") and len(getattr(r_dmg, "last_strain_by_link", {})) > 0:
+                # Filter to only arm/gripper links
+                arm_gripper_strains = {
+                    link_name: strain
+                    for link_name, strain in r_dmg.last_strain_by_link.items()
+                    if "arm" in link_name.lower() or "gripper" in link_name.lower()
+                }
+                if arm_gripper_strains:
+                    robot_strains.append(float(max(arm_gripper_strains.values())))
+                else:
+                    # Fallback if no arm/gripper links found
+                    robot_strains.append(float(max(r_dmg.last_strain_by_link.values())))
+            else:
+                # Fallbacks for older evaluators
+                if hasattr(r_dmg, "get_current_env_step_strain"):
+                    robot_strains.append(float(r_dmg.get_current_env_step_strain()))
+                elif hasattr(r_dmg, "strain_values") and len(r_dmg.strain_values) > 0:
+                    robot_strains.append(float(r_dmg.strain_values[-1]))
+                else:
+                    robot_strains.append(0.0)
 
-        # Target object
         if target_ref is not None:
             t_dmg = target_ref.damage_evaluators[0]
-            if hasattr(t_dmg, 'impact_forces_by_link') and t_dmg.impact_forces_by_link:
-                if target_object_key in ("drawer", "door"):
-                    # For drawer/door, get max impact force across all links
-                    all_impact_forces = []
-                    for link_name, forces in t_dmg.impact_forces_by_link.items():
-                        all_impact_forces.extend(forces)
-                    max_impact_force = max(all_impact_forces) if all_impact_forces else 0.0
-                    target_impact_forces.append(max_impact_force)
+            if hasattr(t_dmg, "last_strain_by_link") and len(getattr(t_dmg, "last_strain_by_link", {})) > 0:
+                if target_object_key == "drawer":
+                    # Only track strain from link_3 when the target is a drawer
+                    link3_val = None
+                    for k, v in t_dmg.last_strain_by_link.items():
+                        if k.lower() == "link_3" or "link_3" in k.lower():
+                            link3_val = float(v)
+                            break
+                    target_strains.append(0.0 if link3_val is None else link3_val)
                 else:
-                    # For other objects, use base_link
-                    base_vals = t_dmg.impact_forces_by_link.get("base_link", [])
-                    target_impact_forces.append(max(base_vals) if base_vals else 0.0)
-                t_dmg.impact_forces_by_link = {}
+                    target_strains.append(float(max(t_dmg.last_strain_by_link.values())))
             else:
-                target_impact_forces.append(0.0)
-            # Get sustained running total instead of per-timestep values
-            if hasattr(t_dmg, '_sustained_running_total') and t_dmg._sustained_running_total:
-                if target_object_key in ("drawer", "door"):
-                    # For drawer/door, get max sustained force across all links
-                    all_sustained_totals = list(t_dmg._sustained_running_total.values())
-                    max_sustained_total = max(all_sustained_totals) if all_sustained_totals else 0.0
-                    target_sustained_forces.append(max_sustained_total)
+                if hasattr(t_dmg, "get_current_env_step_strain"):
+                    target_strains.append(float(t_dmg.get_current_env_step_strain()))
+                elif hasattr(t_dmg, "strain_values") and len(t_dmg.strain_values) > 0:
+                    target_strains.append(float(t_dmg.strain_values[-1]))
                 else:
-                    # For other objects, use base_link
-                    base_sustained_total = t_dmg._sustained_running_total.get("base_link", 0.0)
-                    target_sustained_forces.append(base_sustained_total)
-            else:
-                target_sustained_forces.append(0.0)
+                    target_strains.append(0.0)
 
     # Clean shutdown
     camera_mover.clear()
@@ -619,7 +695,10 @@ def main():
 
     # Build animated health plot using Matplotlib
     health_mp4 = os.path.join(videos_dir, f'{base_name}_healths.mp4')
-    if len(robot_healths) > 0 and (target_object_key is not None) and len(target_healths) > 0:
+    should_track_robot = track_robot_health or (target_object_key is None)
+    
+    if should_track_robot and len(robot_healths) > 0 and (target_object_key is not None) and len(target_healths) > 0:
+        # Both robot and target
         import matplotlib.pyplot as plt
         import matplotlib.animation as animation
 
@@ -660,7 +739,8 @@ def main():
         writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
         ani.save(health_mp4, writer=writer)
         plt.close(fig)
-    elif len(robot_healths) > 0 and (target_object_key is None):
+    elif should_track_robot and len(robot_healths) > 0 and (target_object_key is None):
+        # Robot only
         import matplotlib.pyplot as plt
         import matplotlib.animation as animation
 
@@ -690,6 +770,40 @@ def main():
             return line_r,
 
         ani = animation.FuncAnimation(fig, animate_health_r, init_func=init_health_r, frames=T, interval=1000 / fps, blit=True)
+        writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
+        ani.save(health_mp4, writer=writer)
+        plt.close(fig)
+    elif not should_track_robot and (target_object_key is not None) and len(target_healths) > 0:
+        # Target only (when track_robot_health is False)
+        import matplotlib.pyplot as plt
+        import matplotlib.animation as animation
+
+        T = len(target_healths)
+        y_min = 0.0
+        y_max = 100.0
+        fig, ax = plt.subplots(figsize=(9.6, 5.4))
+        line_p, = ax.plot([], [], lw=6, color='tab:orange', label=target_object_key.capitalize())
+        ax.set_xlim(0, max(1, T) / fps)
+        ax.set_ylim(y_min, y_max)
+        ax.set_xlabel('Time (s)', fontsize=20)
+        ax.set_ylabel('Health', fontsize=20)
+        ax.set_title('Health Over Time', fontsize=26)
+        ax.legend(loc='best', fontsize=16)
+        ax.tick_params(axis='both', which='major', labelsize=16, width=1.5)
+        ax.grid(True, linewidth=1.0, alpha=0.3)
+        plt.tight_layout()
+
+        def init_health_p():
+            line_p.set_data([], [])
+            return line_p,
+
+        def animate_health_p(i):
+            x = [k / fps for k in range(1, i + 2)]
+            y_p = target_healths[: i + 1]
+            line_p.set_data(x, y_p)
+            return line_p,
+
+        ani = animation.FuncAnimation(fig, animate_health_p, init_func=init_health_p, frames=T, interval=1000 / fps, blit=True)
         writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
         ani.save(health_mp4, writer=writer)
         plt.close(fig)
@@ -725,155 +839,140 @@ def main():
             combined_mp4
         ], check=True)
 
-    # Build stacked force plots video (impact top, sustained bottom) with both robot and target forces
-    forces_mp4 = os.path.join(videos_dir, f'{base_name}_forces.mp4')
-    if len(robot_impact_forces) > 0:
+    # Build single strain plot video (robot and target) with damage thresholds
+    strain_mp4 = os.path.join(videos_dir, f'{base_name}_strain.mp4')
+    should_track_robot = track_robot_health or (target_object_key is None)
+    
+    if should_track_robot and len(robot_strains) > 0:
+        # Robot tracking enabled
         import matplotlib.pyplot as plt
         import matplotlib.animation as animation
 
-        T_forces = max(len(robot_impact_forces), len(robot_sustained_forces), 
-                      len(target_impact_forces) if target_object_key is not None else 0,
-                      len(target_sustained_forces) if target_object_key is not None else 0)
+        T_strain = max(len(robot_strains), len(target_strains) if target_object_key is not None else 0)
+
+        fig, ax = plt.subplots(figsize=(9.6, 5.4))
+
+        line_r, = ax.plot([], [], lw=4, color='tab:blue', label='Robot')
+        line_t = None
+        if target_object_key is not None and len(target_strains) > 0:
+            line_t, = ax.plot([], [], lw=4, color='tab:orange', label=target_object_key.capitalize())
+
+        ax.set_xlim(0, max(1, T_strain) / fps)
+
+        # Threshold lines (dotted)
+        # Use arm or gripper link threshold (they are the same)
+        robot_mech_params = PARAMS["tiago_robot"]["mechanical"]
+        link_thresholds = robot_mech_params.get("link_thresholds", {})
+        robot_thresh = None
+        if "arm" in link_thresholds:
+            robot_thresh = link_thresholds["arm"]["damage_threshold"]
+        elif "gripper" in link_thresholds:
+            robot_thresh = link_thresholds["gripper"]["damage_threshold"]
+        else:
+            # Fallback to main threshold if no arm/gripper thresholds
+            robot_thresh = robot_mech_params["damage_threshold"]
         
-        # Impact figure (both robot and target)
-        fig_imp, ax_imp = plt.subplots(figsize=(9.6, 5.4))
-        
-        # Robot impact line
-        line_imp_r, = ax_imp.plot([], [], lw=4, color='tab:blue', label='Robot')
-        
-        # Target impact line (if available)
-        line_imp_t = None
-        if target_object_key is not None and len(target_impact_forces) > 0:
-            line_imp_t, = ax_imp.plot([], [], lw=4, color='tab:orange', label=target_object_key.capitalize())
-        
-        ax_imp.set_xlim(0, max(1, T_forces) / fps)
-        
-        # Calculate y-axis limits considering both robot and target forces
-        all_impact_forces = robot_impact_forces + (target_impact_forces if target_object_key is not None else [])
-        y_min_imp = 0.0
-        y_max_imp = max(all_impact_forces + [0.0])
-        if y_min_imp == y_max_imp:
-            y_min_imp, y_max_imp = (0.0, 1.0)
-        ax_imp.set_ylim(y_min_imp, y_max_imp * 1.1)
-        
-        # Add threshold lines for both robot and target
-        robot_impact_threshold = PARAMS["tiago_robot"]["mechanical"]["impact_threshold"]
-        ax_imp.axhline(y=robot_impact_threshold, color='blue', linestyle='--', linewidth=2, alpha=0.7, label=f'Robot Impact Threshold ({robot_impact_threshold} N)')
-        
+        target_thresh = None
         if target_object_key is not None:
             target_params = PARAMS.get(target_object_key, PARAMS["default"])
-            target_impact_threshold = target_params["mechanical"]["impact_threshold"]
-            ax_imp.axhline(y=target_impact_threshold, color='orange', linestyle='--', linewidth=2, alpha=0.7, label=f'{target_object_key.capitalize()} Impact Threshold ({target_impact_threshold} N)')
-        
-        ax_imp.set_xlabel('Time (s)', fontsize=16)
-        ax_imp.set_ylabel('Impact Force (N)', fontsize=16)
-        ax_imp.set_title('Impact Force Over Time', fontsize=20)
-        ax_imp.legend(loc='best')
+            target_thresh = target_params["mechanical"]["damage_threshold"]
+
+        # y-limits must include thresholds so dotted lines are visible
+        extra = []
+        if robot_thresh is not None:
+            extra.append(robot_thresh)
+        if target_thresh is not None:
+            extra.append(target_thresh)
+        all_strains = robot_strains + (target_strains if target_object_key is not None else [])
+        y_min = 0.0
+        y_max = max(all_strains + extra + [0.0])
+        if y_min == y_max:
+            y_min, y_max = (0.0, 1.0)
+        ax.set_ylim(y_min, y_max * 1.1)
+
+        if robot_thresh is not None:
+            ax.axhline(y=robot_thresh, color='blue', linestyle='--', linewidth=2, alpha=0.7, label=f'Robot Threshold ({robot_thresh})')
+        if target_thresh is not None:
+            ax.axhline(y=target_thresh, color='orange', linestyle='--', linewidth=2, alpha=0.7, label=f'{target_object_key.capitalize()} Threshold ({target_thresh})')
+
+        ax.set_xlabel('Time (s)', fontsize=16)
+        ax.set_ylabel('Strain (proxy)', fontsize=16)
+        ax.set_title('Strain Over Time', fontsize=20)
+        ax.legend(loc='best')
         plt.tight_layout()
 
-        def init_imp():
-            line_imp_r.set_data([], [])
-            if line_imp_t is not None:
-                line_imp_t.set_data([], [])
-            return (line_imp_r, line_imp_t) if line_imp_t is not None else (line_imp_r,)
+        def init_strain():
+            line_r.set_data([], [])
+            if line_t is not None:
+                line_t.set_data([], [])
+            return (line_r, line_t) if line_t is not None else (line_r,)
 
-        def animate_imp(i):
+        def animate_strain(i):
             x = [k / fps for k in range(1, i + 2)]
-            y_ir = robot_impact_forces[: i + 1]
-            line_imp_r.set_data(x, y_ir)
-            
-            if line_imp_t is not None:
-                y_it = target_impact_forces[: i + 1]
-                line_imp_t.set_data(x, y_it)
-                return line_imp_r, line_imp_t
-            return line_imp_r,
+            y_r = robot_strains[: i + 1]
+            line_r.set_data(x, y_r)
+            if line_t is not None:
+                y_t = target_strains[: i + 1]
+                line_t.set_data(x, y_t)
+                return line_r, line_t
+            return line_r,
 
-        ani_imp = animation.FuncAnimation(fig_imp, animate_imp, init_func=init_imp, frames=T_forces, interval=1000 / fps, blit=True)
+        ani = animation.FuncAnimation(fig, animate_strain, init_func=init_strain, frames=T_strain, interval=1000 / fps, blit=True)
+        writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
+        ani.save(strain_mp4, writer=writer)
+        plt.close(fig)
+    elif not should_track_robot and target_object_key is not None and len(target_strains) > 0:
+        # Target only (when track_robot_health is False)
+        import matplotlib.pyplot as plt
+        import matplotlib.animation as animation
 
-        # Sustained figure (both robot and target)
-        fig_sus, ax_sus = plt.subplots(figsize=(9.6, 5.4))
-        
-        # Robot sustained line
-        line_sus_r, = ax_sus.plot([], [], lw=4, color='tab:green', label='Robot')
-        
-        # Target sustained line (if available)
-        line_sus_t = None
-        if target_object_key is not None and len(target_sustained_forces) > 0:
-            line_sus_t, = ax_sus.plot([], [], lw=4, color='tab:red', label=target_object_key.capitalize())
-        
-        ax_sus.set_xlim(0, max(1, T_forces) / fps)
-        
-        # Calculate y-axis limits considering both robot and target forces
-        all_sustained_forces = robot_sustained_forces + (target_sustained_forces if target_object_key is not None else [])
-        y_min_sus = 0.0
-        y_max_sus = max(all_sustained_forces + [0.0])
-        if y_min_sus == y_max_sus:
-            y_min_sus, y_max_sus = (0.0, 1.0)
-        ax_sus.set_ylim(y_min_sus, y_max_sus * 1.1)
-        
-        # Add threshold lines for both robot and target
-        robot_sustained_threshold = PARAMS["tiago_robot"]["mechanical"]["crushing_threshold"]
-        ax_sus.axhline(y=robot_sustained_threshold, color='green', linestyle='--', linewidth=2, alpha=0.7, label=f'Robot Sustained Threshold ({robot_sustained_threshold} N)')
-        
-        if target_object_key is not None:
-            target_params = PARAMS.get(target_object_key, PARAMS["default"])
-            target_sustained_threshold = target_params["mechanical"]["crushing_threshold"]
-            ax_sus.axhline(y=target_sustained_threshold, color='red', linestyle='--', linewidth=2, alpha=0.7, label=f'{target_object_key.capitalize()} Sustained Threshold ({target_sustained_threshold} N)')
-        
-        ax_sus.set_xlabel('Time (s)', fontsize=16)
-        ax_sus.set_ylabel('Sustained Force (N)', fontsize=16)
-        ax_sus.set_title('Sustained Force Over Time', fontsize=20)
-        ax_sus.legend(loc='best')
+        T_strain = len(target_strains)
+        fig, ax = plt.subplots(figsize=(9.6, 5.4))
+
+        line_t, = ax.plot([], [], lw=4, color='tab:orange', label=target_object_key.capitalize())
+
+        ax.set_xlim(0, max(1, T_strain) / fps)
+
+        y_min = 0.0
+        y_max = max(target_strains + [0.0])
+        if y_min == y_max:
+            y_min, y_max = (0.0, 1.0)
+        ax.set_ylim(y_min, y_max * 1.1)
+
+        # Threshold line (dotted) for target only
+        target_params = PARAMS.get(target_object_key, PARAMS["default"])
+        target_thresh = target_params["mechanical"]["damage_threshold"]
+        ax.axhline(y=target_thresh, color='orange', linestyle='--', linewidth=2, alpha=0.7, label=f'{target_object_key.capitalize()} Threshold ({target_thresh})')
+
+        ax.set_xlabel('Time (s)', fontsize=16)
+        ax.set_ylabel('Strain (proxy)', fontsize=16)
+        ax.set_title('Strain Over Time', fontsize=20)
+        ax.legend(loc='best')
         plt.tight_layout()
 
-        def init_sus():
-            line_sus_r.set_data([], [])
-            if line_sus_t is not None:
-                line_sus_t.set_data([], [])
-            return (line_sus_r, line_sus_t) if line_sus_t is not None else (line_sus_r,)
+        def init_strain():
+            line_t.set_data([], [])
+            return line_t,
 
-        def animate_sus(i):
+        def animate_strain(i):
             x = [k / fps for k in range(1, i + 2)]
-            y_sr = robot_sustained_forces[: i + 1]
-            line_sus_r.set_data(x, y_sr)
-            
-            if line_sus_t is not None:
-                y_st = target_sustained_forces[: i + 1]
-                line_sus_t.set_data(x, y_st)
-                return line_sus_r, line_sus_t
-            return line_sus_r,
+            y_t = target_strains[: i + 1]
+            line_t.set_data(x, y_t)
+            return line_t,
 
-        ani_sus = animation.FuncAnimation(fig_sus, animate_sus, init_func=init_sus, frames=T_forces, interval=1000 / fps, blit=True)
+        ani = animation.FuncAnimation(fig, animate_strain, init_func=init_strain, frames=T_strain, interval=1000 / fps, blit=True)
+        writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
+        ani.save(strain_mp4, writer=writer)
+        plt.close(fig)
 
-        # Save and stack
-        forces_imp_mp4 = os.path.join(videos_dir, f'{base_name}_forces_impact.mp4')
-        forces_sus_mp4 = os.path.join(videos_dir, f'{base_name}_forces_sustained.mp4')
-        writer_f = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
-        ani_imp.save(forces_imp_mp4, writer=writer_f)
-        plt.close(fig_imp)
-        ani_sus.save(forces_sus_mp4, writer=writer_f)
-        plt.close(fig_sus)
-
-        subprocess.run([
-            'ffmpeg', '-y',
-            '-i', forces_imp_mp4,
-            '-i', forces_sus_mp4,
-            '-filter_complex',
-            '[0:v]scale=1080:360,setsar=1[top];[1:v]scale=1080:360,setsar=1[bot];[top][bot]vstack=inputs=2[v]',
-            '-map', '[v]',
-            '-c:v', 'mpeg4',
-            '-q:v', '5',
-            forces_mp4
-        ], check=True)
-
-    # Second combined video: cam_with_ego (left) + forces stacked (right)
-    # Rename final combined video to {object}_with_forces.mp4
-    combined_forces_mp4 = os.path.join(videos_dir, f'{base_name}_with_forces.mp4')
-    if os.path.exists(cam_with_ego_mp4) and os.path.exists(forces_mp4):
+    # Second combined video: cam_with_ego (left) + strain plot (right)
+    # Rename final combined video to {object}_with_strain.mp4
+    combined_forces_mp4 = os.path.join(videos_dir, f'{base_name}_with_strain.mp4')
+    if os.path.exists(cam_with_ego_mp4) and os.path.exists(strain_mp4):
         subprocess.run([
             'ffmpeg', '-y',
             '-i', cam_with_ego_mp4,
-            '-i', forces_mp4,
+            '-i', strain_mp4,
             '-filter_complex',
             '[0:v]scale=1080:720,setsar=1[left];[1:v]scale=1080:720,setsar=1[right];[left][right]hstack=inputs=2[v]',
             '-map', '[v]',
@@ -889,13 +988,10 @@ def main():
         mp4_ego,   # {base_name}_ego_obs.mp4
         cam_with_ego_mp4,  # {base_name}_camera_with_ego.mp4
         health_mp4,  # {base_name}_healths.mp4
-        forces_mp4,  # {base_name}_forces.mp4
+        strain_mp4,  # {base_name}_strain.mp4
     ]
     
-    # Add force-specific intermediate videos if they exist
-    forces_imp_mp4 = os.path.join(videos_dir, f'{base_name}_forces_impact.mp4')
-    forces_sus_mp4 = os.path.join(videos_dir, f'{base_name}_forces_sustained.mp4')
-    videos_to_cleanup.extend([forces_imp_mp4, forces_sus_mp4])
+    # No additional intermediate strain videos
     
     for video_path in videos_to_cleanup:
         if os.path.exists(video_path):
