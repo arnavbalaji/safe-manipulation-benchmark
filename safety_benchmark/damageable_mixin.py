@@ -47,6 +47,9 @@ class DamageableMixin:
             if hasattr(evaluator, 'reset_tracking'):
                 evaluator.reset_tracking()
 
+    def set_params(self, params):
+        self.params = params
+
     @property
     def health(self):
         # TODO: Change back to average health value across links when things are working
@@ -57,63 +60,84 @@ class DamageableMixin:
         # return sum(self.link_healths.values()) / len(self.link_healths)
         
 
-    @property
-    def damage_status(self):
-        # Returning damage status of average health
-        h = self.health
-        if h < self.critical_threshold:
-            return "critical"
-        elif h < self.major_threshold:
-            return "major"
-        elif h < self.minor_threshold:
-            return "minor"
-        elif h < 100.0:
-            return "negligible"
-        else:
-            return "none"
+    # @property
+    # def damage_status(self):
+    #     # Returning damage status of average health
+    #     h = self.health
+    #     if h < self.critical_threshold:
+    #         return "critical"
+    #     elif h < self.major_threshold:
+    #         return "major"
+    #     elif h < self.minor_threshold:
+    #         return "minor"
+    #     elif h < 100.0:
+    #         return "negligible"
+    #     else:
+    #         return "none"
 
     def update_health(self):
         # Updates health based on the damage evaluators
         self.damage_info = {}
         for evaluator in self.damage_evaluators:
             link_damages = evaluator.generate_damage()
-            self.damage_info[evaluator.name] = link_damages
+            # self.damage_info[evaluator.name] = link_damages
+            # self.damage_info[evaluator.name] = {}
             for link_name, damage in link_damages.items():
+                
+                # For logging information related to damages to each link
+                if link_name not in self.damage_info:
+                    self.damage_info[link_name] = {}
+               
                 # Update link healths
                 new_health = max(0.0, self.link_healths[link_name] - damage)
                 self.link_healths[link_name] = new_health
 
-                # Calculate and update individual link status
-                if new_health < self.critical_threshold:
-                    status = "critical"
-                elif new_health < self.major_threshold:
-                    status = "major"
-                elif new_health < self.minor_threshold:
-                    status = "minor"
-                elif new_health < 100.0:
-                    status = "negligible"
-                else:
-                    status = "none"
-                self.damage_statuses[link_name] = status
+                # For debugging
+                # if self.name == "swivel_chair" and link_name == "base_link":
+                #     print("new_health: ", new_health)
+                #     if new_health == 0.0:
+                #         breakpoint()
 
-    def get_impact_history(self, link_name: str = None):
-        # Get impact history from damage evaluators
-        impact_history = {}
-        for evaluator in self.damage_evaluators:
-            if hasattr(evaluator, 'get_impact_history'):
-                history = evaluator.get_impact_history(link_name)
-                if link_name is None:
-                    impact_history.update(history)
-                else:
-                    impact_history[link_name] = history
-        return impact_history
+                # # Calculate and update individual link status
+                # if new_health < self.critical_threshold:
+                #     status = "critical"
+                # elif new_health < self.major_threshold:
+                #     status = "major"
+                # elif new_health < self.minor_threshold:
+                #     status = "minor"
+                # elif new_health < 100.0:
+                #     status = "negligible"
+                # else:
+                #     status = "none"
+                # self.damage_statuses[link_name] = status
 
-    def get_obs_dict(self):
-        obs_dict = {}
-        obs_dict["health"] = self.health
-        obs_dict["damage_status"] = self.damage_status
-        obs_dict["damage_info"] = self.damage_info
-        return obs_dict
+                # Update the mechanical damage information
+                if evaluator.name == "mechanical":
+                    if "mechanical" not in self.damage_info[link_name]:
+                        self.damage_info[link_name]["mechanical"] = {}
+                    self.damage_info[link_name]["mechanical"]["dynamic_forces"] = evaluator.dynamic_forces[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["raw_forces_from_sim"] = evaluator.raw_forces_from_sim[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["static_forces"] = evaluator.static_forces[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["contacts"] = evaluator.contacts_by_link[link_name][-1]
+
+    # def get_impact_history(self, link_name: str = None):
+    #     # Get impact history from damage evaluators
+    #     impact_history = {}
+    #     for evaluator in self.damage_evaluators:
+    #         if hasattr(evaluator, 'get_impact_history'):
+    #             history = evaluator.get_impact_history(link_name)
+    #             if link_name is None:
+    #                 impact_history.update(history)
+    #             else:
+    #                 impact_history[link_name] = history
+    #     return impact_history
+
+    # def get_obs_dict(self):
+    #     obs_dict = {}
+    #     obs_dict["health"] = self.health
+    #     obs_dict["damage_status"] = self.damage_status
+    #     obs_dict["damage_info"] = self.damage_info
+    #     return obs_dict
 
 
 '''Damageable Object subclasses'''
@@ -142,12 +166,23 @@ class DamageableFrankaPanda(DamageableMixin, FrankaPanda):
         import os
         from omnigibson.macros import gm
         return os.path.join(gm.ASSET_PATH, "models/franka/franka_panda/usd/franka_panda.usda")
+        return os.path.join(gm.DATA_PATH, f"omnigibson-robot-assets/models/{model}/usd/{model}.usda")
 
 class DamageableTiago(DamageableMixin, Tiago):
+    # def __init__(self, *args, **kwargs):
+    #     # Store the original name before super().__init__ modifies it
+    #     name = kwargs.get("name", "robot")
+    #     breakpoint()
+    #     # Explicitly set the prim path to match the original Tiago format
+    #     kwargs["relative_prim_path"] = f"/controllable_tiago_{name}"
+    #     super().__init__(*args, **kwargs)
+
     @property
     def usd_path(self):
         # Override to use the original Tiago model path, not the damageable version
         model = "tiago"  # Use the original model name, not the class name
         import os
         from omnigibson.macros import gm
-        return os.path.join(gm.ASSET_PATH, f"models/{model}/usd/{model}.usda")
+        # For older OG
+        # return os.path.join(gm.ASSET_PATH, f"models/{model}/usd/{model}.usda")
+        return os.path.join(gm.DATA_PATH, f"omnigibson-robot-assets/models/{model}/usd/{model}.usda")

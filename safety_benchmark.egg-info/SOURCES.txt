@@ -10,6 +10,7 @@ safety_benchmark/damage_evaluators/__init__.py
 safety_benchmark/damage_evaluators/damage_evaluator.py
 safety_benchmark/damage_evaluators/electrical_damage_evaluator.py
 safety_benchmark/damage_evaluators/mechanical_damage_evaluator.py
+safety_benchmark/damage_evaluators/mechanical_damage_evaluator_test.py
 safety_benchmark/damage_evaluators/thermal_damage_evaluator.py
 safety_benchmark/params/__init__.py
 safety_benchmark/params/test_params.py

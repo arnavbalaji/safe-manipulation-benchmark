@@ -7,9 +7,9 @@ class DamageEvaluator(ABC):
     '''
     Damage Evaluator abstract class
     '''
-    def __init__(self, entity: BaseObject, damage_threshold: float, scale: float):
+    def __init__(self, entity: BaseObject, damage_threshold: float, damage_scale: float):
         self.damage_threshold = damage_threshold
-        self.scale = scale
+        self.damage_scale = damage_scale
         self.entity = entity
     
     @abstractmethod

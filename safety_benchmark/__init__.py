@@ -8,6 +8,7 @@ from safety_benchmark.damageable_mixin import (
     DamageableLightObject,
     DamageableStatefulObject,
 )
+from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper, DamageableDataPlaybackWrapper
 
 __all__ = [
     # Base classes
@@ -23,6 +24,11 @@ __all__ = [
     'DamageableControllableObject',
     'DamageableLightObject',
     'DamageableStatefulObject',
+    
+    # Environment classes
+    'DamageableEnvironment',
+    'DamageableDataCollectionWrapper',
+    'DamageableDataPlaybackWrapper',
     
     # Parameters
     'PARAMS',

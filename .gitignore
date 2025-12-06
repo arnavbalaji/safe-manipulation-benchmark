@@ -10,3 +10,6 @@ rl/eval_videos
 rl/eval_videos_distance_reward
 rl/eval_videos_full_reward
 rl/videos
+
+# custom folders
+outputs/

@@ -117,6 +117,76 @@ PARAMS = {
             "crushing_scale": 0.01,
         }
     },
+    "vase": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "strain_threshold": 50.0,
+            "damage_scale": 100.0,
+            "dynamic_forces_coefficient": 1.0,
+            "static_forces_coefficient": 1.0,
+        }
+    },
+    "swivel_chair": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "strain_threshold": 50.0,
+            "damage_scale": 20.0,
+            "dynamic_forces_coefficient": 1.0,
+            "static_forces_coefficient": 0.01,
+        }
+    },
+    "floor_lamp": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "strain_threshold": 50.0,
+            "damage_scale": 100.0,
+            "dynamic_forces_coefficient": 1.0,
+            "static_forces_coefficient": 1.0,
+        }
+    },
+    "beer_bottle": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "strain_threshold": 50.0,
+            "damage_scale": 20.0,
+            "dynamic_forces_coefficient": 1.0,
+            "static_forces_coefficient": 1.0,
+        }
+    },
+    "coffee_cup": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "strain_threshold": 50.0,
+            "damage_scale": 20.0,
+            "dynamic_forces_coefficient": 1.0,
+            "static_forces_coefficient": 1.0,
+        }
+    },
+    "soccer_ball": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "strain_threshold": 50.0,
+            "damage_scale": 20.0,
+            "dynamic_forces_coefficient": 0.01,
+            "static_forces_coefficient": 0.5,
+        }
+    },
+    "paper_cup": {
+        "damage_evaluators": ["mechanical"],
+        "health_thresholds": [90.0, 60.0, 30.0],
+        "mechanical": {
+            "strain_threshold": 50.0,
+            "damage_scale": 20.0,
+            "dynamic_forces_coefficient": 0.01,
+            "static_forces_coefficient": 1.0,
+        }
+    },
     "default": {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],

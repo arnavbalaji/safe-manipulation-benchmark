@@ -1,4 +1,14 @@
-from omnigibson.envs.env_base import Environment
+
+import inspect
+import random
+import string
+import torch as th
+import numpy as np
+import time
+import json
+
+from safety_benchmark.params.test_params import PARAMS
+from safety_benchmark.utils.misc_utils import json_default
 from safety_benchmark.damageable_mixin import (
     DamageableDatasetObject,
     DamageablePrimitiveObject,
@@ -9,14 +19,10 @@ from safety_benchmark.damageable_mixin import (
     DamageableFrankaPanda,
     DamageableTiago,
 )
-from safety_benchmark.params.test_params import PARAMS
-import omnigibson as og
-import inspect
-import random
-import string
-import torch as th
-import time
 
+import omnigibson as og
+from omnigibson.envs.env_base import Environment
+from omnigibson.envs.data_wrapper import DataPlaybackWrapper, DataCollectionWrapper
 from omnigibson.objects import REGISTERED_OBJECTS
 from omnigibson.robots import REGISTERED_ROBOTS
 
@@ -54,9 +60,9 @@ def create_damageable_object_from_config(cls_name, cls_registry, cfg, cls_type_d
     if damageable_cls is not None:
         # Getting damage parameters
         if "damage_params" not in cfg:
-            obj_name = cfg.get("name", "default")
-            if obj_name in PARAMS:
-                cls_kwargs["params"] = PARAMS[obj_name]
+            obj_category = cfg.get("category", "default")
+            if obj_category in PARAMS:
+                cls_kwargs["params"] = PARAMS[obj_category]
             else:
                 cls_kwargs["params"] = PARAMS["default"]
         else:
@@ -86,14 +92,16 @@ class DamageableEnvironment(Environment):
         self._load_variables()
 
         # Load the scene, robots, and task
+        og.sim.stop()
         self._load_scene()
         self._load_robots()
         self._load_objects()
         self._load_task()
         self._load_external_sensors()
+        og.sim.play()
 
         self.inialize_damageable_objects()
-
+    
     def inialize_damageable_objects(self):
         # Initialize health for all damageable objects
         for obj in self.scene.objects:
@@ -156,6 +164,7 @@ class DamageableEnvironment(Environment):
     def _load_objects(self):
         # Load objects from config as damageable versions
         assert og.sim.is_stopped(), "Simulator must be stopped before loading objects!"
+        # breakpoint()
         for i, obj_config in enumerate(self.objects_config):
             # Add a name for the object if necessary
             if "name" not in obj_config:
@@ -214,220 +223,504 @@ class DamageableEnvironment(Environment):
             self.damage_evaluators_initialized = True
         
         obs, reward, terminated, truncated, info = super().step(action, n_render_iterations)
-        obj_health_states = {}
+        # breakpoint()
+        obj_damage_info = {}
+        obs_info = {}
+        if "obs_info" in info:
+            obs_info["obs_info"] = info["obs_info"]
         if not self.lock_health:
             # Update all damageable objects
             for obj in self.scene.objects:
                 if hasattr(obj, "update_health"):
                     obj.update_health()
-                    obj_health_states[obj.name] = obj.get_obs_dict()
+                    # obj_health_states[obj.name] = obj.get_obs_dict()
+                    obj_damage_info[obj.name] = obj.damage_info
             # Optionally update robots if they implement damage
             for robot in getattr(self, "robots", []):
                 if hasattr(robot, "update_health"):
                     robot.update_health()
         
-            obs["object_health_states"] = obj_health_states
+            # breakpoint()
+            # obs["object_health_states"] = obj_health_states
+            obs_info["damage_info"] = obj_damage_info
             if self._reward_fn is not None:
                 reward, terminated = self._reward_fn(self, obs)
         
-        return obs, reward, terminated, truncated, info
+        obs, obs_info = self._process_obs(obs, obs_info)
+        return obs, reward, terminated, truncated, obs_info
 
-        # # Initialize damage evaluators if this is the first env step
-        # if not self.damage_evaluators_initialized:
-        #     for obj in self.scene.objects:
-        #         if hasattr(obj, "_initialize_damage_evaluators"):
-        #             obj._initialize_damage_evaluators()
-        #     self.damage_evaluators_initialized = True
 
-        # # Pre-processing before stepping simulation
-        # if hasattr(self, '_pre_step'):
-        #     self._pre_step(action)
-
-        # # Using true physics frequency for damage evaluation
-        # # self._run_physics_with_damage_evaluation()
-        
-        # # Aggregate forces for the current step
-        # # self._()
-        # og.sim.step()
-        
-        # # Get observations, rewards, etc.
-        # obs, reward, terminated, truncated, info = self._post_step(action)
-        
-        # # Combine terminated and truncated into done for backward compatibility
-        # done = terminated or truncated
-
-        # # Render any additional times requested
-        # for _ in range(n_render_iterations - 1):
-        #     og.sim.render()
-
-        # # Run final post-processing
-        # if hasattr(self, '_post_step'):
-        #     return self._post_step(action)
-        # else:
-        #     # Fallback to original behavior if _post_step doesn't exist
-        #     obs, reward, terminated, truncated, info = super().step(action)
-            
-        #     # Update health of all damageable objects
-        #     for obj in self.scene.objects:
-        #         if hasattr(obj, "update_health"):
-        #             obj.update_health()
-                    
-        #     return obs, reward, terminated, truncated, info
-
-    def _run_physics_with_damage_evaluation(self):
+    def _process_obs(self, obs, info):
         """
-        Run physics simulation with TRUE physics-frequency damage evaluation.
-        This ensures damage evaluators run at every single physics step, not just environment steps.
-        """
-        # Get the physics timestep from OmniGibson
-        physics_dt = og.sim.get_physics_dt()
-        
-        # Calculate how many physics substeps we need to run
-        # This ensures we're running at true physics frequency
-        num_substeps = max(1, int(1.0 / (physics_dt * self.env_config.get("action_frequency", 30.0))))
-        
-        # Debug info: Show what we're doing
-        if hasattr(self, '_debug_physics_frequency') and self._debug_physics_frequency:
-            print(f"🔬 Physics Frequency Debug:")
-            print(f"Physics DT: {physics_dt:.6f}s")
-            print(f"Action Frequency: {self.env_config.get('action_frequency', 30.0)} Hz")
-            print(f"Physics Substeps: {num_substeps}")
-            print(f"Effective Physics Freq: {1.0 / (physics_dt * num_substeps):.1f} Hz")
-        
-        # Try to hook into OmniGibson's physics events if available
-        if hasattr(og.sim, 'physics_sim_view') and hasattr(og.sim.physics_sim_view, 'set_simulation_event_callback'):
-            self._setup_physics_event_callbacks()
-        
-        # Run physics simulation with damage evaluation at each substep
-        for substep in range(num_substeps):
-            # Run one physics step
-            og.sim.step()
-            
-            # Evaluate damage at EVERY physics substep!
-            self._evaluate_damage_at_physics_step()
-            
-            # Optional: Add small delay to prevent overwhelming the system
-            if substep < num_substeps - 1:  # Don't delay on last substep
-                time.sleep(0.001)  # 1ms delay between substeps
-
-    def _setup_physics_event_callbacks(self):
-        """
-        Setup physics event callbacks to hook into OmniGibson's physics system.
-        This provides even better integration with the physics simulation.
-        """
-        try:
-            # Try to register physics event callbacks if available
-            if hasattr(og.sim.physics_sim_view, 'set_simulation_event_callback'):
-                # This would be the ideal way to hook into physics events
-                # However, we need to check what's actually available in OmniGibson
-                pass
-        except Exception as e:
-            # Fallback to our substep approach if callbacks aren't available
-            pass
-
-    def _evaluate_damage_at_physics_step(self):
-        """
-        Evaluate damage for all damageable objects at physics frequency.
-        This ensures we capture peak strains that happen during physics steps.
-        """
-        for obj in self.scene.objects:
-            if hasattr(obj, "update_health"):
-                obj.update_health()
-
-    def _aggregate_strains_for_env_step(self):
-        """
-        Aggregate strains for all damageable objects at the end of each environment step.
-        This provides user-friendly strain values that match the number of environment steps.
-        """
-        for obj in self.scene.objects:
-            if hasattr(obj, "damage_evaluators"):
-                for evaluator in obj.damage_evaluators:
-                    if hasattr(evaluator, "aggregate_strains_for_env_step"):
-                        evaluator.aggregate_strains_for_env_step()
-
-    def _pre_step(self, action):
-        """Apply the pre-sim-step part of an environment step, i.e. apply the robot actions."""
-        # If the action is not a dictionary, convert into a dictionary
-        if not isinstance(action, dict):
-            # Handle PyTorch tensors and other iterables
-            # Keep PyTorch tensors as tensors - don't convert to numpy yet!
-            if hasattr(action, 'cpu') and hasattr(action, 'numpy'):  # PyTorch tensor
-                # Keep as tensor, let OmniGibson handle conversion
-                pass
-            elif hasattr(action, '__iter__') and not isinstance(action, (str, bytes)):
-                action = list(action)
-            else:
-                # Single value, convert to list
-                action = [action]
-            
-            # Convert to action dictionary
-            action_dict = dict()
-            idx = 0
-            for robot in self.robots:
-                action_dim = robot.action_dim
-                if idx + action_dim <= len(action):
-                    action_dict[robot.name] = action[idx : idx + action_dim]
-                else:
-                    # Handle case where action is shorter than expected
-                    action_dict[robot.name] = action[idx:] if idx < len(action) else [0.0] * action_dim
-                idx += action_dim
-        else:
-            # Our inputted action is the action dictionary
-            action_dict = action
-
-        # Iterate over all robots and apply actions
-        for robot in self.robots:
-            if robot.name in action_dict:
-                robot.apply_action(action_dict[robot.name])
-
-    def _post_step(self, action):
-        """Apply the post-sim-step part of an environment step, i.e. grab observations and return the step results."""
-        # Grab observations
-        obs, obs_info = self.get_obs()
-
-        # Step the scene graph builder if necessary
-        if hasattr(self, '_scene_graph_builder') and self._scene_graph_builder is not None:
-            self._scene_graph_builder.step(self.scene)
-
-        # Grab reward, done, and info, and populate with internal info
-        reward, done, info = self.task.step(self, action)
-        self._populate_info(info)
-        info["obs_info"] = obs_info
-
-        if done and hasattr(self, '_automatic_reset') and self._automatic_reset:
-            # Add lost observation to our information dict, and reset
-            info["last_observation"] = obs
-            obs = self.reset()
-
-        # Hacky way to check for time limit info to split terminated and truncated
-        terminated = False
-        truncated = False
-        if "done" in info and "termination_conditions" in info["done"]:
-            for tc, tc_data in info["done"]["termination_conditions"].items():
-                if tc_data["done"]:
-                    if tc == "timeout":
-                        truncated = True
-                    else:
-                        terminated = True
-            assert (terminated or truncated) == done, "Terminated and truncated must match done!"
-
-        # Increment step
-        if hasattr(self, '_current_step'):
-            self._current_step += 1
-        return obs, reward, terminated, truncated, info
-
-    def _populate_info(self, info):
-        """
-        Populate info dictionary with any useful information.
+        Modifies @obs inplace for any relevant post-processing
 
         Args:
-            info (dict): Information dictionary to populate
+            obs (dict): Keyword-mapped relevant observations from the immediate env step
+            info (dict): Keyword-mapped relevant information from the immediate env step
+        """
+        obs["health"] = []
+        for obj in self.scene.objects:
+            if hasattr(obj, "update_health"):
+                for link_name, health in obj.link_healths.items():
+                    obs["health"].append(health)
+        obs["health"] = th.tensor(obs["health"], dtype=th.float32)
+        info["damage_info"] = json.dumps(info["damage_info"], default=json_default)
+        info["obs_info"] = json.dumps(info["obs_info"], default=json_default)
+        return obs, info
+
+    def set_object_params(self):
+        # Set params for all damageable objects
+        for obj in self.scene.objects:
+            if hasattr(obj, "set_params"):
+                if obj.category in PARAMS:
+                    obj.set_params(PARAMS[obj.category])
+                    print(f"Set params for {obj.name} to {PARAMS[obj.category]}")
+                else:
+                    obj.set_params(PARAMS["default"])
+
+
+class DamageableDataCollectionWrapper(DataCollectionWrapper):
+    """
+    Custom DataCollectionWrapper that properly handles health metadata collection
+    for damageable objects and robots during data collection. This ensures:
+    1. Health is initialized before collecting metadata
+    2. Robots are included in health metadata
+    3. Proper error handling for uninitialized health
+    """
+    
+    def process_traj_to_hdf5(self, traj_data, traj_grp_name, nested_keys=("obs",), data_grp=None):
+        """
+        Processes trajectory data and stores them in HDF5, with proper health metadata collection.
+        
+        This method overrides the parent implementation to:
+        - Ensure health is initialized before collecting metadata
+        - Include robots in health metadata
+        - Add proper error handling
+        
+        Args:
+            traj_data (list of dict): Trajectory data, where each entry is a keyword-mapped set of data for a single
+                sim step
+            traj_grp_name (str): Name of the trajectory group to store
+            nested_keys (list of str): Name of key(s) corresponding to nested data in @traj_data
+            data_grp (None or h5py.Group): If specified, the h5py Group under which a new group with name
+                @traj_grp_name will be created. If None, will default to "data" group
 
         Returns:
-            dict: Information dictionary with added info
+            hdf5.Group: Generated hdf5 group storing the recorded trajectory data
         """
-        if hasattr(self, '_current_step'):
-            info["episode_length"] = self._current_step
+        import torch as th
+        
+        # First pad all state values to be the same max (uniform) size (from parent DataCollectionWrapper)
+        for step_data in traj_data:
+            state = step_data["state"]
+            padded_state = th.zeros(self.max_state_size, dtype=th.float32)
+            padded_state[: len(state)] = state
+            step_data["state"] = padded_state
 
-        if hasattr(self, '_scene_graph_builder') and self._scene_graph_builder is not None:
-            info["scene_graph"] = self.get_scene_graph() 
+        # Collect health metadata with proper initialization and error handling BEFORE calling parent
+        # This ensures health is initialized and we include robots
+        health_list = []
+
+        for obj in self.scene.objects:
+            if hasattr(obj, "update_health"):
+                for link_name, health in obj.link_healths.items():
+                    health_list.append(f"{obj.name}@{link_name}")
+        # traj_grp.attrs["health_list_link_names"] = health_list
+        
+        # # Process scene objects
+        # for obj in self.scene.objects:
+        #     if hasattr(obj, "update_health"):
+        #         # Ensure health is initialized
+        #         if not hasattr(obj, "link_healths"):
+        #             if hasattr(obj, "_initialize_health"):
+        #                 obj._initialize_health()
+                
+        #         # Safely collect health metadata
+        #         if hasattr(obj, "link_healths"):
+        #             try:
+        #                 for link_name, health in obj.link_healths.items():
+        #                     health_list.append(f"{obj.name}@{link_name}")
+        #             except (AttributeError, TypeError):
+        #                 # Skip if link_healths is not properly initialized
+        #                 pass
+        
+        # # Process robots (which are not in scene.objects)
+        # for robot in getattr(self, "robots", []):
+        #     if hasattr(robot, "update_health"):
+        #         # Ensure health is initialized
+        #         if not hasattr(robot, "link_healths"):
+        #             if hasattr(robot, "_initialize_health"):
+        #                 robot._initialize_health()
+                
+        #         # Safely collect health metadata
+        #         if hasattr(robot, "link_healths"):
+        #             try:
+        #                 for link_name, health in robot.link_healths.items():
+        #                     health_list.append(f"{robot.name}@{link_name}")
+        #             except (AttributeError, TypeError):
+        #                 # Skip if link_healths is not properly initialized
+        #                 pass
+
+        # Call parent method to handle the rest of the data processing
+        # The parent DataCollectionWrapper.process_traj_to_hdf5 will:
+        # 1. Do state padding (already done above)
+        # 2. Call DataWrapper.process_traj_to_hdf5 which creates traj_grp and processes data
+        # 3. DataWrapper will try to set health_list_link_names, but we'll override it
+        traj_grp = super().process_traj_to_hdf5(traj_data, traj_grp_name, nested_keys, data_grp)
+        
+        # Override the health metadata with our properly collected version (includes robots and proper initialization)
+        traj_grp.attrs["health_list_link_names"] = health_list
+
+        return traj_grp
+
+
+class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
+    """
+    Custom DataPlaybackWrapper that:
+    1. Uses DamageableEnvironment instead of og.Environment when creating from HDF5
+    2. Calls set_object_params() on the wrapped environment after scene.restore() is called
+    
+    This ensures damage parameters are set correctly during data playback without modifying OmniGibson source code.
+    """
+    
+    @classmethod
+    def create_from_hdf5(
+        cls,
+        input_path,
+        output_path,
+        compression=dict(),
+        robot_obs_modalities=tuple(),
+        robot_proprio_keys=None,
+        robot_sensor_config=None,
+        external_sensors_config=None,
+        include_sensor_names=None,
+        exclude_sensor_names=None,
+        n_render_iterations=5,
+        overwrite=True,
+        only_successes=False,
+        flush_every_n_traj=10,
+        flush_every_n_steps=0,
+        include_env_wrapper=False,
+        additional_wrapper_configs=None,
+        append_to_input_path=False,
+        load_room_instances=None,
+        overwrite_config=None,
+        full_scene_file=None,
+        include_task=True,
+        include_task_obs=True,
+        include_robot_control=True,
+        include_contacts=True,
+    ):
+        """
+        Create a DamageableDataPlaybackWrapper environment instance from the recorded demonstration info.
+        
+        This method overrides the parent to use DamageableEnvironment instead of og.Environment,
+        avoiding the need to modify OmniGibson source code.
+        
+        Args and Returns are the same as DataPlaybackWrapper.create_from_hdf5()
+        """
+        import h5py
+        import json
+        import omnigibson as og
+        from omnigibson.macros import gm
+        from omnigibson.utils.data_utils import merge_scene_files
+        from omnigibson.envs.env_wrapper import create_wrapper
+        
+        # check flush parameters
+        if flush_every_n_steps > 0:
+            assert flush_every_n_traj == 1, "flush_every_n_traj must be 1 if flush_every_n_steps is greater than 0"
+        # Read from the HDF5 file
+        f = h5py.File(input_path, "a" if append_to_input_path else "r")
+        config = json.loads(f["data"].attrs["config"]) if overwrite_config is None else json.loads(overwrite_config)
+
+        # Hot swap in additional info for playing back data
+
+        if include_contacts:
+            # Minimize physics leakage during playback (we need to take an env step when loading state)
+            config["env"]["action_frequency"] = 1000.0
+            config["env"]["rendering_frequency"] = 1000.0
+            config["env"]["physics_frequency"] = 1000.0
+        else:
+            # Since we are setting all objects to be visual-only, physics will not be propogating
+            config["env"]["action_frequency"] = 30.0
+            config["env"]["rendering_frequency"] = 30.0
+            config["env"]["physics_frequency"] = 120.0
+            # Simulator-level visual-only set to True
+            gm.VISUAL_ONLY = True
+
+        # Make sure obs space is flattened for recording
+        config["env"]["flatten_obs_space"] = True
+
+        # Set the scene file either to the one stored in the hdf5 or the hot swap scene file
+        config["scene"]["scene_file"] = json.loads(f["data"].attrs["scene_file"])
+        if full_scene_file:
+            with open(full_scene_file, "r") as json_file:
+                full_scene_json = json.load(json_file)
+            config["scene"]["scene_file"] = merge_scene_files(
+                scene_a=full_scene_json, scene_b=config["scene"]["scene_file"], keep_robot_from="b"
+            )
+            # Overwrite rooms type to avoid loading room types from the hdf5 file
+            config["scene"]["load_room_types"] = None
+            config["scene"]["load_room_instances"] = load_room_instances
+        else:
+            config["scene"]["scene_file"] = json.loads(f["data"].attrs["scene_file"])
+
+        # Use dummy task if not loading task
+        if not include_task:
+            config["task"] = {"type": "DummyTask"}
+
+        # Maybe include task observations
+        config["task"]["include_obs"] = include_task_obs
+
+        # Set scene file and disable online object sampling if BehaviorTask is being used
+        if config["task"]["type"] == "BehaviorTask":
+            config["task"]["online_object_sampling"] = False
+            # Don't use presampled robot pose
+            config["task"]["use_presampled_robot_pose"] = False
+
+        if load_room_instances is not None:
+            config["scene"]["load_room_instances"] = load_room_instances
+
+        # Because we're loading directly from the cached scene file, we need to disable any additional objects that are being added since
+        # they will already be cached in the original scene file
+        config["objects"] = []
+
+        # Set observation modalities and update sensor config
+        for robot_cfg in config["robots"]:
+            robot_cfg["obs_modalities"] = list(robot_obs_modalities)
+            robot_cfg["include_sensor_names"] = include_sensor_names
+            robot_cfg["exclude_sensor_names"] = exclude_sensor_names
+            if robot_proprio_keys is not None:
+                robot_cfg["proprio_obs"] = robot_proprio_keys
+            if robot_sensor_config is not None:
+                robot_cfg["sensor_config"] = robot_sensor_config
+        if external_sensors_config is not None:
+            config["env"]["external_sensors"] = external_sensors_config
+
+        # Load env - Use DamageableEnvironment instead of og.Environment
+        env = DamageableEnvironment(configs=config)
+
+        # Optionally include the desired environment wrapper specified in the config
+        if include_env_wrapper:
+            env = create_wrapper(env=env)
+
+        if additional_wrapper_configs is not None:
+            for wrapper_cfg in additional_wrapper_configs:
+                env = create_wrapper(env=env, wrapper_cfg=wrapper_cfg)
+
+        # Wrap and return env
+        return cls(
+            env=env,
+            input_path=input_path,
+            output_path=output_path,
+            compression=compression,
+            n_render_iterations=n_render_iterations,
+            overwrite=overwrite,
+            only_successes=only_successes,
+            flush_every_n_traj=flush_every_n_traj,
+            flush_every_n_steps=flush_every_n_steps,
+            full_scene_file=full_scene_file,
+            load_room_instances=load_room_instances,
+            include_robot_control=include_robot_control,
+            include_contacts=include_contacts,
+        )
+    
+    def playback_episode(self, episode_id, record_data=True, video_writers=None, callback=None, replay_for_annotation=False, break_after_n_steps=100):
+        """
+        Playback episode @episode_id, and optionally record observation data if @record is True.
+        
+        This method overrides the parent implementation to call set_object_params() on the
+        wrapped environment right after scene.restore() is called.
+
+        Args:
+            episode_id (int): Episode to playback. This should be a valid demo ID number from the inputted collected
+                data hdf5 file
+            record_data (bool): Whether to record data during playback or not
+            video_writers (Any): Optional video writers to record the playback
+            replay_for_annotation (bool): If True, replay the dataset to break after X steps to note down the MP_end_step and subtask_term_step for each subtask
+            break_after_n_steps (int): Number of steps to break after when replay_for_annotation is True
+        """
+        import h5py
+        import json
+        from omnigibson.utils.python_utils import h5py_group_to_torch, create_object_from_init_info
+        import omnigibson as og
+        from omnigibson.controllers.controller_base import ControlType
+        from omnigibson.systems.macro_particle_system import MacroPhysicalParticleSystem
+        import torch as th
+        
+        data_grp = self.input_hdf5["data"]
+        assert f"demo_{episode_id}" in data_grp, f"No valid episode with ID {episode_id} found!"
+        traj_grp = data_grp[f"demo_{episode_id}"]
+
+        # Grab episode data
+        # Skip early if found malformed data
+        try:
+            transitions = json.loads(traj_grp.attrs["transitions"])
+            traj_grp = h5py_group_to_torch(traj_grp)
+            init_metadata = traj_grp["init_metadata"]
+            action = traj_grp["action"]
+            state = traj_grp["state"]
+            state_size = traj_grp["state_size"]
+            reward = traj_grp["reward"]
+            terminated = traj_grp["terminated"]
+            truncated = traj_grp["truncated"]
+        except KeyError as e:
+            print(f"Got error when trying to load episode {episode_id}:")
+            print(f"Error: {str(e)}")
+            return
+
+        result = []
+        
+        # Reset environment and update this to be the new initial state
+        self.scene.restore(self.scene_file, update_initial_file=True)
+
+        # Call set_object_params() on the wrapped environment if it has this method
+        # This must happen right after scene.restore() and before resetting object attributes
+        if hasattr(self.env, "set_object_params"):
+            self.env.set_object_params()
+
+        # Reset object attributes from the stored metadata
+        with og.sim.stopped():
+            for attr, vals in init_metadata.items():
+                assert len(vals) == self.scene.n_objects
+            for i, obj in enumerate(self.scene.objects):
+                for attr, vals in init_metadata.items():
+                    val = vals[i]
+                    setattr(obj, attr, val.item() if val.ndim == 0 else val)
+        self.reset()
+
+        # If not controlling robots, disable for all robots
+        if not self.include_robot_control:
+            for robot in self.robots:
+                robot.control_enabled = False
+                # Set all controllers to effort mode with zero gain, this keeps the robot still
+                for controller in robot.controllers.values():
+                    for i, dof in enumerate(controller.dof_idx):
+                        dof_joint = robot.joints[robot.dof_names_ordered[dof]]
+                        dof_joint.set_control_type(
+                            control_type=ControlType.EFFORT,
+                            kp=None,
+                            kd=None,
+                        )
+
+        # Restore to initial state
+        # Ensure simulator is playing before loading state (required by load_state)
+        if not og.sim.is_playing():
+            og.sim.play()
+        og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
+        if callback is not None:
+            result.append(callback(action=action[0]))
+
+        # If record, record initial observations
+        if record_data:
+            # We need to step the environment to get the initial observations propagated
+            first_time_load_n_iteration = 10
+            self.current_obs, _, _, _, init_info = self.env.step(
+                action=action[0], n_render_iterations=self.n_render_iterations + first_time_load_n_iteration
+            )
+            step_data = {"obs": self._process_obs(obs=self.current_obs, info=init_info)}
+            self.current_traj_history.append(step_data)
+
+        # Print all object names in the scene
+        if replay_for_annotation:
+            print(f"================= object names in the scene =================")
+            all_objs = og.sim.scenes[0].objects
+            print([o.name for o in all_objs])
+
+        for i, (a, s, ss, r, te, tr) in enumerate(
+            zip(action, state[1:], state_size[1:], reward, terminated, truncated)
+        ):
+            print(f"================= simulation step {i} =================")
+            if replay_for_annotation:
+                if i % break_after_n_steps == 0:
+                    print(f"================= simulation step {i} =================")
+                    # Note: You can use the following to step the rendering in OG: for _ in range(500): og.sim.render()
+                    # And then you can click on objects in the viewer to get the OG specific name of the object
+                    breakpoint()
+
+            # Execute any transitions that should occur at this current step
+            if str(i) in transitions:
+                cur_transitions = transitions[str(i)]
+                scene = og.sim.scenes[0]
+                for add_sys_name in cur_transitions["systems"]["add"]:
+                    scene.get_system(add_sys_name, force_init=True)
+                for remove_sys_name in cur_transitions["systems"]["remove"]:
+                    scene.clear_system(remove_sys_name)
+                for remove_obj_name in cur_transitions["objects"]["remove"]:
+                    obj = scene.object_registry("name", remove_obj_name)
+                    scene.remove_object(obj)
+                for j, add_obj_info in enumerate(cur_transitions["objects"]["add"]):
+                    obj = create_object_from_init_info(add_obj_info)
+                    scene.add_object(obj)
+                    obj.set_position(th.ones(3) * 100.0 + th.ones(3) * 5 * j)
+                # Step physics to initialize any new objects
+                og.sim.step()
+            
+            # Restore the sim state, and take a very small step with the action to make sure physics are
+            # properly propagated after the sim state update
+            # Ensure simulator is playing before loading state (required by load_state)
+            if not og.sim.is_playing():
+                og.sim.play()
+            og.sim.load_state(s[: int(ss)], serialized=True)
+            if callback is not None:
+                result.append(callback(action=a))
+
+            # Restore the sim state, and take a very small step with the action to make sure physics are
+            # properly propagated after the sim state update
+            # Ensure simulator is playing before loading state (required by load_state)
+            if not og.sim.is_playing():
+                og.sim.play()
+            og.sim.load_state(s[: int(ss)], serialized=True)
+            if not self.include_contacts:
+                # When all objects/systems are visual-only, keep them still on every step
+                for obj in self.scene.objects:
+                    obj.keep_still()
+                for system in self.scene.systems:
+                    # TODO: Implement keep_still for other systems
+                    if isinstance(system, MacroPhysicalParticleSystem):
+                        system.set_particles_velocities(
+                            lin_vels=th.zeros((system.n_particles, 3)), ang_vels=th.zeros((system.n_particles, 3))
+                        )
+            self.current_obs, _, _, _, info = self.env.step(action=a, n_render_iterations=self.n_render_iterations)
+
+            # If recording, record data
+            if record_data:
+                step_data = self._parse_step_data(
+                    action=a,
+                    obs=self.current_obs,
+                    reward=r,
+                    terminated=te,
+                    truncated=tr,
+                    info=info,
+                )
+                if self.flush_every_n_steps > 0:
+                    if i == 0:
+                        self.current_traj_grp, self.traj_dsets = self.allocate_traj_to_hdf5(
+                            step_data, f"demo_{episode_id}", num_samples=len(action), video_writers=video_writers
+                        )
+                    if i % self.flush_every_n_steps == 0:
+                        self.flush_partial_traj(num_samples=len(action), video_writers=video_writers)
+                # append to current trajectory history
+                self.current_traj_history.append(step_data)
+
+            self.current_episode_step_count += 1
+            self.step_count += 1
+
+        # breakpoint()
+        if record_data:
+            if self.flush_every_n_steps > 0:
+                self.flush_partial_traj(num_samples=len(action), video_writers=video_writers)
+            self.flush_current_traj()
+
+        return result
+
+    def _parse_step_data(self, action, obs, reward, terminated, truncated, info):
+        # Store action, obs, reward, terminated, truncated, info
+        step_data = dict()
+        step_data["obs"] = self._process_obs(obs=obs, info=info)
+        step_data["action"] = action
+        step_data["reward"] = reward
+        step_data["terminated"] = terminated
+        step_data["truncated"] = truncated
+        step_data["info"] = info
+        return step_data
