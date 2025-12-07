@@ -6,6 +6,7 @@ import json
 import h5py
 import torch as th
 import numpy as np
+import argparse
 
 import omnigibson as og
 from omnigibson import object_states
@@ -15,6 +16,7 @@ from omnigibson.macros import gm
 import omnigibson.lazy as lazy
 
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
+from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video
 
 gm.USE_GPU_DYNAMICS=True
 gm.ENABLE_TRANSITION_RULES = False
@@ -22,6 +24,10 @@ gm.ENABLE_TRANSITION_RULES = False
 def __main__():
     np.random.seed(0)
     th.manual_seed(0)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--visualize', action='store_true', help='Visualize the data')
+    args = parser.parse_args()
     
     # TODO: remove hardcoding here. Obtian from collected hdf5 file
     robot_name = "tiago0"
@@ -118,9 +124,62 @@ def __main__():
     env.playback_dataset(record_data=True)
         
     env.save_data()
+    
+    # Visualize the episode
+    if args.visualize:
+        f = h5py.File(output_hdf5_path, "r")
+        scene_file = json.loads(f["data"].attrs["scene_file"])
+        # robot_name = [obj_name for obj_name in scene_file["objects_info"]["init_info"].keys() if "robot" in obj_name.lower()][0]
+        robot_name = "tiago0"       
+        camera_type = "external"
+        camera_name = "external_sensor0"
+
+        # Parse info to obtain relevant information for visualization
+        target_objects = ["swivel_chair", "vase"]
+        target_objects_dynamic_forces = dict()
+        for obj_name in target_objects:
+            target_objects_dynamic_forces[obj_name] = []
+        obs_info_list = []
+        num_steps = len(f["data/demo_0/info/damage_info"])
+        for i in range(len(f["data/demo_0/info/damage_info"])):
+            damage_info = json.loads(f["data/demo_0/info/damage_info"][i].decode("utf-8"))
+            
+            # Obtain dynamic forces for the target objects
+            for obj_name in target_objects:
+                target_objects_dynamic_forces[obj_name].append(damage_info[obj_name]["base_link"]["mechanical"]["dynamic_forces"])
+
+            # Obtain observation information 
+            obs_info = json.loads(f["data/demo_0/info/obs_info"][i].decode("utf-8"))
+            obs_info_list.append(obs_info)
+
+        # Obtain health information for the target objects
+        all_obj_healths = np.array(f["data/demo_0/obs/health"])
+        health_list_link_names = f["data/demo_0"].attrs["health_list_link_names"]
+        health = dict()
+        for obj_name in target_objects:
+            health[obj_name] = all_obj_healths[:, np.where(health_list_link_names == f"{obj_name}@base_link")[0][0]]
+
+        output_video_dir = "resources/videos"
+        os.makedirs(output_video_dir, exist_ok=True)
+        output_video_path = f"{output_video_dir}/nav_to_table_move_chair_camera_video"
+        save_camera_video(hdf5_file=f, 
+                    output_video_path=output_video_path,
+                    robot_name=robot_name, 
+                    camera_type=camera_type, 
+                    camera_name=camera_name,
+                    target_objects=target_objects,
+                    obs_info_list=obs_info_list,
+                    health=health)
+
+        health_video_path = os.path.join(output_video_dir, "nav_to_table_move_chair_health_video.mp4")
+        save_health_video(output_video_path=health_video_path, target_objects=target_objects, health=health)
+
+        combined_video_path = os.path.join(output_video_dir, "nav_to_table_move_chair_combined_video.mp4")
+        save_combined_video(video_1=output_video_path+".mp4", video_2=health_video_path, output_video_path=combined_video_path)
+
+    # Shutdown simulation after all processing is complete
     og.shutdown()
 
-    # TODO: Add the visualizations here
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
     __main__()

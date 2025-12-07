@@ -308,7 +308,6 @@ class DamageableDataCollectionWrapper(DataCollectionWrapper):
         Returns:
             hdf5.Group: Generated hdf5 group storing the recorded trajectory data
         """
-        import torch as th
         
         # First pad all state values to be the same max (uniform) size (from parent DataCollectionWrapper)
         for step_data in traj_data:
@@ -362,13 +361,9 @@ class DamageableDataCollectionWrapper(DataCollectionWrapper):
         #                 pass
 
         # Call parent method to handle the rest of the data processing
-        # The parent DataCollectionWrapper.process_traj_to_hdf5 will:
-        # 1. Do state padding (already done above)
-        # 2. Call DataWrapper.process_traj_to_hdf5 which creates traj_grp and processes data
-        # 3. DataWrapper will try to set health_list_link_names, but we'll override it
         traj_grp = super().process_traj_to_hdf5(traj_data, traj_grp_name, nested_keys, data_grp)
         
-        # Override the health metadata with our properly collected version (includes robots and proper initialization)
+        # Add health list link names to the trajectory group
         traj_grp.attrs["health_list_link_names"] = health_list
 
         return traj_grp
@@ -546,7 +541,6 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         import omnigibson as og
         from omnigibson.controllers.controller_base import ControlType
         from omnigibson.systems.macro_particle_system import MacroPhysicalParticleSystem
-        import torch as th
         
         data_grp = self.input_hdf5["data"]
         assert f"demo_{episode_id}" in data_grp, f"No valid episode with ID {episode_id} found!"
@@ -638,6 +632,10 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                     # And then you can click on objects in the viewer to get the OG specific name of the object
                     breakpoint()
 
+            # # For debugging
+            # if i > 100:
+            #     break
+
             # Execute any transitions that should occur at this current step
             if str(i) in transitions:
                 cur_transitions = transitions[str(i)]
@@ -724,3 +722,41 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         step_data["truncated"] = truncated
         step_data["info"] = info
         return step_data
+
+    def process_traj_to_hdf5(self, traj_data, traj_grp_name, nested_keys=("obs",), data_grp=None):
+        """
+        Processes trajectory data and stores them in HDF5, with proper health metadata collection.
+        
+        This method overrides the parent implementation to:
+        - Ensure health is initialized before collecting metadata
+        - Include robots in health metadata
+        - Add proper error handling
+        
+        Args:
+            traj_data (list of dict): Trajectory data, where each entry is a keyword-mapped set of data for a single
+                sim step
+            traj_grp_name (str): Name of the trajectory group to store
+            nested_keys (list of str): Name of key(s) corresponding to nested data in @traj_data
+            data_grp (None or h5py.Group): If specified, the h5py Group under which a new group with name
+                @traj_grp_name will be created. If None, will default to "data" group
+
+        Returns:
+            hdf5.Group: Generated hdf5 group storing the recorded trajectory data
+        """
+        
+        # Collect health metadata with proper initialization and error handling BEFORE calling parent
+        # This ensures health is initialized and we include robots
+        health_list = []
+
+        for obj in self.scene.objects:
+            if hasattr(obj, "update_health"):
+                for link_name, health in obj.link_healths.items():
+                    health_list.append(f"{obj.name}@{link_name}")        
+
+        # Call parent method to handle the rest of the data processing
+        traj_grp = super().process_traj_to_hdf5(traj_data, traj_grp_name, nested_keys, data_grp)
+        
+        # Add health list link names to the trajectory group
+        traj_grp.attrs["health_list_link_names"] = health_list
+
+        return traj_grp

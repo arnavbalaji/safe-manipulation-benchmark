@@ -131,9 +131,9 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "strain_threshold": 50.0,
+            "strain_threshold": 500.0,
             "damage_scale": 20.0,
-            "dynamic_forces_coefficient": 1.0,
+            "dynamic_forces_coefficient": 0.01,
             "static_forces_coefficient": 0.01,
         }
     },
