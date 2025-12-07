@@ -12,10 +12,6 @@ from omnigibson import object_states
 from omnigibson.systems import FluidSystem
 from omnigibson.macros import gm
 
-from telemoma.configs.base_config import teleop_config
-from omnigibson.utils.teleop_utils import TeleopSystem
-from omnigibson.utils.ui_utils import KeyboardRobotController
-from omnigibson.envs import DataCollectionWrapper, DataPlaybackWrapper
 import omnigibson.lazy as lazy
 
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
