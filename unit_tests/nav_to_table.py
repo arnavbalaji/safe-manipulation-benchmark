@@ -1,0 +1,130 @@
+from ast import Pass
+import os
+os.environ["CARB_LOG_CHANNELS"] = "omni.physx.plugin=off"
+import yaml
+import json
+import h5py
+import torch as th
+import numpy as np
+
+import omnigibson as og
+from omnigibson import object_states
+from omnigibson.systems import FluidSystem
+from omnigibson.macros import gm
+
+from telemoma.configs.base_config import teleop_config
+from omnigibson.utils.teleop_utils import TeleopSystem
+from omnigibson.utils.ui_utils import KeyboardRobotController
+from omnigibson.envs import DataCollectionWrapper, DataPlaybackWrapper
+import omnigibson.lazy as lazy
+
+from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
+
+gm.USE_GPU_DYNAMICS=True
+gm.ENABLE_TRANSITION_RULES = False
+
+def __main__():
+    np.random.seed(0)
+    th.manual_seed(0)
+    
+    # TODO: remove hardcoding here. Obtian from collected hdf5 file
+    robot_name = "tiago0"
+    robot_type = "tiago"
+    
+    # In case we want to modify the external cameras that were used during data collection
+    EXTERNAL_CAMERA_CONFIGS = {
+        # Side camera (fixed to base_link frame)
+        "external_sensor_0": {
+            "position": [0.4859, -1.8219,  1.1402],
+            "orientation": [ 0.5857, -0.0093, -0.0129,  0.8103],
+            "horizontal_aperture": 10.0,
+            "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor0",
+        },
+        # Left Shoulder (fixed to base_link frame)
+        "external_sensor_1": {
+            # wrt base frame
+            "position": [0.2522, 0.0470, 1.0696],
+            "orientation": [ 0.1991, -0.1991, -0.6785,  0.6785],
+            "horizontal_aperture": 30.0,
+            "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor1",
+        },
+        # Back camera (fixed to base_link frame)
+        "external_sensor_2": {
+            "position": [-0.7765, -0.8203,  0.9939],
+            "orientation": [ 0.4566, -0.3285, -0.4831,  0.6710],
+            "horizontal_aperture": 30.0,
+            "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor2",
+        },
+        # Front camera (fixed to base_link frame)
+        "external_sensor_3": {
+            "position": [1.7508, -0.0198,  1.1778],
+            "orientation": [0.3821, 0.4173, 0.6080, 0.5570],
+            "horizontal_aperture": 20.0,
+            "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor3",
+        }
+    }  
+    external_sensors_config = []
+    for name, camera_cfg in EXTERNAL_CAMERA_CONFIGS.items():
+        i = name.split("_")[-1]
+        position = camera_cfg["position"]
+        orientation = camera_cfg["orientation"]
+        external_sensors_config.append({
+            "sensor_type": "VisionSensor",
+            "name": f"external_sensor{i}",
+            "relative_prim_path": camera_cfg["relative_prim_path"],
+            "modalities": ["rgb", "seg_instance"],
+            "sensor_kwargs": {
+                "image_height": 720,
+                "image_width": 720,
+                "horizontal_aperture": camera_cfg["horizontal_aperture"],
+            },
+            "position": th.tensor(position, dtype=th.float32),
+            "orientation": th.tensor(orientation, dtype=th.float32),
+            "pose_frame": "world",
+        })
+
+    # In case we want to modify the robot sensors that were used during data collection
+    robot_sensor_config = {
+        "VisionSensor": {
+            "modalities": ["rgb"],
+            "sensor_kwargs": {
+                "image_height": 720,
+                "image_width": 720,
+            },
+        },
+    }
+    
+    # TODO: Set this 
+    collect_hdf5_path = f"resources/teleop_data/nav_to_table_move_chair.hdf5"
+    output_hdf5_path = f"resources/playback_data/nav_to_table_move_chair_playback.hdf5"
+    
+    env = DamageableDataPlaybackWrapper.create_from_hdf5(
+        input_path=collect_hdf5_path,
+        output_path=output_hdf5_path,
+        # robot_obs_modalities=["proprio", "rgb", "depth", "seg_instance"],
+        robot_sensor_config=robot_sensor_config,
+        external_sensors_config=external_sensors_config,
+        n_render_iterations=1,
+        only_successes=False,
+        exclude_sensor_names=["left_eef_link", "right_eef_link"]
+    )
+    robot = env.robots[0]
+
+    # set viewer camera
+    og.sim.viewer_camera.set_position_orientation(position=th.tensor([-0.2607, -3.0889,  1.2703]), orientation=th.tensor([ 0.5051, -0.0412, -0.0701,  0.8592]))
+    
+    for _ in range(10): og.sim.step()
+
+    # Best to explicitly set the object params here in case object params were modified since data collection
+    env.set_object_params()
+
+    # Playback the dataset
+    env.playback_dataset(record_data=True)
+        
+    env.save_data()
+    og.shutdown()
+
+    # TODO: Add the visualizations here
+
+if __name__ == "__main__":
+    __main__()
