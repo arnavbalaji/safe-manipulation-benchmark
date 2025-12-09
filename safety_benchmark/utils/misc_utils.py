@@ -56,6 +56,53 @@ def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, cam
         subprocess.run(["ffmpeg", "-y", "-i", avi_video, "-c:v", "mpeg4", mp4_video], check=True)
         os.remove(avi_video)
 
+def save_forces_video(output_video_path, target_objects, data, forces_to_plot=["dynamic_forces", "static_forces", "raw_forces_from_sim"]):
+    # 3. Plot them side by side
+    T = len(data[target_objects[0]][forces_to_plot[0]])
+    # Clamp health plot to [0, 100]
+    y_min = -10.0
+    y_max = 10000.0
+    fps = 15
+
+    fig, ax = plt.subplots(figsize=(9.6, 5.4))
+    dynamic_forces_lines = dict()
+    lines = dict()
+    for obj_name in target_objects:
+        for force_key in forces_to_plot:
+            lines[f"{obj_name}_{force_key}"], = ax.plot([], [], lw=2, label=obj_name + ' ' + force_key + ' Forces')
+    ax.set_xlim(0, max(1, T) / fps)
+    ax.set_ylim(y_min, y_max)
+    ax.set_xlabel('Time (s)', fontsize=20)
+    ax.set_ylabel('Force', fontsize=20)
+    ax.set_title('Forces Over Time', fontsize=26)
+    ax.legend(loc='best', fontsize=16)
+    ax.tick_params(axis='both', which='major', labelsize=16, width=1.5)
+    ax.grid(True, linewidth=1.0, alpha=0.3)
+    plt.tight_layout()
+
+    def init_forces():
+        for key, value in data.items():
+            for force_key in forces_to_plot:
+                lines[f"{key}_{force_key}"].set_data([], [])
+        return lines.values()
+
+    def animate_forces(i):
+        x = [k / fps for k in range(1, i + 2)]
+        for key, value in data.items():
+            for force_key in forces_to_plot:
+                lines[f"{key}_{force_key}"].set_data(x, value[force_key][: i + 1])
+
+        return lines.values()
+
+    ani = animation.FuncAnimation(
+        fig, animate_forces, init_func=init_forces, frames=T, interval=1000 / fps, blit=True
+    )
+    # breakpoint()
+    writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
+    ani.save(output_video_path, writer=writer)
+    plt.close(fig)
+
+
 def save_health_video(output_video_path, target_objects, health):
     T = len(health[target_objects[0]])
     y_min = -5.0
@@ -98,7 +145,7 @@ def save_health_video(output_video_path, target_objects, health):
     ani.save(output_video_path, writer=writer)
     plt.close(fig)
 
-def save_combined_video(video_1, video_2, output_video_path):
+def save_combined_video(video_1, video_2, output_video_path, delete_intermediate_video_1=False, delete_intermediate_video_2=False):
     # Rename final combined video to {object}_with_health.mp4
     if os.path.exists(video_1) and os.path.exists(video_2):
         subprocess.run([
@@ -112,3 +159,8 @@ def save_combined_video(video_1, video_2, output_video_path):
             '-q:v', '5',
             output_video_path
         ], check=True)
+
+    if delete_intermediate_video_1:
+        os.remove(video_1)
+    if delete_intermediate_video_2:
+        os.remove(video_2)

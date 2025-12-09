@@ -16,7 +16,7 @@ from omnigibson.macros import gm
 import omnigibson.lazy as lazy
 
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
-from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video
+from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video, save_forces_video
 
 gm.USE_GPU_DYNAMICS=True
 gm.ENABLE_TRANSITION_RULES = False
@@ -96,9 +96,10 @@ def __main__():
         },
     }
     
-    # TODO: Set this 
-    collect_hdf5_path = f"resources/teleop_data/nav_to_table_move_chair.hdf5"
-    output_hdf5_path = f"resources/playback_data/nav_to_table_move_chair_playback.hdf5"
+    # # TODO: Set this 
+    f_name = "nav_to_table_move_chair"
+    collect_hdf5_path = f"resources/teleop_data/{f_name}.hdf5"
+    output_hdf5_path = f"resources/playback_data/{f_name}_playback.hdf5"
     
     env = DamageableDataPlaybackWrapper.create_from_hdf5(
         input_path=collect_hdf5_path,
@@ -161,7 +162,9 @@ def __main__():
 
         output_video_dir = "resources/videos"
         os.makedirs(output_video_dir, exist_ok=True)
-        output_video_path = f"{output_video_dir}/nav_to_table_move_chair_camera_video"
+        
+        # Save video for rgb camera
+        output_video_path = f"{output_video_dir}/{f_name}_camera_video"
         save_camera_video(hdf5_file=f, 
                     output_video_path=output_video_path,
                     robot_name=robot_name, 
@@ -171,11 +174,33 @@ def __main__():
                     obs_info_list=obs_info_list,
                     health=health)
 
+        
+        # Obtain forces information for the target objects
+        target_objects_forces = ["swivel_chair"]
+        data = dict()
+        # options: ["dynamic_forces", "static_forces", "raw_forces_from_sim"]
+        force_keys = ["dynamic_forces", "raw_forces_from_sim"]
+        for obj_name in target_objects_forces:
+            data[obj_name] = dict()
+            for force_key in force_keys:
+                data[obj_name][force_key] = []
+        for i in range(len(f["data/demo_0/info/damage_info"])):
+            damage_info = json.loads(f["data/demo_0/info/damage_info"][i].decode("utf-8"))
+            for obj_name in target_objects_forces:
+                for force_key in force_keys:
+                    data[obj_name][force_key].append(damage_info[obj_name]["base_link"]["mechanical"][force_key])
+        
+        # Save videos for forces plot
+        forces_video_path = os.path.join(output_video_dir, f"{f_name}_forces_video.mp4")
+        save_forces_video(output_video_path=forces_video_path, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
+        combined_video_path = os.path.join(output_video_dir, f"{f_name}_combined_video_forces.mp4")
+        save_combined_video(video_1=output_video_path+".mp4", video_2=forces_video_path, output_video_path=combined_video_path, delete_intermediate_video_2=True)
+
+        # Save video for health plot
         health_video_path = os.path.join(output_video_dir, "nav_to_table_move_chair_health_video.mp4")
         save_health_video(output_video_path=health_video_path, target_objects=target_objects, health=health)
-
         combined_video_path = os.path.join(output_video_dir, "nav_to_table_move_chair_combined_video.mp4")
-        save_combined_video(video_1=output_video_path+".mp4", video_2=health_video_path, output_video_path=combined_video_path)
+        save_combined_video(video_1=output_video_path+".mp4", video_2=health_video_path, output_video_path=combined_video_path, delete_intermediate_video_2=True)
 
     # Shutdown simulation after all processing is complete
     og.shutdown()
