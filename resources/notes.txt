@@ -1,0 +1,17 @@
+'base_link', Yes
+'arm_right_1_link', Yes
+'arm_right_2_link', Yes
+'arm_right_3_link', Yes
+'arm_right_4_link', Yes
+'arm_right_5_link', Yes
+'arm_right_6_link', Yes
+'arm_right_7_link', Yes
+'arm_right_tool_link', No
+'wrist_right_ft_link', No
+'wrist_right_ft_tool_link', No
+'gripper_right_link', Yes
+'gripper_right_grasping_frame', No
+'gripper_right_left_finger_link', Yes
+'gripper_right_right_finger_link', Yes
+'gripper_right_tool_link', No
+'right_eef_link', No

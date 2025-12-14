@@ -23,10 +23,12 @@ class DamageableMixin:
         # Store params dict, set empty damage_evaluators list
         self.params = kwargs.get('params', {})
         self.damage_evaluators = []
+        self.damageable_links = []
 
         # Set thresholds
         thresholds = self.params.get("health_thresholds", [90.0, 60.0, 30.0])
         self.minor_threshold, self.major_threshold, self.critical_threshold = thresholds
+
 
     def _initialize_health(self):
         # Initialize link healths to the maximum
@@ -49,6 +51,12 @@ class DamageableMixin:
 
     def set_params(self, params):
         self.params = params
+
+    def set_damageable_links(self, links=None):
+        if links is None:
+            self.damageable_links = self.links.keys()
+        else:
+            self.damageable_links = links
 
     @property
     def health(self):
@@ -79,6 +87,7 @@ class DamageableMixin:
         # Updates health based on the damage evaluators
         self.damage_info = {}
         for evaluator in self.damage_evaluators:
+            # print(f"Updating health for {self.name} with {evaluator.name}")
             link_damages = evaluator.generate_damage()
             # self.damage_info[evaluator.name] = link_damages
             # self.damage_info[evaluator.name] = {}

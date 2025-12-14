@@ -75,37 +75,50 @@ PARAMS = {
             "scale": 0.0001,
         }
     },
-    "tiago_robot": {
-        "damage_evaluators": ["mechanical", "electrical"],
+    # Robot's category in OG is "agent"
+    "agent": {
+        "damage_evaluators": ["mechanical"],
+        "damageable_links": ["base_link",
+                            "arm_right_1_link",
+                            "arm_right_2_link",
+                            "arm_right_3_link",
+                            "arm_right_4_link",
+                            "arm_right_5_link",
+                            "arm_right_6_link",
+                            "arm_right_7_link",
+                            "gripper_right_link",
+                            "gripper_right_left_finger_link",
+                            "gripper_right_right_finger_link"
+                        ],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
             "impact_threshold": 30.0,
             "impact_scale": 0.1,
             "link_thresholds": {
-                "arm": {
-                    "crushing_threshold": 1.0,
-                    "crushing_scale": 0.01,
-                },
-                "base": {
-                    "crushing_threshold": 8.0,
-                    "crushing_scale": 0.001,
-                },
-                "wheel": {
-                    "crushing_threshold": 5.0,
-                    "crushing_scale": 0.001,
-                },
                 "gripper": {
-                    "crushing_threshold": 0.75,
-                    "crushing_scale": 0.01,
+                    "strain_threshold": 70.0,
+                    "damage_scale": 0.1,
+                    "dynamic_forces_coefficient": 0.01,
+                    "static_forces_coefficient": 1.0,
+                },
+                # "base": {
+                #     "crushing_threshold": 8.0,
+                #     "crushing_scale": 0.001,
+                # },
+                "arm": {
+                    "strain_threshold": 70.0,
+                    "damage_scale": 0.1,
+                    "dynamic_forces_coefficient": 0.01,
+                    "static_forces_coefficient": 1.0,
                 }
             }
         },
-        "electrical": {
-            "damage_threshold": 0.0,  # Minimum particles to cause damage
-            "scale": 0.001,  # Damage amount when threshold is exceeded
-            "water_system_name": "sludge",
-            "proximity_threshold": 1.0,  # 2cm proximity for manual detection
-        }
+        # "electrical": {
+        #     "damage_threshold": 0.0,  # Minimum particles to cause damage
+        #     "scale": 0.001,  # Damage amount when threshold is exceeded
+        #     "water_system_name": "sludge",
+        #     "proximity_threshold": 1.0,  # 2cm proximity for manual detection
+        # }
     },
     "drawer": {
         "damage_evaluators": ["mechanical"],
@@ -121,7 +134,7 @@ PARAMS = {
         "damage_evaluators": ["mechanical"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "strain_threshold": 50.0,
+            "strain_threshold": 70.0,
             "damage_scale": 100.0,
             "dynamic_forces_coefficient": 1.0,
             "static_forces_coefficient": 1.0,

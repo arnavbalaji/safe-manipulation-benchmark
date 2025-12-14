@@ -68,7 +68,11 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         dt = og.sim.get_sim_step_dt()
 
         # Apply damage to each link
-        for link_name, link in self.entity.links.items():
+        for i, (link_name, link) in enumerate(self.entity.links.items()):
+            
+            # Skip non-damageable links
+            if link_name not in self.entity.damageable_links:
+                continue
 
             # Get contacts for the link (from the physics engine)
             try:
@@ -101,6 +105,12 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                 # TODO: Currently using only the acceleration as a proxy for impact force.
                 dynamic_force = th.linalg.vector_norm(acceleration).item() * 1.0
                 # impact_magnitude = th.linalg.vector_norm(acceleration).item() * float(getattr(link, "mass", 1.0))
+
+                # For debugging
+                # if self.entity.name == "swivel_chair" and link_name == "base_link":
+                #     print("dynamic_force: ", dynamic_force)
+                #     if dynamic_force > 1000.0:
+                #         breakpoint()
 
                 # TODO: Question: Why is dynamic_force not used here and instead
                 # we are using delta_velocity_norm?
@@ -145,10 +155,11 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                     # Note that we sum the magnitudes of the impulses (for each contact point) and divide
                     # by dt to get the force. So, the output is a scalar value for the force on the link.
                     static_force += (float(th.sum(th.stack([th.linalg.vector_norm(v) for v in impulses]))) / max(dt, 1e-8))
-                    # For debugging
-                    # if self.entity.name == "swivel_chair" and link_name == "base_link":
+                    # # For debugging
+                    # if self.entity.name == "vase" and link_name == "base_link":
                     #     for j, impulse in enumerate(impulses):
                     #         print("j, impulses: ", j, th.linalg.vector_norm(impulse))
+                    #     breakpoint()
                 else:
                     adjusted = []
                     for j, impulse_vec in enumerate(impulses):
@@ -189,17 +200,20 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             strain_threshold = self.strain_threshold
             dynamic_forces_coefficient = self.dynamic_forces_coefficient
             static_forces_coefficient = self.static_forces_coefficient
+            damage_scale = self.damage_scale
 
             try:
                 lname = link_name.lower()
                 for key, overrides in self.link_thresholds.items():
                     if key in lname:
-                        if "damage_threshold" in overrides:
-                            strain_threshold = overrides["damage_threshold"]
+                        if "strain_threshold" in overrides:
+                            strain_threshold = overrides["strain_threshold"]
                         if "dynamic_forces_coefficient" in overrides:
                             dynamic_forces_coefficient = overrides["dynamic_forces_coefficient"]
                         if "static_forces_coefficient" in overrides:
                             static_forces_coefficient = overrides["static_forces_coefficient"]
+                        if "damage_scale" in overrides:
+                            damage_scale = overrides["damage_scale"]
                         break
             except Exception:
                 pass
@@ -209,13 +223,16 @@ class MechanicalDamageEvaluator(DamageEvaluator):
 
             current_strain = strain_due_to_dynamic_force + strain_due_to_static_force
             self.last_strain_by_link[link_name] = current_strain
-            damage = max(0.0, (current_strain - strain_threshold)) * self.damage_scale
+            # TODO: Maybe let's modify this equation to not be linear.
+            # i.e. if the forces are too high, then the damage should increase more rapidly.
+            damage = max(0.0, (current_strain - strain_threshold)) * damage_scale
             link_damages[link_name] = damage
             # For debugging
-            # if self.entity.name == "swivel_chair" and link_name == "base_link":
-            #     print("strain_due_to_dynamic_force, strain_due_to_static_force, current_strain, strain_threshold, damage: ", strain_due_to_dynamic_force, strain_due_to_static_force, current_strain, strain_threshold, damage)
-            #     if damage > 0.0:
-            #         breakpoint()
+            if self.entity.name == "tiago0" and link_name == "gripper_right_right_finger_link":
+                print("strain_due_to_dynamic_force, strain_due_to_static_force, current_strain, strain_threshold, damage: ", strain_due_to_dynamic_force, strain_due_to_static_force, current_strain, strain_threshold, damage)
+                # breakpoint()
+                # if damage > 0.0:
+                #     breakpoint()
 
             # Track for next step
             self.prev_link_positions[link_name] = position_current.clone()

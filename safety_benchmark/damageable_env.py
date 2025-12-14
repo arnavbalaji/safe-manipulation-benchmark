@@ -101,12 +101,16 @@ class DamageableEnvironment(Environment):
         og.sim.play()
 
         self.inialize_damageable_objects()
+
+        self.set_object_params()
     
     def inialize_damageable_objects(self):
         # Initialize health for all damageable objects
         for obj in self.scene.objects:
             if hasattr(obj, "_initialize_health"):
                 obj._initialize_health()
+            if hasattr(obj, "set_damageable_links"):
+                obj.set_damageable_links()
 
     def reset(self):
         """Reset the environment and damage evaluators."""
@@ -216,18 +220,14 @@ class DamageableEnvironment(Environment):
             for obj in self.scene.objects:
                 if hasattr(obj, "_initialize_damage_evaluators"):
                     obj._initialize_damage_evaluators()
-            # Initialize robot damage evaluators if supported
-            for robot in getattr(self, "robots", []):
-                if hasattr(robot, "_initialize_damage_evaluators"):
-                    robot._initialize_damage_evaluators()
             self.damage_evaluators_initialized = True
         
         obs, reward, terminated, truncated, info = super().step(action, n_render_iterations)
-        # breakpoint()
         obj_damage_info = {}
         obs_info = {}
         if "obs_info" in info:
             obs_info["obs_info"] = info["obs_info"]
+        
         if not self.lock_health:
             # Update all damageable objects
             for obj in self.scene.objects:
@@ -235,11 +235,7 @@ class DamageableEnvironment(Environment):
                     obj.update_health()
                     # obj_health_states[obj.name] = obj.get_obs_dict()
                     obj_damage_info[obj.name] = obj.damage_info
-            # Optionally update robots if they implement damage
-            for robot in getattr(self, "robots", []):
-                if hasattr(robot, "update_health"):
-                    robot.update_health()
-        
+                    
             # breakpoint()
             # obs["object_health_states"] = obj_health_states
             obs_info["damage_info"] = obj_damage_info
@@ -275,6 +271,9 @@ class DamageableEnvironment(Environment):
                 if obj.category in PARAMS:
                     obj.set_params(PARAMS[obj.category])
                     print(f"Set params for {obj.name} to {PARAMS[obj.category]}")
+                    if PARAMS[obj.category].get("damageable_links") is not None:
+                        obj.set_damageable_links(PARAMS[obj.category].get("damageable_links"))
+                        print(f"Set damageable links for {obj.name} to {PARAMS[obj.category].get('damageable_links')}")
                 else:
                     obj.set_params(PARAMS["default"])
 
@@ -432,9 +431,15 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
 
         if include_contacts:
             # Minimize physics leakage during playback (we need to take an env step when loading state)
-            config["env"]["action_frequency"] = 1000.0
-            config["env"]["rendering_frequency"] = 1000.0
-            config["env"]["physics_frequency"] = 1000.0
+            # config["env"]["action_frequency"] = 1000.0
+            # config["env"]["rendering_frequency"] = 1000.0
+            # config["env"]["physics_frequency"] = 1000.0
+            
+            # This is the actual frequencies used in the data collection. This value is used in acceleration calculation.
+            # So, we need to use the same frequencies here. TODO: Check if not using 1000 is okay for playback.
+            config["env"]["action_frequency"] = 30.0
+            config["env"]["rendering_frequency"] = 30.0
+            config["env"]["physics_frequency"] = 30.0
         else:
             # Since we are setting all objects to be visual-only, physics will not be propogating
             config["env"]["action_frequency"] = 30.0
@@ -627,7 +632,6 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             print(f"================= simulation step {i} =================")
             if replay_for_annotation:
                 if i % break_after_n_steps == 0:
-                    print(f"================= simulation step {i} =================")
                     # Note: You can use the following to step the rendering in OG: for _ in range(500): og.sim.render()
                     # And then you can click on objects in the viewer to get the OG specific name of the object
                     breakpoint()
@@ -680,7 +684,6 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                             lin_vels=th.zeros((system.n_particles, 3)), ang_vels=th.zeros((system.n_particles, 3))
                         )
             self.current_obs, _, _, _, info = self.env.step(action=a, n_render_iterations=self.n_render_iterations)
-
             # If recording, record data
             if record_data:
                 step_data = self._parse_step_data(

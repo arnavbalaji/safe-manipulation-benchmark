@@ -30,9 +30,10 @@ def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, cam
     imgs_seg_instance = imgs_seg_instance[1:]
 
     # Write  camera video
-    fps = 15
+    fps = 30
     avi_video = output_video_path + ".avi"
     mp4_video = output_video_path + ".mp4"
+    break_loop = False
     if len(imgs) > 0:
         he, we = imgs[0].shape[:2]
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
@@ -50,7 +51,14 @@ def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, cam
                 if health[obj_name][i] == 0.0:
                     # breakpoint()
                     img[img_seg_instance == seg_instance_key] = (0, 0, 255)
+                    if obj_name == "tiago0":
+                        break_loop = True
+                        break
             vw_e.write(np.ascontiguousarray(img, dtype=np.uint8))
+            if break_loop:
+                for _ in range(5):
+                    vw_e.write(np.ascontiguousarray(img, dtype=np.uint8))                
+                break
 
         vw_e.release()
         subprocess.run(["ffmpeg", "-y", "-i", avi_video, "-c:v", "mpeg4", mp4_video], check=True)
@@ -60,9 +68,9 @@ def save_forces_video(output_video_path, target_objects, data, forces_to_plot=["
     # 3. Plot them side by side
     T = len(data[target_objects[0]][forces_to_plot[0]])
     # Clamp health plot to [0, 100]
-    y_min = -10.0
-    y_max = 10000.0
-    fps = 15
+    y_min = -1.0
+    y_max = 500.0
+    fps = 30
 
     fig, ax = plt.subplots(figsize=(9.6, 5.4))
     dynamic_forces_lines = dict()
@@ -107,7 +115,7 @@ def save_health_video(output_video_path, target_objects, health):
     T = len(health[target_objects[0]])
     y_min = -5.0
     y_max = 105.0
-    fps = 15
+    fps = 30
 
     fig, ax = plt.subplots(figsize=(9.6, 5.4))
     health_lines = dict()

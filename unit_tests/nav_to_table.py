@@ -97,7 +97,7 @@ def __main__():
     }
     
     # # TODO: Set this 
-    f_name = "nav_to_table_move_chair"
+    f_name = "nav_to_table_move_vase"
     collect_hdf5_path = f"resources/teleop_data/{f_name}.hdf5"
     output_hdf5_path = f"resources/playback_data/{f_name}_playback.hdf5"
     
@@ -176,10 +176,10 @@ def __main__():
 
         
         # Obtain forces information for the target objects
-        target_objects_forces = ["swivel_chair"]
+        target_objects_forces = ["vase"]
         data = dict()
         # options: ["dynamic_forces", "static_forces", "raw_forces_from_sim"]
-        force_keys = ["dynamic_forces", "raw_forces_from_sim"]
+        force_keys = ["dynamic_forces", "raw_forces_from_sim", "static_forces"]
         for obj_name in target_objects_forces:
             data[obj_name] = dict()
             for force_key in force_keys:
