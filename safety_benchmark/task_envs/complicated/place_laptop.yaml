@@ -1,0 +1,106 @@
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Rs_int
+  include_robots: false
+  load_task_relevant_only: true
+
+robots:
+  - type: Tiago
+    obs_modalities: [rgb]
+    action_type: continuous
+    action_normalize: true
+    # Rotated 90 degrees around Z from original placement, then shifted multiple times; latest shift (+0.05, 0, 0)
+    position: [0.65, 0.8, 0.0]
+    orientation: [0, 0, 0, 1]
+    grasping_mode: assisted
+    damage_params:
+      damage_evaluators:
+        - mechanical
+        - electrical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 10000000000.0
+        scale: 1e-10
+        instant_coefficient: 1.0
+        creep_coefficient: 1.0
+        object_type: brittle
+        link_thresholds:
+          arm:
+            damage_threshold: 200.0
+            scale: 0.0001
+          gripper:
+            damage_threshold: 200.0
+            scale: 0.0001
+      electrical:
+        damage_threshold: 0.0
+        scale: 0.001
+        water_system_name: sludge
+
+objects:
+  # Desk (rotated scene)
+  - type: DatasetObject
+    name: desk
+    category: desk
+    model: zlyqcq
+    position: [1.65, 0.9, 0.5]
+    orientation: [0, 0, 1.0, 0.0]
+    scale: [0.8, 0.8, 0.7]
+
+  # Drawer target from mech_damage.py (TARGET_OBJECT_CONFIGS["drawer"])
+  - type: DatasetObject
+    name: target_object
+    category: bottom_cabinet
+    model: pkdnbu
+    # Rotated 90 degrees around Z from original pose, then shifted multiple times; latest shift (+0.05, 0, 0)
+    position: [1.65, 0.2, 0.4]
+    orientation: [0, 0, 1.0, 0.0]
+    scale: [1.0, 1.0, 1.5]
+    # fixed_base: True
+    damage_params:
+      damage_evaluators:
+        - mechanical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 1000.0
+        scale: 1e-18
+        instant_coefficient: 1.0
+        creep_coefficient: 0.0
+        link_thresholds:
+          link_3:
+            damage_threshold: 1000.0
+            scale: 0.01
+        object_type: brittle
+
+  # Laptop on table (nvulcs)
+  # Model reference: https://behavior.stanford.edu/knowledgebase/objects/nvulcs.html
+  - type: DatasetObject
+    name: laptop
+    category: laptop
+    model: nvulcs
+    position: [1.5, 0.9, 0.82]
+    orientation: [0, 0, 1.0, 0.0]
+    scale: [0.9, 0.9, 0.9]
+    abilities:
+      openable: {}
+
+  # Eyeglasses on table (ujauoy)
+  # Model reference: https://behavior.stanford.edu/knowledgebase/objects/ujauoy.html
+  - type: DatasetObject
+    name: eyeglasses
+    category: eyeglasses
+    model: ujauoy
+    position: [1.5, 0.65, 0.82]
+    orientation: [0, 0, 1.0, 0.0]
+    scale: [1.0, 1.0, 1.0]
+
+  # Water glass on table (ewgotr)
+  # Model reference: https://behavior.stanford.edu/knowledgebase/objects/ewgotr.html
+  - type: DatasetObject
+    name: water_glass
+    category: water_glass
+    model: ewgotr
+    position: [1.5, 0.75, 0.82]
+    orientation: [0, 0, 1.0, 0.0]
+    scale: [1.0, 1.0, 1.0]
+
+

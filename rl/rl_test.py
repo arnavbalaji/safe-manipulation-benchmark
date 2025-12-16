@@ -263,6 +263,8 @@ def main():
     target_healths = []
     robot_strains = []
     target_strains = []
+    # Per-step target damage status (for colored border video)
+    target_statuses = []
     # RL reward tracking (existing)
     total_rewards = []
     total_damage_rewards = []
@@ -307,7 +309,7 @@ def main():
             break
 
     # Run simulation loop
-    steps = 500
+    steps = 250
     for step in range(steps):
         action = teleop.get_teleop_action()
         obs, reward, terminated, truncated, info = env.step(action=action)
@@ -330,11 +332,11 @@ def main():
         if plate_obj is not None:
             obj_pos, obj_orn = plate_obj.get_position_orientation()
 
-        # Capture viewer camera frame
+        # Capture viewer camera frame (RGB only)
         rgb = og.sim.viewer_camera.get_obs()[0]["rgb"]
         rgb_np = rgb.cpu().numpy()[:, :, :3]
         rgb_np = cv2.resize(rgb_np, (1080, 720))
-        frames.append(cv2.cvtColor(rgb_np, cv2.COLOR_RGB2BGR))
+        rgb_bgr = cv2.cvtColor(rgb_np, cv2.COLOR_RGB2BGR)
 
         # Ego camera with dynamic border based on target damage status
         rob_obs = robot.get_obs()[0]
@@ -343,12 +345,15 @@ def main():
                 if ":eyes:Camera:0" in k and "rgb" in rob_obs[k]:
                     ego_key = k
                     break
+        # Compute target damage status for this step
+        status = str(getattr(target_ref, "damage_status", "none")).lower() if target_ref is not None else "none"
+        target_statuses.append(status)
+
         if ego_key is not None and ego_key in rob_obs:
             ego_rgb = rob_obs[ego_key]["rgb"]
             ego_np = ego_rgb.cpu().numpy()[:, :, :3]
             ego_bgr = cv2.cvtColor(ego_np, cv2.COLOR_RGB2BGR)
             ego_bgr = cv2.resize(ego_bgr, (1080, 720))
-            status = str(getattr(target_ref, "damage_status", "none")).lower() if target_ref is not None else "none"
             if status in ("major", "critical"):
                 bgr = (0, 0, 255)
             elif status in ("minor",):
@@ -358,6 +363,9 @@ def main():
             border = 30
             ego_bgr = cv2.copyMakeBorder(ego_bgr, border, border, border, border, cv2.BORDER_CONSTANT, value=bgr)
             frames_ego.append(ego_bgr)
+
+        # Store the main camera frame (no object recoloring; border only in ego view)
+        frames.append(rgb_bgr)
 
         # Health tracking (conditionally track robot based on track_robot_health)
         should_track_robot = track_robot_health or (target_ref is None)
@@ -408,7 +416,7 @@ def main():
     videos_dir = "safe-manipulation-benchmark/rl/videos"
     os.makedirs(videos_dir, exist_ok=True)
     
-    # Write camera video
+    # Write camera video (base sim video)
     avi_path = os.path.join(videos_dir, "rl_test_camera.avi")
     mp4_path = os.path.join(videos_dir, "rl_test_camera.mp4")
     if len(frames) > 0:
@@ -418,9 +426,52 @@ def main():
         for f in frames:
             vw.write(np.ascontiguousarray(f, dtype=np.uint8))
         vw.release()
-        # Convert AVI to MP4
-        subprocess.run(["ffmpeg", "-y", "-i", avi_path, "-c:v", "mpeg4", mp4_path], check=True)
+
+        # Standard camera MP4 used by other utilities (leave quality as-is)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", avi_path, "-c:v", "mpeg4", "-q:v", "5", mp4_path],
+            check=True,
+        )
+
+        # High-quality sim-only video for publication (MPEG-4 with low q for high quality)
+        sim_only_mp4 = os.path.join(videos_dir, "rl_test_sim_only.mp4")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", avi_path, "-c:v", "mpeg4", "-q:v", "2", sim_only_mp4],
+            check=True,
+        )
+
+        # Create sim video with a colored border representing target damage status (high quality)
+        border_avi = os.path.join(
+            videos_dir, "rl_test_camera_with_status_border.avi"
+        )
+        border_mp4 = os.path.join(
+            videos_dir, "rl_test_camera_with_status_border.mp4"
+        )
+        vw_border = cv2.VideoWriter(border_avi, fourcc, fps, (w + 60, h + 60))
+        for f, status in zip(frames, target_statuses):
+            # Map status to border color
+            s = (status or "none").lower()
+            if s in ("major", "critical"):
+                bgr = (0, 0, 255)  # Red
+            elif s == "minor":
+                bgr = (0, 255, 255)  # Yellow
+            else:
+                bgr = (0, 255, 0)  # Green
+            bordered = cv2.copyMakeBorder(
+                f, 30, 30, 30, 30, cv2.BORDER_CONSTANT, value=bgr
+            )
+            vw_border.write(np.ascontiguousarray(bordered, dtype=np.uint8))
+        vw_border.release()
+
+        # High-quality bordered MP4 for publication (MPEG-4 with low q for high quality)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", border_avi, "-c:v", "mpeg4", "-q:v", "2", border_mp4],
+            check=True,
+        )
+
+        # Cleanup intermediate AVIs
         os.remove(avi_path)
+        os.remove(border_avi)
 
     # Mech-style videos: ego overlay, health plot, strain plot, and combined outputs
     base_name = "plate"

@@ -1,0 +1,146 @@
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Rs_int
+  include_robots: false
+  load_task_relevant_only: true
+
+robots:
+  - type: Tiago
+    obs_modalities: [rgb]
+    action_type: continuous
+    action_normalize: true
+    position: [0.55, 1.0, 0.0]
+    orientation: [0, 0, -1, 1]
+    grasping_mode: assisted
+    damage_params:
+      damage_evaluators:
+        - mechanical
+        - thermal
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 10000000000.0
+        scale: 1e-10
+        instant_coefficient: 1.0
+        creep_coefficient: 1.0
+        object_type: brittle
+        link_thresholds:
+          arm:
+            damage_threshold: 200.0
+            scale: 0.0001
+          gripper:
+            damage_threshold: 200.0
+            scale: 0.0001
+      thermal:
+        heating_threshold: 60.0
+        scale: 0.01
+        cooling_threshold: -10.0
+
+objects:
+  - type: DatasetObject
+    name: fireplace
+    category: wood_fireplace
+    model: gpnsij
+    position: [0.35, -0.5, 0.5]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 0.75, 0.75]
+    # fixed_base: true
+    abilities:
+      heatSource:
+        temperature: 100.0
+        heating_rate: 0.1
+        distance_threshold: 0.5
+        requires_toggled_on: false
+    initial_state:
+      temperature: 100.0
+
+  - type: DatasetObject
+    name: log_center
+    category: log
+    model: pepele
+    position: [0.35, -0.6, 0.1]
+    orientation: [0, 0, 0, 1]
+    scale: [0.6, 0.6, 0.6]
+    abilities:
+      flammable: {}
+    initial_state:
+      onFire: True
+    damage_params:
+      damage_evaluators:
+        - mechanical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 200.0
+        scale: 0.5
+        instant_coefficient: 1.0
+        creep_coefficient: 0.0
+        object_type: brittle
+
+  - type: DatasetObject
+    name: target_object
+    category: log
+    model: pepele
+    # Slightly in front-left inside the fireplace
+    position: [0.35, 0.0, 0.1]
+    orientation: [0, 0, 0, 1]
+    scale: [0.5, 0.5, 0.5]
+    abilities:
+      flammable: {}
+    initial_state:
+      onFire: True
+    damage_params:
+      damage_evaluators:
+        - mechanical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 200.0
+        scale: 0.5
+        instant_coefficient: 1.0
+        creep_coefficient: 0.0
+        object_type: brittle
+
+  # - type: DatasetObject
+  #   name: log_right
+  #   category: log
+  #   model: pepele
+  #   # Slightly in front-right inside the fireplace
+  #   position: [0.35, -0.6, 0.1]
+  #   orientation: [0, 0, 0, 1]
+  #   scale: [0.6, 0.6, 0.6]
+  #   abilities:
+  #     flammable: {}
+  #   initial_state:
+  #     onFire: True
+  #   damage_params:
+  #     damage_evaluators:
+  #       - mechanical
+  #     health_thresholds: [90.0, 60.0, 30.0]
+  #     mechanical:
+  #       damage_threshold: 200.0
+  #       scale: 0.5
+  #       instant_coefficient: 1.0
+  #       creep_coefficient: 0.0
+  #       object_type: brittle
+
+  - type: DatasetObject
+    name: log_left
+    category: log
+    model: pepele
+    # Slightly in front-right inside the fireplace
+    position: [0.35, -0.7, 0.2]
+    orientation: [0, 0, 0, 1]
+    scale: [0.6, 0.6, 0.6]
+    abilities:
+      flammable: {}
+    initial_state:
+      onFire: True
+    damage_params:
+      damage_evaluators:
+        - mechanical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 200.0
+        scale: 0.5
+        instant_coefficient: 1.0
+        creep_coefficient: 0.0
+        object_type: brittle
+

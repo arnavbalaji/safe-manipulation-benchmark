@@ -235,7 +235,7 @@ def main():
 
     # Easy integration knobs
     # - Choose target object template key from TARGET_OBJECT_CONFIGS (e.g., "plate", "bowl", "baseball")
-    target_object_key = "drawer"
+    target_object_key = "plate"
     # - Toggle whether to load from a previously saved scene file or build fresh from scene_cfg
     use_saved_scene_file = True
     # - Toggle whether to track robot health/strain (only meaningful when target_object_key is not None)

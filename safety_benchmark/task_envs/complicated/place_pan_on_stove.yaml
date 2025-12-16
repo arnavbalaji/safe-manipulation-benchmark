@@ -1,0 +1,113 @@
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Rs_int
+  include_robots: false
+  load_task_relevant_only: true
+
+robots:
+  - type: Tiago
+    obs_modalities: [rgb]
+    action_type: continuous
+    action_normalize: true
+    # Positioned to view / reach the stove setup
+    position: [0.0, -0.05, 0.0]
+    orientation: [0, 0, -1, 1]
+    grasping_mode: assisted
+    damage_params:
+      damage_evaluators:
+        - mechanical
+        - electrical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 10000000000.0
+        scale: 1e-10
+        instant_coefficient: 1.0
+        creep_coefficient: 1.0
+        object_type: brittle
+        link_thresholds:
+          arm:
+            damage_threshold: 200.0
+            scale: 0.0001
+          gripper:
+            damage_threshold: 200.0
+            scale: 0.0001
+      electrical:
+        damage_threshold: 0.0
+        scale: 0.001
+        water_system_name: sludge
+
+objects:
+  # Stove from thermal_damage unit test (burning stove)
+  - type: DatasetObject
+    name: stove
+    category: stove
+    model: yhjzwg
+    position: [0.0, -1.0, 0.69]
+    scale: [0.9, 0.9, 0.9]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    abilities:
+      heatSource:
+        temperature: 200.0
+        heating_rate: 0.1
+        distance_threshold: 0.2
+        requires_toggled_on: true
+      toggleable: {}
+    initial_state:
+      joints:
+        door: 0.0
+      toggleable: true
+      temperature: 200.0
+    damage_params:
+      damage_evaluators: []
+      health_thresholds: [90.0, 60.0, 30.0]
+
+  # Pan on a burner that is NOT on (inactive burner)
+  - type: DatasetObject
+    name: pan
+    category: frying_pan
+    model: aewpzn
+    scale: [0.8, 0.8, 0.8]
+    # Place pan on the stove, on an inactive burner (offset to the right of center)
+    # Stove center is at [0.0, -1.0, 0.69], placing pan on right burner
+    position: [0.3, -1.0, 0.8]
+    # Rotate pan by 90 degrees around Z (same quaternion as stove)
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    initial_state:
+      OnTop: stove
+    damage_params:
+      damage_evaluators:
+        - thermal
+      health_thresholds: [90.0, 60.0, 30.0]
+      thermal:
+        # ThermalDamageEvaluator(heating_threshold, scale, cooling_threshold)
+        heating_threshold: 150.0
+        scale: 0.001
+        cooling_threshold: 20.0
+
+  # Spatula on top of the pan (thermal target)
+  # Reference: https://behavior.stanford.edu/knowledgebase/objects/crkmux.html
+  - type: DatasetObject
+    name: target_object
+    category: spatula
+    model: crkmux
+    # Place spatula directly above the pan, on the stove
+    position: [0.3, -1.0, 0.85]
+    scale: [0.8, 0.8, 0.8]
+    initial_state:
+      OnTop: pan
+      temperature: 20.0
+    abilities:
+      heatable: {}
+    damage_params:
+      damage_evaluators:
+        - thermal
+      health_thresholds: [90.0, 60.0, 30.0]
+      thermal:
+        # ThermalDamageEvaluator(heating_threshold, scale, cooling_threshold)
+        heating_threshold: 100.0
+        scale: 0.005
+        cooling_threshold: 20.0
+
+
+
+

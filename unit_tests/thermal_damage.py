@@ -32,22 +32,25 @@ gm.USE_GPU_DYNAMICS = False
 gm.ENABLE_FLATCACHE = True
 gm.ENABLE_OBJECT_STATES = True
 
-# Thermal damage parameters - using correct parameter names from ThermalDamageEvaluator
+# Thermal damage parameters - using parameter names from ThermalDamageEvaluator
 PARAMS = {
     "egg": {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 60.0,  # Start taking damage at 60°C
-            "scale": 0.01,  # Damage scale factor
+            # ThermalDamageEvaluator(heating_threshold, scale, cooling_threshold)
+            "heating_threshold": 60.0,   # Start taking damage at 60°C
+            "scale": 0.01,               # Damage scale factor
+            "cooling_threshold": 20.0,   # Below this, damage from over-cooling
         }
     },
     "pan": {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 150.0,  # Higher threshold for metal pan
-            "scale": 0.001,  # Slower damage rate for metal
+            "heating_threshold": 150.0,  # Higher threshold for metal pan
+            "scale": 0.001,              # Slower damage rate for metal
+            "cooling_threshold": 20.0,
         }
     },
     "stove": {
@@ -58,40 +61,45 @@ PARAMS = {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 50.0,  # Lower threshold for fruit
-            "scale": 0.02,  # Higher damage rate for fruit
+            "heating_threshold": 50.0,   # Lower threshold for fruit
+            "scale": 0.02,               # Higher damage rate for fruit
+            "cooling_threshold": 20.0,
         }
     },
     "bread": {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 40.0,  # Very low threshold for bread
-            "scale": 0.05,  # High damage rate for bread
+            "heating_threshold": 40.0,   # Very low threshold for bread
+            "scale": 0.05,               # High damage rate for bread
+            "cooling_threshold": 20.0,
         }
     },
     "toy": {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 100.0,  # Moderate threshold for plastic toy
-            "scale": 0.005,  # Moderate damage rate for plastic
+            "heating_threshold": 100.0,  # Moderate threshold for plastic toy
+            "scale": 0.005,              # Moderate damage rate for plastic
+            "cooling_threshold": 20.0,
         }
     },
     "fork": {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 100.0,
+            "heating_threshold": 100.0,
             "scale": 0.0,
+            "cooling_threshold": 20.0,
         }
     },
     "default": {
         "damage_evaluators": ["thermal"],
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
-            "damage_threshold": 80.0,  # Default threshold
-            "scale": 0.01,  # Default scale
+            "heating_threshold": 80.0,   # Default threshold
+            "scale": 0.01,               # Default scale
+            "cooling_threshold": 20.0,
         }
     },
 }
@@ -189,6 +197,12 @@ def main():
     
     # Derived names and paths based on target object
     base_name = target_object_key if target_object_key is not None else "robot_only"
+    unit_tests_dir = "safe-manipulation-benchmark/unit_tests"
+    json_dir = os.path.join(unit_tests_dir, "json_files")
+    os.makedirs(json_dir, exist_ok=True)
+    # Always load the same base scene (toy thermal scene), and adjust target at runtime
+    saved_path = os.path.join(json_dir, "unit_test_toy_thermal.json")
+    use_saved_scene_file = True
 
     # Scene configuration - Rs_int background (minimal change)
     scene_cfg = {
@@ -267,8 +281,54 @@ def main():
         target_obj = TARGET_OBJECT_CONFIGS[target_object_key].copy()
         objects.append(target_obj)
 
-    # Compile config (objects still explicitly added; Rs_int only changes background)
+    # Compile default config (objects still explicitly added; Rs_int only changes background)
     cfg = dict(scene=scene_cfg, robots=[robot0_cfg], objects=objects)
+
+    # Optionally load from a previously saved scene file and overwrite damage params
+    _can_load_saved = (target_object_key is not None) and use_saved_scene_file and os.path.exists(saved_path)
+    if _can_load_saved:
+        print(f"Loading thermal scene from saved file: {saved_path}")
+        try:
+            with open(saved_path, "r") as f:
+                scene_dict = json.load(f)
+            init_info = scene_dict["objects_info"]["init_info"]
+
+            def set_params(entry_args, params_dict):
+                entry_args["params"] = params_dict
+
+            for key, entry in init_info.items():
+                args = entry.get("args", {})
+                name = args.get("name", "")
+                category = args.get("category", "")
+                class_name = entry.get("class_name", "")
+
+                # Robot: leave damage params as-is for this thermal-only scene
+                if name.startswith("robot_") or class_name == "DamageableTiago":
+                    continue
+                elif name == "stove":
+                    set_params(args, PARAMS.get("stove", PARAMS["default"]))
+                elif name == "pan":
+                    set_params(args, PARAMS.get("pan", PARAMS["default"]))
+                elif name == "target_object":
+                    # Use object-specific thermal params when available
+                    if target_object_key in PARAMS:
+                        set_params(args, PARAMS[target_object_key])
+                    elif category in PARAMS:
+                        set_params(args, PARAMS[category])
+                    else:
+                        set_params(args, PARAMS["default"])
+                else:
+                    # Generic: if category maps directly to PARAMS, apply it
+                    if category in PARAMS:
+                        set_params(args, PARAMS[category])
+
+            with open(saved_path, "w") as f:
+                json.dump(scene_dict, f)
+        except Exception as e:
+            print(f"Warning: Could not rewrite params in {saved_path}: {e}")
+
+        # Load environment from scene file
+        cfg = {"scene": {"type": "Scene", "scene_file": saved_path}}
 
     # Create the environment
     env = DamageableEnvironment(configs=cfg, debug_physics_frequency=True)
@@ -360,7 +420,7 @@ def main():
     # Set TIAGo head link poses at start
     robot.set_joint_positions(th.tensor([0.0, -0.5]), indices=robot.camera_control_idx)
 
-    # Register TAB key to print camera pose and breakpoint
+    # Register TAB key to print camera pose and save scene JSON
     def breakpoint_and_print_poses():
         print("=== TAB callback triggered ===", flush=True)
         
@@ -370,11 +430,9 @@ def main():
         print(f"World  pos: {cam_pos.tolist()}  quat: {cam_quat.tolist()}")
 
         # Save current scene config/state
-        save_dir = "safe-manipulation-benchmark/unit_tests"
-        os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, "unit_test_thermal_temp.json")
-        og.sim.save([save_path])
-        print(f"✅ Saved scene to: {save_path}")
+        os.makedirs(json_dir, exist_ok=True)
+        og.sim.save([saved_path])
+        print(f"✅ Saved scene to: {saved_path}")
 
         breakpoint()
 
@@ -396,7 +454,7 @@ def main():
     print("Press TAB to print camera pose and breakpoint.")
 
     # Simulation parameters
-    max_steps = 500
+    max_steps = 1000
     step = 0
     fps = 10
     frames = []
@@ -414,6 +472,23 @@ def main():
     # Damage status tracking
     target_statuses = []
 
+    # High-quality PNG frame saving (like mech_damage_visualizations)
+    output_dir = os.path.join(unit_tests_dir, "visualizations", f"{base_name}_thermal")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Helper to convert RGB frame to uint8 (handle both 0-1 and 0-255 ranges)
+    def prepare_frame_for_png(frame):
+        frame_max = np.max(frame)
+        if frame_max <= 1.0:
+            # Values are in 0-1 range, convert to 0-255
+            frame_uint8 = (frame * 255).astype(np.uint8)
+        else:
+            # Values are already in 0-255 range
+            frame_uint8 = frame.astype(np.uint8)
+        return frame_uint8
+
+    frame_count = 0
+
     while step != max_steps:
         action = action_generator.get_teleop_action()
         env.step(action=action)
@@ -424,6 +499,14 @@ def main():
         rgb_np = rgb.cpu().numpy()[:, :, :3]
         rgb_np = cv2.resize(rgb_np, (1080, 720))
         frames.append(cv2.cvtColor(rgb_np, cv2.COLOR_RGB2BGR))
+
+        # Save high-quality PNG every 10 steps
+        if step % 10 == 0:
+            frame_uint8 = prepare_frame_for_png(rgb_np)
+            frame_filename = f"frame_{frame_count:05d}.png"
+            frame_path = os.path.join(output_dir, frame_filename)
+            cv2.imwrite(frame_path, cv2.cvtColor(frame_uint8, cv2.COLOR_RGB2BGR))
+            frame_count += 1
 
         # Capture robot ego camera RGB
         rob_obs = robot.get_obs()[0]

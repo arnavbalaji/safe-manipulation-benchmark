@@ -52,6 +52,9 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         dt = og.sim.get_physics_dt()
 
         for link_name, link in self.entity.links.items():
+            if "robot" in self.entity.name.lower() or "tiago" in self.entity.name.lower():
+                if "arm_right" not in link_name.lower() and "gripper_right" not in link_name.lower():
+                    continue
             try:
                 contacts_now = link.contact_list()
             except Exception:

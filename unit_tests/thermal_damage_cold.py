@@ -36,8 +36,8 @@ PARAMS = {
         "health_thresholds": [90.0, 60.0, 30.0],
         "thermal": {
             "heating_threshold": 100.0,
-            "cooling_threshold": -30.0,
-            "scale": 20.0,
+            "cooling_threshold": -10.0,
+            "scale": 100.0,
         },
     },
     "apple": {
@@ -161,7 +161,7 @@ def main(random_selection=False, headless=False, short_exec=False):
     og.log.info(f"Demo {__file__}\n    " + "*" * 80 + "\n    Description:\n" + main.__doc__ + "*" * 80)
 
     # Easy integration knobs - Choose target object template key from TARGET_OBJECT_CONFIGS
-    target_object_key = "bowl"  # Change this to switch between "soda", "apple", "milk", "ice_cream", or None for robot-only
+    target_object_key = "soda"  # Change this to switch between "soda", "apple", "milk", "ice_cream", or None for robot-only
     
     # Derived names and paths based on target object
     base_name = target_object_key if target_object_key is not None else "robot_only"
@@ -191,7 +191,7 @@ def main(random_selection=False, headless=False, short_exec=False):
             bounding_box=[1.065, 1.149, 1.528],
             abilities={
                 "coldSource": {
-                    "temperature": -100.0,
+                    "temperature": -300.0,
                     "requires_inside": True,
                 }
             },
@@ -297,18 +297,33 @@ def main(random_selection=False, headless=False, short_exec=False):
         target_obj.states[object_states.Temperature].set_value(20.0)
         target_obj.states[object_states.Inside].set_value(fridge, True)
 
-    # Ensure the fridge door is closed (like thermal_damage.py)
+    # Ensure the fridge door is closed (like thermal_damage.py / place_pan_on_stove_load.py)
     if object_states.Open in fridge.states:
         fridge.states[object_states.Open].set_value(False)
+    else:
+        # Fallback: explicitly set any door / fridge joints to zero position
+        if hasattr(fridge, "joints"):
+            for jname, joint in fridge.joints.items():
+                name_l = jname.lower()
+                if ("door" in name_l) or ("fridge" in name_l):
+                    try:
+                        # Some OG joints expose set_joint_position, others set_pos; try both safely.
+                        if hasattr(joint, "set_joint_position"):
+                            joint.set_joint_position(0.0)
+                        elif hasattr(joint, "set_pos"):
+                            joint.set_pos(0.0)
+                    except Exception:
+                        continue
 
     steps = 0
     max_steps = 200
     fps = 10
     frames = []
     
-    # Health and temperature tracking - only target object
+    # Health, status, and temperature tracking - only target object
     target_healths = []
     target_temperatures = []
+    target_statuses = []
 
     # Main recording loop
     locations = [f"{loc:>20}" for loc in ["Inside fridge"]]
@@ -327,13 +342,15 @@ def main(random_selection=False, headless=False, short_exec=False):
         rgb_np = cv2.resize(rgb_np, (1080, 720))
         frames.append(cv2.cvtColor(rgb_np, cv2.COLOR_RGB2BGR))
         
-        # Record health and temperature - only target object
+        # Record health, damage status, and temperature - only target object
         if target_obj is not None:
             target_health = float(getattr(target_obj, "health", 100.0))
             target_temp = float(target_obj.damage_evaluators[0].get_temperature())
+            target_status = str(getattr(target_obj, "damage_status", "none")).lower()
             
             target_healths.append(target_health)
             target_temperatures.append(target_temp)
+            target_statuses.append(target_status)
             
             # Print progress every 100 steps
             if steps % 100 == 0:
@@ -358,6 +375,68 @@ def main(random_selection=False, headless=False, short_exec=False):
         # Convert AVI to MP4
         subprocess.run(["ffmpeg", "-y", "-i", avi_path, "-c:v", "mpeg4", mp4_path], check=True)
         os.remove(avi_path)
+
+        # Create a status-border sim video, like simple_task_load / rl_test:
+        # - Border color encodes target health status (none/negligible -> green, minor -> yellow, major/critical -> red)
+        # - Top-left text shows current target temperature
+        border_mp4 = os.path.join(videos_dir, "cold_camera_with_status_border.mp4")
+        border_width = 30
+        fourcc_border = cv2.VideoWriter_fourcc(*"mp4v")
+        vw_border = cv2.VideoWriter(
+            border_mp4,
+            fourcc_border,
+            fps,
+            (w + 2 * border_width, h + 2 * border_width),
+        )
+
+        # If for some reason we have no recorded temperatures/statuses, fall back to defaults
+        if len(target_temperatures) == 0:
+            target_temperatures = [0.0] * len(frames)
+        if len(target_statuses) == 0:
+            target_statuses = ["none"] * len(frames)
+
+        for f, status, temp in zip(frames, target_statuses, target_temperatures):
+            s = (status or "none").lower()
+            if s in ("major", "critical"):
+                bgr = (0, 0, 255)  # Red
+            elif s == "minor":
+                bgr = (0, 255, 255)  # Yellow
+            else:
+                bgr = (0, 255, 0)  # Green
+
+            bordered = cv2.copyMakeBorder(
+                f,
+                border_width,
+                border_width,
+                border_width,
+                border_width,
+                cv2.BORDER_CONSTANT,
+                value=bgr,
+            )
+
+            # Temperature text at top-left inside the sim image (not on the border)
+            label = base_name.capitalize() if target_object_key is not None else "Target"
+            text = f"{label} Temp: {float(temp):.2f} C"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 1.2
+            thickness = 3
+            (text_w, text_h), _ = cv2.getTextSize(text, font, font_scale, thickness)
+            x = border_width + 20
+            y = border_width + text_h + 20
+            cv2.putText(
+                bordered,
+                text,
+                (x, y),
+                font,
+                font_scale,
+                (0, 0, 0),
+                thickness,
+                cv2.LINE_AA,
+            )
+            vw_border.write(np.ascontiguousarray(bordered, dtype=np.uint8))
+
+        vw_border.release()
+        print(f"✅ Saved status-border camera video: {border_mp4}")
 
     # Build stacked plots video (temperature top, health bottom) - like mech_damage.py forces
     plots_mp4 = os.path.join(videos_dir, f'{base_name}_plots.mp4')

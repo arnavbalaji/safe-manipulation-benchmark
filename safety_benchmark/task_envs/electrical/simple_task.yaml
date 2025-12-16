@@ -37,10 +37,11 @@ robots:
 
 objects:
   - type: DatasetObject
-    name: coffee_table
-    category: coffee_table
-    model: aoojzy
-    position: [0.2, 0.0, 0.0]
+    name: breakfast_table
+    category: breakfast_table
+    model: hggsao
+    # model: rjgmmy
+    position: [0.0, 0.0, 0.0]
     orientation: [0, 0, 0.7071068, 0.7071068]
     scale: [1.0, 1.0, 1.0]
 
@@ -48,9 +49,12 @@ objects:
     name: laptop
     category: laptop
     model: nvulcs
-    position: [0.2, 0.0, 0.5]
-    orientation: [0, 0, 0, 1]
-    scale: [1.0, 1.0, 1.0]
+    position: [-0.1, 0.15, 0.82]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [0.9, 0.9, 0.9]
+    abilities:
+      openable: {}
+    # fixed_joints: true
     damage_params:
       damage_evaluators:
         - mechanical
@@ -69,10 +73,11 @@ objects:
 
   - type: DatasetObject
     name: mug
-    category: mug
-    model: ycbmug
-    position: [0.0, 0.0, 0.5]
-    orientation: [0, 0, 0, 1]
+    category: water_glass
+    model: vcwsbm
+    position: [-0.3, 0.15, 0.82]
+    # orientation: [0, 0, 0, 1]
+    orientation: [0, 0, 0.7071068, 0.7071068]
     scale: [1.0, 1.0, 1.0]
     damage_params:
       damage_evaluators:
@@ -86,12 +91,20 @@ objects:
         object_type: brittle
 
   - type: DatasetObject
-    name: drop_in_sink
-    category: drop_in_sink
-    model: wzpabm
-    position: [-0.5, 0.0, 0.0]
+    name: plate
+    category: plate
+    model: ntedfx
+    position: [-0.3, 0.0, 0.82]
     orientation: [0, 0, 0.7071068, 0.7071068]
-    scale: [1.0, 1.0, 1.0]
+    scale: [0.6, 0.6, 0.6]
+
+  - type: DatasetObject
+    name: furniture_sink_far
+    category: furniture_sink
+    model: czyfhq
+    position: [0.0, 3.0, 0.0]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 2.0, 0.6]
     abilities:
       toggleable: {}
       particleSource:

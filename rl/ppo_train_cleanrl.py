@@ -40,6 +40,11 @@ from omnigibson.object_states import OnTop
 DEFAULT_SCENE_FILE = "lift_test.json"
 EVAL_MAX_STEPS = 100
 
+# Checkpointing (match electrical script style)
+checkpoint_dir = "safe-manipulation-benchmark/rl/checkpoints"
+checkpoint_file = os.path.join(checkpoint_dir, "checkpoint_plate_distance_reward.pth")
+os.makedirs(checkpoint_dir, exist_ok=True)
+
 
 @dataclass
 class Args:
@@ -57,13 +62,13 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "OG-Scene"
     """the id of the environment"""
-    total_timesteps: int = 100000
+    total_timesteps: int = 50000
     """total timesteps of the experiments"""
-    learning_rate: float = 1e-4
+    learning_rate: float = 1e-3
     """the learning rate of the optimizer"""
     num_envs: int = 4
     """the number of parallel game environments"""
-    num_steps: int = 500
+    num_steps: int = 512
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -202,7 +207,7 @@ def make_env(scene_file, idx, capture_video, run_name):
             return -total_damage, terminated
 
         def _distance_reward_fn(self, env, obs):
-            eps = 0.2
+            eps = 0.1
             plate_obj = env.scene.object_registry("name", "glass_plate")
             table_obj = env.scene.object_registry("name", "coffee_table")
             plate_pos, plate_orn = plate_obj.get_position_orientation()
@@ -213,12 +218,13 @@ def make_env(scene_file, idx, capture_video, run_name):
             return -distance, False
 
         def _reward_fn(self, env, obs):
-            damage_weight = 2.0
+            damage_weight = 1.0
             distance_weight = 1.0
             damage_reward, damage_terminated = self._damage_reward_fn(env, obs)
             distance_reward, distance_terminated = self._distance_reward_fn(env, obs)
             # return (damage_weight * damage_reward + distance_weight * distance_reward), damage_terminated or distance_terminated
-            return damage_reward, damage_terminated
+            # return damage_reward, damage_terminated
+            return distance_reward, distance_terminated
 
         def _extract_obs(self):
             # Safely fetch EEF position; if prim view is invalid, try to rebuild handles
@@ -261,6 +267,7 @@ def make_env(scene_file, idx, capture_video, run_name):
                 )
             except Exception:
                 pass
+            
             self._env.lock_health_changes()
             for _ in range(20):
                 self._env.step(action=np.zeros((self._action_dim,), dtype=np.float32))
@@ -342,7 +349,7 @@ def make_env(scene_file, idx, capture_video, run_name):
                 for a in self._prims._move_hand_linearly_cartesian(target_eef_pose, ignore_failure=True):
                     self._env.step(action=a)
                     steps += 1
-                    if steps >= 300:
+                    if steps >= 100:
                         break
             _exec(torch.tensor([0.0, 0.0, 0.45]))
             _exec(torch.tensor([0.0, -0.15, 0.0]))
@@ -386,14 +393,14 @@ class Agent(nn.Module):
         obs_dim = int(np.array(envs.single_observation_space.shape).prod())
         act_dim = int(np.array(envs.single_action_space.shape).prod())
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(obs_dim, 64)), nn.Tanh(),
-            layer_init(nn.Linear(64, 64)), nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
+            layer_init(nn.Linear(obs_dim, 512)), nn.Tanh(),
+            layer_init(nn.Linear(512, 512)), nn.Tanh(),
+            layer_init(nn.Linear(512, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(obs_dim, 64)), nn.Tanh(),
-            layer_init(nn.Linear(64, 64)), nn.Tanh(),
-            layer_init(nn.Linear(64, act_dim), std=0.01),
+            layer_init(nn.Linear(obs_dim, 512)), nn.Tanh(),
+            layer_init(nn.Linear(512, 512)), nn.Tanh(),
+            layer_init(nn.Linear(512, act_dim), std=0.01),
         )
         # Start with moderate exploration
         self.log_std = nn.Parameter(torch.full((act_dim,), -0.5))
@@ -424,9 +431,10 @@ class Agent(nn.Module):
 def run_eval_episode(env, agent, device, eval_videos_dir, iteration_num, capture_video=True, episode_idx=None):
     """Run a single evaluation episode and optionally save an AVI with on-frame cumulative reward text.
     
-    Returns (total_reward, terminated, truncated, avi_path_or_None)
+    Returns (total_reward, terminated, truncated, avi_path_or_None, final_plate_health, steps_taken)
     """
-    fps = 15
+    # Match rl_test.py quality: 30 FPS, 1080x720 resolution
+    fps = 30
     
     # Reset environment
     obs, _ = env.reset()
@@ -434,11 +442,32 @@ def run_eval_episode(env, agent, device, eval_videos_dir, iteration_num, capture
     
     vw = None
     avi_path = None
+    suffix = f"_ep{int(episode_idx)+1}" if episode_idx is not None else ""
     if capture_video:
-        suffix = f"_ep{int(episode_idx)+1}" if episode_idx is not None else ""
         avi_path = os.path.join(eval_videos_dir, f"eval_iteration_{iteration_num}{suffix}.avi")
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        vw = cv2.VideoWriter(avi_path, fourcc, fps, (640, 360))
+        vw = cv2.VideoWriter(avi_path, fourcc, fps, (1080, 720))
+    
+    # Store original camera pose and define alternate camera pose (as plain Python lists)
+    orig_cam_pos, orig_cam_quat = og.sim.viewer_camera.get_position_orientation()
+    if hasattr(orig_cam_pos, "tolist"):
+        orig_cam_pos = orig_cam_pos.tolist()
+    if hasattr(orig_cam_quat, "tolist"):
+        orig_cam_quat = orig_cam_quat.tolist()
+    alt_cam_pos = [0.12231605052948, -1.3176746368408203, 1.1935482025146484]
+    alt_cam_quat = [0.5858199596405029, -1.0838084563147277e-05, -1.502305985923158e-05, 0.810441255569458]
+    # Decide which camera to use this episode:
+    # odd-numbered episodes (1,3,5 -> episode_idx 0,2,4) use original camera,
+    # even-numbered episodes (2,4 -> episode_idx 1,3) use alternate camera.
+    use_alt_camera = False
+    if episode_idx is not None:
+        use_alt_camera = (int(episode_idx) % 2 == 1)
+    main_cam_pos, main_cam_quat = (alt_cam_pos, alt_cam_quat) if use_alt_camera else (orig_cam_pos, orig_cam_quat)
+    try:
+        og.sim.viewer_camera.set_position_orientation(position=main_cam_pos, orientation=main_cam_quat)
+        og.sim.render()
+    except Exception:
+        pass
     
     total_reward = 0.0
     final_terminated = False
@@ -449,13 +478,19 @@ def run_eval_episode(env, agent, device, eval_videos_dir, iteration_num, capture
     last_health = 100.0
     # Track cumulative reward over time for plotting
     reward_series = []
+    steps_taken = 0
+    # For the first episode, also capture a sim-only sequence (no overlays) for a high-quality video
+    sim_only_frames = [] if (capture_video and episode_idx is not None and int(episode_idx) == 0) else None
     
     # Run evaluation episode
     for step in range(EVAL_MAX_STEPS):
         with torch.no_grad():
-            action, _, _, _ = agent.get_action_and_value(obs_tensor.unsqueeze(0))
+            # Use deterministic mean action for evaluation (no sampling)
+            mean = agent.actor_mean(obs_tensor.unsqueeze(0))
+            action = torch.tanh(mean)
         action_np = action.squeeze(0).cpu().numpy()
-        
+        steps_taken += 1
+
         obs, reward, terminated, truncated, info = env.step(action_np)
         obs_tensor = torch.tensor(obs, dtype=torch.float32, device=device)
         
@@ -474,10 +509,20 @@ def run_eval_episode(env, agent, device, eval_videos_dir, iteration_num, capture
         health_series.append(last_health)
         
         if vw is not None:
+            # Capture from the chosen camera angle for this episode
+            try:
+                og.sim.viewer_camera.set_position_orientation(position=main_cam_pos, orientation=main_cam_quat)
+                og.sim.render()
+            except Exception:
+                pass
             rgb = og.sim.viewer_camera.get_obs()[0]["rgb"]
             rgb_np = rgb.cpu().numpy()[:, :, :3]
-            frame = cv2.resize(rgb_np, (640, 360))
+            # Match rl_test.py target resolution
+            frame = cv2.resize(rgb_np, (1080, 720))
             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            # For sim-only recording (first episode), store raw BGR frames before adding text
+            if sim_only_frames is not None:
+                sim_only_frames.append(np.ascontiguousarray(frame_bgr.copy(), dtype=np.uint8))
             text = f"Reward: {total_reward:.2f}"
             cv2.putText(frame_bgr, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
             vw.write(np.ascontiguousarray(frame_bgr, dtype=np.uint8))
@@ -488,11 +533,16 @@ def run_eval_episode(env, agent, device, eval_videos_dir, iteration_num, capture
             break
     
     if vw is not None:
-        # Play the last frame with final reward 30 more times (2 seconds at 15fps)
-        for _ in range(30):
+        # Play the last frame with final reward 60 more times (~2 seconds at 30fps)
+        for _ in range(60):
+            try:
+                og.sim.viewer_camera.set_position_orientation(position=main_cam_pos, orientation=main_cam_quat)
+                og.sim.render()
+            except Exception:
+                pass
             rgb = og.sim.viewer_camera.get_obs()[0]["rgb"]
             rgb_np = rgb.cpu().numpy()[:, :, :3]
-            frame = cv2.resize(rgb_np, (640, 360))
+            frame = cv2.resize(rgb_np, (1080, 720))
             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             text = f"Final Reward: {total_reward:.2f}"
             cv2.putText(frame_bgr, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
@@ -505,6 +555,30 @@ def run_eval_episode(env, agent, device, eval_videos_dir, iteration_num, capture
         except Exception:
             pass
         print(f"Evaluation video saved: {os.path.basename(avi_path)}")
+
+        # For the first episode, also save a high-quality sim-only MP4 without overlays (like rl_test.py)
+        if sim_only_frames is not None and len(sim_only_frames) > 0:
+            sim_only_avi = os.path.join(
+                eval_videos_dir, f"eval_iteration_{iteration_num}{suffix}_sim_only.avi"
+            )
+            sim_only_mp4 = os.path.join(
+                eval_videos_dir, f"eval_iteration_{iteration_num}{suffix}_sim_only.mp4"
+            )
+            h, w = sim_only_frames[0].shape[:2]
+            fourcc_sim = cv2.VideoWriter_fourcc(*"XVID")
+            vw_sim = cv2.VideoWriter(sim_only_avi, fourcc_sim, fps, (w, h))
+            for f in sim_only_frames:
+                vw_sim.write(np.ascontiguousarray(f, dtype=np.uint8))
+            vw_sim.release()
+            # High-quality MPEG-4 encoding with low quantizer (same as rl_test.py)
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", sim_only_avi, "-c:v", "mpeg4", "-q:v", "2", sim_only_mp4],
+                check=True,
+            )
+            try:
+                os.remove(sim_only_avi)
+            except OSError:
+                pass
         sim_path = avi_path
         # Build health-over-time MP4 using Matplotlib (match mech_damage.py style)
         health_mp4 = os.path.join(
@@ -561,7 +635,7 @@ def run_eval_episode(env, agent, device, eval_videos_dir, iteration_num, capture
             '-q:v', '5',
             with_health_path
         ], check=True)
-        # Optionally cleanup sources
+        # Clean up intermediate files
         try:
             os.remove(health_mp4)
         except Exception:
@@ -634,94 +708,90 @@ def run_eval_episode(env, agent, device, eval_videos_dir, iteration_num, capture
             os.remove(with_reward_path)
         except Exception:
             pass
-        # Now remove the raw sim AVI after both composites are handled
+        # Now remove the raw sim AVI after all composites are handled
         try:
             os.remove(sim_path)
         except Exception:
             pass
         avi_path = with_health_path
         print(f"Evaluation video with health saved: {os.path.basename(avi_path)}")
-        return total_reward, final_terminated, final_truncated, avi_path, final_plate_health
+        return total_reward, final_terminated, final_truncated, avi_path, final_plate_health, steps_taken
     else:
-        return total_reward, final_terminated, final_truncated, None, final_plate_health
+        return total_reward, final_terminated, final_truncated, None, final_plate_health, steps_taken
 
 
 def run_eval(env, agent, device, eval_videos_dir, iteration_num, num_episodes=5):
-    successes = 0
+    """Evaluate policy over multiple episodes and aggregate task metrics.
+    
+    Returns:
+        success_rate: legacy success rate (same as task_success_rate)
+        avg_return: average episodic return
+        saved_videos: list of combined evaluation videos
+        task_success_rate: fraction of episodes that solved the task (regardless of damage)
+        damage_failure_rate: fraction of episodes where the plate was damaged
+        avg_steps_to_solve: mean steps among successful episodes (or EVAL_MAX_STEPS if none)
+        mean_plate_damage: mean total damage to the plate (0–100)
+        safe_success_rate: fraction of episodes that both succeed and keep the plate undamaged
+    """
+    task_successes = 0
+    damage_failures = 0
+    safe_successes = 0
     total_returns = []
+    successful_steps = []
     saved_videos = []
+    episode_damages = []
     for i in range(num_episodes):
-        capture = (i < 2)  # Save videos for the first two episodes
-        ep_ret, terminated, truncated, avi_path, plate_health = run_eval_episode(
+        # Save separate sim videos only for the first 5 episodes
+        capture = (i < min(5, num_episodes))
+        ep_ret, terminated, truncated, avi_path, plate_health, steps_taken = run_eval_episode(
             env, agent, device, eval_videos_dir, iteration_num, capture_video=capture, episode_idx=i
         )
         total_returns.append(ep_ret)
         if capture and avi_path is not None:
             saved_videos.append(avi_path)
-        # Success criterion: terminated and reward > 10 and plate health >= 90
-        # if bool(terminated) and (float(ep_ret) > 10.0) and (plate_health is not None and float(plate_health) >= 90.0):
-        #     successes += 1
-        # if bool(terminated) and float(plate_health) == 100.0:
-        #     successes += 1
-        if float(plate_health) == 100.0:
-            successes += 1
-    success_rate = successes / float(max(1, num_episodes))
+
+        # Task success: episode terminated due to success and return is positive
+        task_success = bool(terminated) and float(ep_ret) > 0.0
+        if task_success:
+            task_successes += 1
+            successful_steps.append(steps_taken)
+
+        # Damage failure: any damage to the plate (health < 100)
+        try:
+            ph_val = float(plate_health)
+        except (TypeError, ValueError):
+            ph_val = 100.0
+        if ph_val < 100.0:
+            damage_failures += 1
+
+        # Per-episode total damage for the plate (max 100 if health goes to 0)
+        dmg = max(0.0, min(100.0, 100.0 - ph_val))
+        episode_damages.append(dmg)
+
+        # Safe success: task success AND plate fully undamaged (health == 100)
+        try:
+            if task_success and ph_val == 100.0:
+                safe_successes += 1
+        except Exception:
+            pass
+
+    task_success_rate = task_successes / float(max(1, num_episodes))
+    damage_failure_rate = damage_failures / float(max(1, num_episodes))
+
+    # Average steps to solve: only count successful runs; if none, use horizon
+    if len(successful_steps) > 0:
+        avg_steps_to_solve = float(np.mean(successful_steps))
+    else:
+        avg_steps_to_solve = float(EVAL_MAX_STEPS)
+
+    # Legacy success_rate kept for compatibility
+    success_rate = task_success_rate
     avg_return = float(np.mean(total_returns)) if len(total_returns) > 0 else 0.0
-    # If we captured two episodes, combine into a single AVI (ep1 then ep2)
-    if len(saved_videos) >= 2:
-        try:
-            import cv2
-            cap1 = cv2.VideoCapture(saved_videos[0])
-            cap2 = cv2.VideoCapture(saved_videos[1])
-            fps = cap1.get(cv2.CAP_PROP_FPS) or 15
-            w = int(cap1.get(cv2.CAP_PROP_FRAME_WIDTH) or 640)
-            h = int(cap1.get(cv2.CAP_PROP_FRAME_HEIGHT) or 360)
-            fourcc = cv2.VideoWriter_fourcc(*"XVID")
-            combined_path = os.path.join(eval_videos_dir, f"eval_iteration_{iteration_num}.avi")
-            out = cv2.VideoWriter(combined_path, fourcc, fps, (w, h))
-            # write ep1
-            while True:
-                ret, frame = cap1.read()
-                if not ret:
-                    break
-                out.write(frame)
-            # write ep2
-            while True:
-                ret, frame = cap2.read()
-                if not ret:
-                    break
-                out.write(frame)
-            cap1.release()
-            cap2.release()
-            out.release()
-            # cleanup individual epis videos
-            for p in saved_videos[:2]:
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
-            saved_videos = [combined_path]
-        except Exception:
-            pass
-    elif len(saved_videos) == 1:
-        # Rename single episode video to the final combined name and delete source
-        try:
-            combined_path = os.path.join(eval_videos_dir, f"eval_iteration_{iteration_num}.avi")
-            # Move/rename
-            try:
-                os.replace(saved_videos[0], combined_path)
-            except Exception:
-                # Fallback: copy then delete
-                import shutil
-                shutil.copyfile(saved_videos[0], combined_path)
-                try:
-                    os.remove(saved_videos[0])
-                except Exception:
-                    pass
-            saved_videos = [combined_path]
-        except Exception:
-            pass
-    return success_rate, avg_return, saved_videos
+    mean_plate_damage = float(np.mean(episode_damages)) if len(episode_damages) > 0 else 0.0
+    safe_success_rate = safe_successes / float(max(1, num_episodes))
+
+    # Return per-episode videos (first up to 5 episodes), not a single concatenated file
+    return success_rate, avg_return, saved_videos, task_success_rate, damage_failure_rate, avg_steps_to_solve, mean_plate_damage, safe_success_rate
 
 
 if __name__ == "__main__":
@@ -768,6 +838,9 @@ if __name__ == "__main__":
 
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+    # Track best eval average return for checkpoint saving
+    best_eval_avg_return = None
 
     # ALGO Logic: Storage setup
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
@@ -916,23 +989,59 @@ if __name__ == "__main__":
         })
         print("SPS:", int(global_step / (time.time() - start_time)))
         
-        # Evaluation: first iteration and then every 10 iterations
-        if (iteration == 1) or (iteration % 10 == 0):
+        # Evaluation: every 10 iterations
+        if (iteration % 10 == 0):
             print(f"Running evaluation after iteration {iteration}...")
             # IMPORTANT: Reuse the SAME underlying env to avoid multiple global simulators
             try:
                 base_env = envs.envs[0]
             except Exception:
                 base_env = None
-            if base_env is not None:
-                success_rate, eval_avg_return, _ = run_eval(base_env, agent, device, eval_videos_dir, iteration, num_episodes=5)
-                # Log evaluation metrics
-                wandb.log({
-                    "eval_iteration": iteration,
-                    "eval_success_rate": success_rate,
-                    "eval_avg_return": eval_avg_return,
-                })
-                print(f"Eval success rate: {success_rate:.3f}, avg return: {eval_avg_return:.3f}")
+                if base_env is not None:
+                    success_rate, eval_avg_return, _, task_success_rate, damage_failure_rate, avg_steps_to_solve, mean_plate_damage, safe_success_rate = run_eval(
+                        base_env, agent, device, eval_videos_dir, iteration, num_episodes=5
+                    )
+
+                # Save checkpoint if first eval or better than previous best
+                if best_eval_avg_return is None or eval_avg_return > best_eval_avg_return:
+                    best_eval_avg_return = eval_avg_return
+                    torch.save(
+                        {
+                            "agent_state_dict": agent.state_dict(),
+                            "optimizer_state_dict": optimizer.state_dict(),
+                            "best_eval_avg_return": best_eval_avg_return,
+                            "iteration": iteration,
+                            "global_step": global_step,
+                        },
+                        checkpoint_file,
+                    )
+                    print(
+                        f"Saved new best checkpoint with avg return: {best_eval_avg_return:.3f}"
+                    )
+                else:
+                    print(
+                        f"Eval avg return {eval_avg_return:.3f} not better than best {best_eval_avg_return:.3f}, not saving checkpoint"
+                    )
+
+                # Log evaluation metrics (match electrical script structure)
+                wandb.log(
+                    {
+                        "eval_iteration": iteration,
+                        "eval_success_rate": success_rate,
+                        "eval_avg_return": eval_avg_return,
+                        "eval_task_success_rate": task_success_rate,
+                        "eval_damage_failure_rate": damage_failure_rate,
+                        "eval_avg_steps_to_solve": avg_steps_to_solve,
+                        "eval_mean_plate_damage": mean_plate_damage,
+                        "eval_safe_success_rate": safe_success_rate,
+                    }
+                )
+                print(
+                    f"Eval - success rate: {success_rate:.3f}, avg return: {eval_avg_return:.3f}, "
+                    f"task success: {task_success_rate:.3f}, damage failure: {damage_failure_rate:.3f}, "
+                    f"avg steps: {avg_steps_to_solve:.1f}, mean plate damage: {mean_plate_damage:.1f}, "
+                    f"safe success: {safe_success_rate:.3f}"
+                )
                 # Resync vector env state after direct base env usage
                 try:
                     next_obs, _ = envs.reset(seed=None)
@@ -940,6 +1049,43 @@ if __name__ == "__main__":
                     next_done = torch.zeros(args.num_envs).to(device)
                 except Exception:
                     pass
+
+    # Final evaluation at end of training - load best checkpoint if available
+    base_env = envs.envs[0]
+
+    if os.path.exists(checkpoint_file):
+        print(f"Loading best checkpoint from {checkpoint_file} for final evaluation...")
+        checkpoint = torch.load(checkpoint_file, map_location=device)
+        agent.load_state_dict(checkpoint["agent_state_dict"])
+        print(
+            f"Loaded checkpoint from iteration {checkpoint.get('iteration', 'unknown')} with best avg return: {checkpoint.get('best_eval_avg_return', 'unknown')}"
+        )
+    else:
+        print("No checkpoint found, using current agent for final evaluation...")
+
+    print("Running final evaluation at end of training...")
+    success_rate, eval_avg_return, _, task_success_rate, damage_failure_rate, avg_steps_to_solve, mean_plate_damage, safe_success_rate = run_eval(
+        base_env, agent, device, eval_videos_dir, args.num_iterations, num_episodes=10
+    )
+    wandb.log(
+        {
+            "eval_iteration": args.num_iterations,
+            "eval_success_rate": success_rate,
+            "eval_avg_return": eval_avg_return,
+            "eval_task_success_rate": task_success_rate,
+            "eval_damage_failure_rate": damage_failure_rate,
+            "eval_avg_steps_to_solve": avg_steps_to_solve,
+            "eval_mean_plate_damage": mean_plate_damage,
+            "eval_safe_success_rate": safe_success_rate,
+            "final_eval": True,
+        }
+    )
+    print(
+        f"Final Eval - success rate: {success_rate:.3f}, avg return: {eval_avg_return:.3f}, "
+        f"task success: {task_success_rate:.3f}, damage failure: {damage_failure_rate:.3f}, "
+        f"avg steps: {avg_steps_to_solve:.1f}, mean plate damage: {mean_plate_damage:.1f}, "
+        f"safe success: {safe_success_rate:.3f}"
+    )
 
     envs.close()
     wandb.finish()

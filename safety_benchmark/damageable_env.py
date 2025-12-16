@@ -11,6 +11,7 @@ from safety_benchmark.damageable_mixin import (
 )
 from safety_benchmark.params.test_params import PARAMS
 import omnigibson as og
+import omnigibson.lazy as lazy
 import inspect
 import random
 import string
@@ -93,6 +94,9 @@ class DamageableEnvironment(Environment):
         self._load_external_sensors()
 
         self.inialize_damageable_objects()
+        # Enable GPU dynamics on PhysX scene and initialize fluid systems (e.g., water)
+        self._enable_gpu_dynamics_on_stage()
+        self._initialize_fluid_systems()
 
     def inialize_damageable_objects(self):
         # Initialize health for all damageable objects
@@ -104,6 +108,9 @@ class DamageableEnvironment(Environment):
         """Reset the environment and damage evaluators."""
         # Reset the base environment
         obs = super().reset()
+        # Re-assert GPU dynamics and initialize fluid systems after reset
+        self._enable_gpu_dynamics_on_stage()
+        self._initialize_fluid_systems()
         
         # Reset damage evaluators for all objects
         for obj in self.scene.objects:
@@ -116,6 +123,50 @@ class DamageableEnvironment(Environment):
         self.damage_evaluators_initialized = False
         
         return obs
+    
+    def _enable_gpu_dynamics_on_stage(self):
+        """Force-enable GPU dynamics on the PhysX scene."""
+        try:
+            # Simulator and USD context must exist
+            if og.sim is None:
+                return
+            if not hasattr(lazy, "omni") or not hasattr(lazy.omni, "usd"):
+                return
+            ctx = lazy.omni.usd.get_context()
+            if ctx is None:
+                return
+            stage = ctx.get_stage()
+            if stage is None:
+                return
+            # PhysX API must be available
+            if not hasattr(lazy, "pxr") or not hasattr(lazy.pxr, "PhysxSchema"):
+                return
+            phys_prim = stage.GetPrimAtPath("/World/PhysicsScene")
+            if not phys_prim or not phys_prim.IsValid():
+                return
+            physx_scene = lazy.pxr.PhysxSchema.PhysxSceneAPI.Apply(phys_prim)
+            # Create or set the GPU dynamics attribute
+            attr = physx_scene.GetEnableGPUDynamicsAttr()
+            if not attr:
+                physx_scene.CreateEnableGPUDynamicsAttr().Set(True)
+            else:
+                attr.Set(True)
+        except Exception:
+            # Best-effort; if stage is not ready yet, this will be retried after reset()
+            pass
+
+    def _initialize_fluid_systems(self):
+        """Force-initialize fluid particle systems required by tasks (e.g., water)."""
+        try:
+            if getattr(self, "scene", None) is None:
+                return
+            # Initialize common fluid systems if present
+            for name in ["water"]:
+                # This call will create/initialize the system if available
+                _ = self.scene.get_system(name, force_init=True)
+        except Exception:
+            # Best-effort initialization only
+            pass
 
     def _load_robots(self):
         """
@@ -218,13 +269,15 @@ class DamageableEnvironment(Environment):
         if not self.lock_health:
             # Update all damageable objects
             for obj in self.scene.objects:
-                if hasattr(obj, "update_health"):
-                    obj.update_health()
-                    obj_health_states[obj.name] = obj.get_obs_dict()
+                if obj.name == "mug" or obj.name == "laptop" or obj.name == "glass_plate" or obj.name == "plate" or True:
+                    if hasattr(obj, "update_health"):
+                        obj.update_health()
+                        obj_health_states[obj.name] = obj.get_obs_dict()
             # Optionally update robots if they implement damage
             for robot in getattr(self, "robots", []):
                 if hasattr(robot, "update_health"):
                     robot.update_health()
+                    obj_health_states[robot.name] = robot.get_obs_dict()
         
             obs["object_health_states"] = obj_health_states
             if self._reward_fn is not None:
@@ -232,7 +285,7 @@ class DamageableEnvironment(Environment):
         
         return obs, reward, terminated, truncated, info
 
-        # # Initialize damage evaluators if this is the first env step
+        # Initialize damage evaluators if this is the first env step
         # if not self.damage_evaluators_initialized:
         #     for obj in self.scene.objects:
         #         if hasattr(obj, "_initialize_damage_evaluators"):

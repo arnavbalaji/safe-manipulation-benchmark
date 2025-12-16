@@ -1,0 +1,113 @@
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Rs_int
+  include_robots: false
+  load_task_relevant_only: true
+
+robots:
+  - type: Tiago
+    obs_modalities: [rgb]
+    action_type: continuous
+    action_normalize: true
+    # Same base placement and orientation convention as electrical/simple_task.yaml
+    position: [0.2, 1.0, 0.0]
+    orientation: [0, 0, -1, 1]
+    grasping_mode: assisted
+    damage_params:
+      damage_evaluators:
+        - mechanical
+        - electrical
+      health_thresholds: [90.0, 60.0, 30.0]
+      mechanical:
+        damage_threshold: 10000000000.0
+        scale: 1e-10
+        instant_coefficient: 1.0
+        creep_coefficient: 1.0
+        object_type: brittle
+        link_thresholds:
+          arm:
+            damage_threshold: 200.0
+            scale: 0.0001
+          gripper:
+            damage_threshold: 200.0
+            scale: 0.0001
+      electrical:
+        damage_threshold: 0.0
+        scale: 0.001
+        water_system_name: sludge
+
+objects:
+  # Single furniture sink in front of the robot.
+  # We mirror the coffee table pose from electrical/simple_task.yaml
+  # and use the furniture_sink model czyfhq from the BEHAVIOR knowledgebase:
+  # https://behavior.stanford.edu/knowledgebase/objects/czyfhq.html
+  - type: DatasetObject
+    name: furniture_sink
+    category: furniture_sink
+    model: czyfhq
+    position: [0.0, 0.0, 0.0]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [0.9, 0.9, 0.75]
+    abilities:
+      toggleable: {}
+      particleSource:
+        conditions: {water: []}
+        initial_speed: 0.0
+      particleSink:
+        conditions: {water: []}
+    # Ensure the sink starts OFF
+    initial_state:
+      toggledOn: False
+
+  # Dish rack object from BEHAVIOR dataset, to be placed OnTop of a supporting surface
+  # Model reference: https://behavior.stanford.edu/knowledgebase/objects/kxuutl.html
+  - type: DatasetObject
+    name: dish_rack
+    category: dish_rack
+    model: kxuutl
+    # Initial pose will be overwritten by OnTop placement in the script
+    position: [-0.15, -0.1, 0.7]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [0.3, 0.3, 0.3]
+
+  # Plate object from BEHAVIOR dataset, initially placed OnTop of the furniture_sink
+  # Model reference: https://behavior.stanford.edu/knowledgebase/objects/ntedfx.html
+  - type: DatasetObject
+    name: plate
+    category: plate
+    model: ntedfx
+    # Initial pose will be snapped OnTop of the sink via object state
+    position: [-0.15, 0.05, 0.7]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [0.6, 0.6, 0.6]
+    initial_state:
+      OnTop: furniture_sink
+
+  # Two mugs inside the sink basin (fillable mugs from BEHAVIOR)
+  # Model reference: https://behavior.stanford.edu/knowledgebase/objects/ycbmug.html
+  - type: DatasetObject
+    name: mug_ycbmug_1
+    category: mug
+    model: ycbmug
+    position: [0.17, 0.05, 0.7]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 1.0, 1.0]
+
+  - type: DatasetObject
+    name: mug_ycbmug_2
+    category: mug
+    model: ycbmug
+    position: [0.10, 0.1, 0.7]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 1.0, 1.0]
+
+  # Additional BEHAVIOR mug (ppzttc) near the sink
+  # Model reference: https://behavior.stanford.edu/knowledgebase/objects/ppzttc.html
+  - type: DatasetObject
+    name: mug_ppzttc
+    category: mug
+    model: ppzttc
+    position: [-0.15, 0.15, 0.7]
+    orientation: [0, 0, 0.7071068, 0.7071068]
+    scale: [1.0, 1.0, 1.0]
+
