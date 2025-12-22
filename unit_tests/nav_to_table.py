@@ -18,7 +18,7 @@ import omnigibson.lazy as lazy
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
 from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video, save_forces_video
 
-gm.USE_GPU_DYNAMICS=True
+gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
 
 def __main__():

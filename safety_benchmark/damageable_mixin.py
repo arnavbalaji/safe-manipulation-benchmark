@@ -81,10 +81,10 @@ class DamageableMixin:
                 self.link_healths[link_name] = new_health
 
                 # For debugging
-                # if self.name == "swivel_chair" and link_name == "base_link":
-                #     print("new_health: ", new_health)
-                #     if new_health == 0.0:
-                #         breakpoint()
+                if self.name == "coffee_cup_1" and link_name == "base_link":
+                    print("new_health: ", new_health)
+                    # if new_health == 0.0:
+                    #     breakpoint()
 
                 # Update the mechanical damage information
                 if evaluator.name == "mechanical":

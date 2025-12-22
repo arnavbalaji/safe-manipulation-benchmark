@@ -152,12 +152,17 @@ class DamageableEnvironment(Environment):
         task = getattr(self, "task", None)
         if task is not None:
             task_type = task.__class__.__name__
-            type_cfg = self.damage_trackable_objects_config.get(task_type, {})
-            activity_name = getattr(task, "activity_name", None)
-            if activity_name is not None and activity_name in type_cfg:
-                task_entry = type_cfg[activity_name] or {}
-                damage_trackable_categories.update(task_entry.get("categories", []) or [])
-                damage_trackable_names.update(task_entry.get("names", []) or [])
+            if task_type == "DummyTask":
+                type_cfg = self.damage_trackable_objects_config.get(task_type, {}).get("default", {})
+                damage_trackable_categories.update(type_cfg.get("categories", []) or [])
+                damage_trackable_names.update(type_cfg.get("names", []) or [])
+            elif task_type == "BehaviorTask":
+                type_cfg = self.damage_trackable_objects_config.get(task_type, {})
+                activity_name = getattr(task, "activity_name", None)
+                if activity_name is not None and activity_name in type_cfg:
+                    task_entry = type_cfg[activity_name] or {}
+                    damage_trackable_categories.update(task_entry.get("categories", []) or [])
+                    damage_trackable_names.update(task_entry.get("names", []) or [])
     
         # Set relevant attributes for all damage-trackable objects
         for obj in self.scene.objects:
@@ -632,8 +637,11 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
 
         # Call set_damageable_object_params() on the wrapped environment if it has this method
         # This must happen right after scene.restore() and before resetting object attributes
+        if hasattr(self.env, "initialize_damageable_objects"):
+            self.env.initialize_damageable_objects()
         if hasattr(self.env, "set_damageable_object_params"):
             self.env.set_damageable_object_params()
+        breakpoint()
 
         # Reset object attributes from the stored metadata
         with og.sim.stopped():

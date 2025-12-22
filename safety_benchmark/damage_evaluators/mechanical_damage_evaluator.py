@@ -122,10 +122,10 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             self.impact_forces[link_name].append(impact_force_magnitude)
 
             # For debugging
-            # if self.entity.name == "swivel_chair" and link_name == "base_link":
-            #     print("dynamic_force: ", dynamic_force)
-            #     if dynamic_force > 1000.0:
-            #         breakpoint()
+            if self.entity.name == "coffee_cup_1" and link_name == "base_link":
+                print("impact_force_magnitude: ", impact_force_magnitude)
+                # if impact_force_magnitude > 10.0:
+                #     breakpoint()
             
             adjust_sim_forces = True
             # TODO: check if this condition is needed.
@@ -215,7 +215,7 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             link_damages[link_name] = link_damage
             
             # For debugging
-            if self.entity.name == "tiago0" and link_name == "gripper_right_right_finger_link":
+            if self.entity.name == "coffee_cup_1" and link_name == "base_link":
                 print("impact_damage_potential, qs_damage_potential, link_damage_potential, link_damage_threshold, link_damage: ", impact_damage_potential, qs_damage_potential, link_damage_potential, link_damage_threshold, link_damage)
                 # breakpoint()
                 # if damage > 0.0:

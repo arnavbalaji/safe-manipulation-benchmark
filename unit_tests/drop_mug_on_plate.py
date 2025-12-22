@@ -31,7 +31,7 @@ def __main__():
     args = parser.parse_args()
 
     # TODO: Set this 
-    f_name = "wipe_table_2"
+    f_name = "drop_mug_on_plate"
     collect_hdf5_path = f"resources/teleop_data/{f_name}.hdf5"
     output_hdf5_path = f"resources/playback_data/{f_name}_playback.hdf5"
 
@@ -45,10 +45,10 @@ def __main__():
         EXTERNAL_CAMERA_CONFIGS = {
             # Side camera (fixed to base_link frame)
             "external_sensor_0": {
-                "position": [0.4859, -1.8219,  1.1402],
-                "orientation": [ 0.5857, -0.0093, -0.0129,  0.8103],
-                "horizontal_aperture": 10.0,
-                "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor0",
+                "position": [1.1553, -2.2072,  1.0119],
+                "orientation": [ 0.4284, 0.4160, 0.5588, 0.5755],
+                "horizontal_aperture": 20.0,
+                "relative_prim_path": f"/external_sensor0",
             },
             # # Left Shoulder (fixed to base_link frame)
             # "external_sensor_1": {
@@ -148,7 +148,7 @@ def __main__():
         # breakpoint()
 
         # Obtain health information for the target objects
-        target_objects = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link"]
+        target_objects = ["coffee_cup_1@base_link", "plate@base_link"]
         all_obj_healths = np.array(f["data/demo_0/obs/health"])
         health_list_link_names = f["data/demo_0"].attrs["health_list_link_names"]
         health = dict()
@@ -168,7 +168,7 @@ def __main__():
         os.makedirs(output_video_dir, exist_ok=True)
         
         # Save video for rgb camera
-        target_objects_health = ["tiago0"]
+        target_objects_health = ["coffee_cup_1@base_link", "plate@base_link"]
         output_video_path = f"{output_video_dir}/{f_name}_camera_video"
         save_camera_video(hdf5_file=f, 
                     output_video_path=output_video_path,
@@ -182,7 +182,7 @@ def __main__():
         
         # Obtain forces information for the target objects
         # target_objects_forces = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link", "tiago0@arm_right_6_link", "tiago0@arm_right_5_link", "tiago0@arm_right_4_link", "tiago0@arm_right_3_link", "tiago0@arm_right_2_link", "tiago0@arm_right_1_link"]
-        target_objects_forces = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link"]
+        target_objects_forces = ["plate@base_link"]
         data = dict()
         # options: ["impact_forces", "qs_forces", "raw_forces_from_sim"]
         force_keys = ["impact_forces", "qs_forces"]
