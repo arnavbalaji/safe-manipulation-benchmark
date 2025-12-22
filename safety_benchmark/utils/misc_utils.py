@@ -1,5 +1,6 @@
 import os
 import cv2
+import torch
 import subprocess
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,6 +12,9 @@ def json_default(o):
         return o.item()
     # numpy array
     if isinstance(o, np.ndarray):
+        return o.tolist()
+    # torch tensor
+    if isinstance(o, torch.Tensor):
         return o.tolist()
     # tuple → list
     if isinstance(o, tuple):

@@ -2,10 +2,13 @@
 import inspect
 import random
 import string
-import torch as th
-import numpy as np
+from pathlib import Path
 import time
 import json
+
+import torch as th
+import numpy as np
+import yaml
 
 from safety_benchmark.params.test_params import PARAMS
 from safety_benchmark.utils.misc_utils import json_default
@@ -18,6 +21,7 @@ from safety_benchmark.damageable_mixin import (
     DamageableStatefulObject,
     DamageableFrankaPanda,
     DamageableTiago,
+    DamageableR1Pro,
 )
 
 import omnigibson as og
@@ -36,7 +40,27 @@ DAMAGEABLE_OBJECT_MAPPING = {
     "StatefulObject": DamageableStatefulObject,
     "FrankaPanda": DamageableFrankaPanda,
     "Tiago": DamageableTiago,
+    "R1Pro": DamageableR1Pro,
 }
+
+
+def _load_damage_trackable_objects_config() -> dict:
+    """
+    Load configuration specifying which objects should be damage-trackable.
+
+    Looks for safety_benchmark/params/damageable_objects.yaml.
+    Returns {} if the file is missing or cannot be parsed.
+    """
+    config_path = Path(__file__).parent / "params" / "damageable_objects.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        with config_path.open("r") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        # Fail silently and fall back to tracking all categories
+        return {}
+    return data
 
 def create_damageable_object_from_config(cls_name, cls_registry, cfg, cls_type_descriptor):
     '''
@@ -75,14 +99,18 @@ class DamageableEnvironment(Environment):
     '''
     OmniGibson environment wrapper to support damageable objects and robots
     '''
-    def __init__(self, configs, in_vec_env=False, debug_physics_frequency=False, reward_fn=None):
+    def __init__(self, configs, in_vec_env: bool = False, debug_physics_frequency: bool = False, reward_fn=None, **kwargs):
+        
+        # Load configuration for what objects should actually track damage
+        self.damage_trackable_objects_config = kwargs.get("damage_trackable_objects_config", _load_damage_trackable_objects_config())
+        
         # Initialize the damageable environment
         super().__init__(configs, in_vec_env)
         self.damage_evaluators_initialized = False
         self._debug_physics_frequency = debug_physics_frequency
         self._reward_fn = reward_fn
         self.lock_health = False
-        
+
     def load(self):
         # Load scene, objects, and robots
         # TODO: Need to add support for scenes
@@ -100,34 +128,82 @@ class DamageableEnvironment(Environment):
         self._load_external_sensors()
         og.sim.play()
 
-        self.inialize_damageable_objects()
-
-        self.set_object_params()
+        self.initialize_damageable_objects()
+        self.set_damageable_object_params()
     
-    def inialize_damageable_objects(self):
-        # Initialize health for all damageable objects
+    def initialize_damageable_objects(self):
+        """
+        Initialize health / damage-related state only for selected objects.
+
+        If damage_trackable_objects is None, we derive a set of categories (and optionally
+        names) to track from damageable_objects.yaml and fall back to "all categories in
+        the scene" if the config is missing or empty.
+        """
+        # Derive categories / names to track if not explicitly provided
+        damage_trackable_names = set()
+        damage_trackable_categories = set()
+
+        # Global defaults
+        default_cfg = self.damage_trackable_objects_config.get("default", {})
+        damage_trackable_categories.update(default_cfg.get("categories", []) or [])
+        damage_trackable_names.update(default_cfg.get("names", []) or [])
+
+        # Optional: BehaviorTask-specific rules (by activity_name)
+        task = getattr(self, "task", None)
+        if task is not None:
+            task_type = task.__class__.__name__
+            type_cfg = self.damage_trackable_objects_config.get(task_type, {})
+            activity_name = getattr(task, "activity_name", None)
+            if activity_name is not None and activity_name in type_cfg:
+                task_entry = type_cfg[activity_name] or {}
+                damage_trackable_categories.update(task_entry.get("categories", []) or [])
+                damage_trackable_names.update(task_entry.get("names", []) or [])
+    
+        # Set relevant attributes for all damage-trackable objects
         for obj in self.scene.objects:
-            if hasattr(obj, "_initialize_health"):
-                obj._initialize_health()
-            if hasattr(obj, "set_damageable_links"):
-                obj.set_damageable_links()
+            obj_category = getattr(obj, "category", None)
+            obj_name = getattr(obj, "name", None)
+            if (obj_category in damage_trackable_categories) or (obj_name in damage_trackable_names):
+                if hasattr(obj, "set_track_damage"):
+                    obj.set_track_damage(True)
+                if hasattr(obj, "_initialize_health"):
+                    obj._initialize_health()
+                if hasattr(obj, "set_damageable_links"):
+                    obj.set_damageable_links()
 
     def reset(self):
         """Reset the environment and damage evaluators."""
         # Reset the base environment
-        obs = super().reset()
+        obs, info = super().reset()
         
         # Reset damage evaluators for all objects
         for obj in self.scene.objects:
-            if hasattr(obj, "reset_damage_evaluators"):
+            if hasattr(obj, "track_damage") and obj.track_damage:
                 obj.reset_damage_evaluators()
-            if hasattr(obj, "_initialize_health"):
                 obj._initialize_health()
-        
+
+        obs = self._process_obs(obs)
+
+        obj_damage_info = {}
+        for obj in self.scene.objects:
+            if hasattr(obj, "track_damage") and obj.track_damage:
+                obj_damage_info[obj.name] = obj.damage_info
+        info["damage_info"] = obj_damage_info
+
+        # This can be used to query health of individual links during script run.
+        # We don't save this to info per step to save space, only save it once as an attribute.
+        health_list = []
+        for obj in self.scene.objects:
+            if hasattr(obj, "track_damage") and obj.track_damage:
+                for link_name, health in obj.link_healths.items():
+                    health_list.append(f"{obj.name}@{link_name}")
+        # info["obs_info"]["health_list_link_names"] = health_list    
+        self.health_list_link_names = health_list
+
         # Reset damage evaluator initialization flag
         self.damage_evaluators_initialized = False
         
-        return obs
+        return obs, info
 
     def _load_robots(self):
         """
@@ -218,56 +294,69 @@ class DamageableEnvironment(Environment):
         # Initialize damage evaluators if this is the first env step
         if not self.damage_evaluators_initialized:
             for obj in self.scene.objects:
-                if hasattr(obj, "_initialize_damage_evaluators"):
+                if hasattr(obj, "track_damage") and obj.track_damage:
                     obj._initialize_damage_evaluators()
             self.damage_evaluators_initialized = True
         
         obs, reward, terminated, truncated, info = super().step(action, n_render_iterations)
         obj_damage_info = {}
-        obs_info = {}
-        if "obs_info" in info:
-            obs_info["obs_info"] = info["obs_info"]
         
         if not self.lock_health:
             # Update all damageable objects
             for obj in self.scene.objects:
-                if hasattr(obj, "update_health"):
+                if hasattr(obj, "track_damage") and obj.track_damage:
                     obj.update_health()
-                    # obj_health_states[obj.name] = obj.get_obs_dict()
                     obj_damage_info[obj.name] = obj.damage_info
                     
-            # breakpoint()
-            # obs["object_health_states"] = obj_health_states
-            obs_info["damage_info"] = obj_damage_info
+            info["damage_info"] = obj_damage_info
+            
+            # health_list = []
+            # for obj in self.scene.objects:
+            #     if hasattr(obj, "track_damage") and obj.track_damage:
+            #         for link_name, health in obj.link_healths.items():
+            #             health_list.append(f"{obj.name}@{link_name}")
+            # info["obs_info"]["health_list_link_names"] = health_list
+
             if self._reward_fn is not None:
                 reward, terminated = self._reward_fn(self, obs)
         
-        obs, obs_info = self._process_obs(obs, obs_info)
-        return obs, reward, terminated, truncated, obs_info
+        obs = self._process_obs(obs)
+        # info = self._process_info(info)
+        return obs, reward, terminated, truncated, info
 
 
-    def _process_obs(self, obs, info):
+    def _process_info(self, info):
+        """
+        Modifies @info inplace for any relevant post-processing
+
+        Args:
+            info (dict): Keyword-mapped relevant information from the immediate env step
+        """
+        for k in info.keys():
+            info[k] = json.dumps(info[k], default=json_default)
+        # info["damage_info"] = json.dumps(info["damage_info"], default=json_default)
+        # info["obs_info"] = json.dumps(info["obs_info"], default=json_default)
+        return info
+    
+    def _process_obs(self, obs):
         """
         Modifies @obs inplace for any relevant post-processing
 
         Args:
             obs (dict): Keyword-mapped relevant observations from the immediate env step
-            info (dict): Keyword-mapped relevant information from the immediate env step
         """
         obs["health"] = []
         for obj in self.scene.objects:
-            if hasattr(obj, "update_health"):
+            if hasattr(obj, "track_damage") and obj.track_damage:
                 for link_name, health in obj.link_healths.items():
                     obs["health"].append(health)
         obs["health"] = th.tensor(obs["health"], dtype=th.float32)
-        info["damage_info"] = json.dumps(info["damage_info"], default=json_default)
-        info["obs_info"] = json.dumps(info["obs_info"], default=json_default)
-        return obs, info
+        return obs
 
-    def set_object_params(self):
+    def set_damageable_object_params(self):
         # Set params for all damageable objects
         for obj in self.scene.objects:
-            if hasattr(obj, "set_params"):
+            if hasattr(obj, "track_damage") and obj.track_damage:
                 if obj.category in PARAMS:
                     obj.set_params(PARAMS[obj.category])
                     print(f"Set params for {obj.name} to {PARAMS[obj.category]}")
@@ -276,6 +365,11 @@ class DamageableEnvironment(Environment):
                         print(f"Set damageable links for {obj.name} to {PARAMS[obj.category].get('damageable_links')}")
                 else:
                     obj.set_params(PARAMS["default"])
+
+    def get_observation(self):
+        obs, info = super().get_obs()
+        obs = self._process_obs(obs)
+        return obs, info
 
 
 class DamageableDataCollectionWrapper(DataCollectionWrapper):
@@ -315,49 +409,12 @@ class DamageableDataCollectionWrapper(DataCollectionWrapper):
             padded_state[: len(state)] = state
             step_data["state"] = padded_state
 
-        # Collect health metadata with proper initialization and error handling BEFORE calling parent
-        # This ensures health is initialized and we include robots
+        # Collect health metadata 
         health_list = []
-
         for obj in self.scene.objects:
-            if hasattr(obj, "update_health"):
+            if hasattr(obj, "track_damage") and obj.track_damage:
                 for link_name, health in obj.link_healths.items():
-                    health_list.append(f"{obj.name}@{link_name}")
-        # traj_grp.attrs["health_list_link_names"] = health_list
-        
-        # # Process scene objects
-        # for obj in self.scene.objects:
-        #     if hasattr(obj, "update_health"):
-        #         # Ensure health is initialized
-        #         if not hasattr(obj, "link_healths"):
-        #             if hasattr(obj, "_initialize_health"):
-        #                 obj._initialize_health()
-                
-        #         # Safely collect health metadata
-        #         if hasattr(obj, "link_healths"):
-        #             try:
-        #                 for link_name, health in obj.link_healths.items():
-        #                     health_list.append(f"{obj.name}@{link_name}")
-        #             except (AttributeError, TypeError):
-        #                 # Skip if link_healths is not properly initialized
-        #                 pass
-        
-        # # Process robots (which are not in scene.objects)
-        # for robot in getattr(self, "robots", []):
-        #     if hasattr(robot, "update_health"):
-        #         # Ensure health is initialized
-        #         if not hasattr(robot, "link_healths"):
-        #             if hasattr(robot, "_initialize_health"):
-        #                 robot._initialize_health()
-                
-        #         # Safely collect health metadata
-        #         if hasattr(robot, "link_healths"):
-        #             try:
-        #                 for link_name, health in robot.link_healths.items():
-        #                     health_list.append(f"{robot.name}@{link_name}")
-        #             except (AttributeError, TypeError):
-        #                 # Skip if link_healths is not properly initialized
-        #                 pass
+                    health_list.append(f"{obj.name}@{link_name}")        
 
         # Call parent method to handle the rest of the data processing
         traj_grp = super().process_traj_to_hdf5(traj_data, traj_grp_name, nested_keys, data_grp)
@@ -372,7 +429,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
     """
     Custom DataPlaybackWrapper that:
     1. Uses DamageableEnvironment instead of og.Environment when creating from HDF5
-    2. Calls set_object_params() on the wrapped environment after scene.restore() is called
+    2. Calls set_damageable_object_params() on the wrapped environment after scene.restore() is called
     
     This ensures damage parameters are set correctly during data playback without modifying OmniGibson source code.
     """
@@ -529,7 +586,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         """
         Playback episode @episode_id, and optionally record observation data if @record is True.
         
-        This method overrides the parent implementation to call set_object_params() on the
+        This method overrides the parent implementation to call set_damageable_object_params() on the
         wrapped environment right after scene.restore() is called.
 
         Args:
@@ -573,10 +630,10 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         # Reset environment and update this to be the new initial state
         self.scene.restore(self.scene_file, update_initial_file=True)
 
-        # Call set_object_params() on the wrapped environment if it has this method
+        # Call set_damageable_object_params() on the wrapped environment if it has this method
         # This must happen right after scene.restore() and before resetting object attributes
-        if hasattr(self.env, "set_object_params"):
-            self.env.set_object_params()
+        if hasattr(self.env, "set_damageable_object_params"):
+            self.env.set_damageable_object_params()
 
         # Reset object attributes from the stored metadata
         with og.sim.stopped():
@@ -752,7 +809,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         health_list = []
 
         for obj in self.scene.objects:
-            if hasattr(obj, "update_health"):
+            if hasattr(obj, "track_damage") and obj.track_damage:
                 for link_name, health in obj.link_healths.items():
                     health_list.append(f"{obj.name}@{link_name}")        
 

@@ -1,0 +1,22 @@
+default:
+  # Object categories that should track damage by default.
+  # Fill this with categories like "mug", "glass_bottle", etc.
+  categories: ["agent"]
+  # Optional: specific object names that should track damage.
+  names: []
+
+# Optional: per-task overrides keyed by env task type, then activity name.
+BehaviorTask:
+ assembling_gift_baskets:
+   categories:
+     - fragile_item_category
+   names:
+     - specific_object_name_in_scene
+ turning_on_radio:
+   categories:
+     - radio
+
+
+
+
+

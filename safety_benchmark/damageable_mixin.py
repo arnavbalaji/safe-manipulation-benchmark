@@ -7,6 +7,7 @@ from omnigibson.objects.light_object import LightObject
 from omnigibson.objects.stateful_object import StatefulObject
 from omnigibson.robots.franka import FrankaPanda
 from omnigibson.robots.tiago import Tiago
+from omnigibson.robots.r1pro import R1Pro
 from safety_benchmark.params.test_params import PARAMS, DAMAGE_EVALUATORS
 
 
@@ -21,21 +22,15 @@ class DamageableMixin:
         
         super().__init__(*args, **kwargs)
         # Store params dict, set empty damage_evaluators list
+        self.track_damage = False
         self.params = kwargs.get('params', {})
         self.damage_evaluators = []
         self.damageable_links = []
 
-        # Set thresholds
-        thresholds = self.params.get("health_thresholds", [90.0, 60.0, 30.0])
-        self.minor_threshold, self.major_threshold, self.critical_threshold = thresholds
-
-
     def _initialize_health(self):
         # Initialize link healths to the maximum
         self.link_healths = {link_name: 100.0 for link_name in self.links.keys()}
-        self.damage_statuses = {link_name: "none" for link_name in self.links.keys()}
         self.damage_info = {}
-        self.previous_health = 100.0
 
     def _initialize_damage_evaluators(self):
         # Set damage evaluators once sim is playing
@@ -49,6 +44,9 @@ class DamageableMixin:
             if hasattr(evaluator, 'reset_tracking'):
                 evaluator.reset_tracking()
 
+    def set_track_damage(self, track_damage):
+        self.track_damage = track_damage
+        
     def set_params(self, params):
         self.params = params
 
@@ -60,28 +58,11 @@ class DamageableMixin:
 
     @property
     def health(self):
-        # TODO: Change back to average health value across links when things are working
         # Returns minimum health value across links
         return min(self.link_healths.values())
 
         # # Returning average health value across links
         # return sum(self.link_healths.values()) / len(self.link_healths)
-        
-
-    # @property
-    # def damage_status(self):
-    #     # Returning damage status of average health
-    #     h = self.health
-    #     if h < self.critical_threshold:
-    #         return "critical"
-    #     elif h < self.major_threshold:
-    #         return "major"
-    #     elif h < self.minor_threshold:
-    #         return "minor"
-    #     elif h < 100.0:
-    #         return "negligible"
-    #     else:
-    #         return "none"
 
     def update_health(self):
         # Updates health based on the damage evaluators
@@ -89,8 +70,6 @@ class DamageableMixin:
         for evaluator in self.damage_evaluators:
             # print(f"Updating health for {self.name} with {evaluator.name}")
             link_damages = evaluator.generate_damage()
-            # self.damage_info[evaluator.name] = link_damages
-            # self.damage_info[evaluator.name] = {}
             for link_name, damage in link_damages.items():
                 
                 # For logging information related to damages to each link
@@ -107,46 +86,14 @@ class DamageableMixin:
                 #     if new_health == 0.0:
                 #         breakpoint()
 
-                # # Calculate and update individual link status
-                # if new_health < self.critical_threshold:
-                #     status = "critical"
-                # elif new_health < self.major_threshold:
-                #     status = "major"
-                # elif new_health < self.minor_threshold:
-                #     status = "minor"
-                # elif new_health < 100.0:
-                #     status = "negligible"
-                # else:
-                #     status = "none"
-                # self.damage_statuses[link_name] = status
-
                 # Update the mechanical damage information
                 if evaluator.name == "mechanical":
                     if "mechanical" not in self.damage_info[link_name]:
                         self.damage_info[link_name]["mechanical"] = {}
-                    self.damage_info[link_name]["mechanical"]["dynamic_forces"] = evaluator.dynamic_forces[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["impact_forces"] = evaluator.impact_forces[link_name][-1]
                     self.damage_info[link_name]["mechanical"]["raw_forces_from_sim"] = evaluator.raw_forces_from_sim[link_name][-1]
-                    self.damage_info[link_name]["mechanical"]["static_forces"] = evaluator.static_forces[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["qs_forces"] = evaluator.qs_forces[link_name][-1]
                     self.damage_info[link_name]["mechanical"]["contacts"] = evaluator.contacts_by_link[link_name][-1]
-
-    # def get_impact_history(self, link_name: str = None):
-    #     # Get impact history from damage evaluators
-    #     impact_history = {}
-    #     for evaluator in self.damage_evaluators:
-    #         if hasattr(evaluator, 'get_impact_history'):
-    #             history = evaluator.get_impact_history(link_name)
-    #             if link_name is None:
-    #                 impact_history.update(history)
-    #             else:
-    #                 impact_history[link_name] = history
-    #     return impact_history
-
-    # def get_obs_dict(self):
-    #     obs_dict = {}
-    #     obs_dict["health"] = self.health
-    #     obs_dict["damage_status"] = self.damage_status
-    #     obs_dict["damage_info"] = self.damage_info
-    #     return obs_dict
 
 
 '''Damageable Object subclasses'''
@@ -195,3 +142,22 @@ class DamageableTiago(DamageableMixin, Tiago):
         # For older OG
         # return os.path.join(gm.ASSET_PATH, f"models/{model}/usd/{model}.usda")
         return os.path.join(gm.DATA_PATH, f"omnigibson-robot-assets/models/{model}/usd/{model}.usda")
+
+class DamageableR1Pro(DamageableMixin, R1Pro):
+    @property
+    def usd_path(self):
+        # Override to use the original Tiago model path, not the damageable version
+        model = "r1pro"  # Use the original model name, not the class name
+        import os
+        from omnigibson.macros import gm
+        # For older OG
+        # return os.path.join(gm.ASSET_PATH, f"models/{model}/usd/{model}.usda")
+        return os.path.join(gm.DATA_PATH, f"omnigibson-robot-assets/models/{model}/usd/{model}.usda")
+
+    @property
+    def model_name(self):
+        """
+        Returns:
+            str: name of this robot model. usually corresponds to the class name of a given robot model
+        """
+        return "R1Pro"

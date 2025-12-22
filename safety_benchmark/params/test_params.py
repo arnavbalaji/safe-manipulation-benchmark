@@ -92,24 +92,26 @@ PARAMS = {
                         ],
         "health_thresholds": [90.0, 60.0, 30.0],
         "mechanical": {
-            "impact_threshold": 30.0,
-            "impact_scale": 0.1,
+            "impact_damage_sensitivity": 0.01,
+            "qs_damage_sensitivity": 1.0,
+            "damage_threshold": 30.0,
+            "damage_scale": 0.1,
             "link_thresholds": {
                 "gripper": {
-                    "strain_threshold": 70.0,
+                    "impact_damage_sensitivity": 0.01,
+                    "qs_damage_sensitivity": 1.0,
+                    "damage_threshold": 70.0,
                     "damage_scale": 0.1,
-                    "dynamic_forces_coefficient": 0.01,
-                    "static_forces_coefficient": 1.0,
                 },
                 # "base": {
                 #     "crushing_threshold": 8.0,
                 #     "crushing_scale": 0.001,
                 # },
                 "arm": {
-                    "strain_threshold": 70.0,
+                    "impact_damage_sensitivity": 0.01,
+                    "qs_damage_sensitivity": 1.0,
+                    "damage_threshold": 70.0,
                     "damage_scale": 0.1,
-                    "dynamic_forces_coefficient": 0.01,
-                    "static_forces_coefficient": 1.0,
                 }
             }
         },

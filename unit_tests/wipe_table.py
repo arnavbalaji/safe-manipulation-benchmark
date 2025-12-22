@@ -141,11 +141,11 @@ def __main__():
 
         # Parse info to obtain relevant information for visualization
         obs_info_list = []
-        num_steps = len(f["data/demo_0/info/damage_info"])
-        for i in range(len(f["data/demo_0/info/damage_info"])):            
+        for i in range(len(f["data/demo_0/info/obs_info"])):            
             # Obtain observation information 
             obs_info = json.loads(f["data/demo_0/info/obs_info"][i].decode("utf-8"))
             obs_info_list.append(obs_info)
+        # breakpoint()
 
         # Obtain health information for the target objects
         target_objects = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link"]
@@ -184,8 +184,8 @@ def __main__():
         # target_objects_forces = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link", "tiago0@arm_right_6_link", "tiago0@arm_right_5_link", "tiago0@arm_right_4_link", "tiago0@arm_right_3_link", "tiago0@arm_right_2_link", "tiago0@arm_right_1_link"]
         target_objects_forces = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link"]
         data = dict()
-        # options: ["dynamic_forces", "static_forces", "raw_forces_from_sim"]
-        force_keys = ["raw_forces_from_sim"]
+        # options: ["impact_forces", "qs_forces", "raw_forces_from_sim"]
+        force_keys = ["impact_forces", "qs_forces"]
         for obj_name in target_objects_forces:
             data[obj_name] = dict()
             for force_key in force_keys:
