@@ -20,7 +20,12 @@ BehaviorTask:
   turning_on_radio:
     categories:
       - radio
-
+  make_microwave_popcorn:
+    categories: ["microwave"]
+    names: []
+  clean_a_trumpet:
+    categories: []
+    names: []
 
 
 

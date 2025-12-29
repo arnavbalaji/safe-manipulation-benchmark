@@ -12,3 +12,21 @@ Try: `HF_HUB_DISABLE_XET=1 ./setup.sh --omnigibson --bddl --dataset`
 8. cd safe-manipulation-benchmark
 9. pip install -e .
 10. `OMNIGIBSON_HEADLESS=1 python unit_tests/nav_to_table.py`
+
+
+# BEHAVIOR Related commands:
+
+### Download raw demonstration hdf5
+`hf download behavior-1k/2025-challenge-rawdata --repo-type dataset  --local-dir $HOME/behavior_dataset --include "task-0030/*"`
+
+https://huggingface.co/datasets/behavior-1k/2025-challenge-rawdata/tree/main
+
+### Download annotations
+`hf download behavior-1k/2025-challenge-demos --repo-type dataset  --local-dir $HOME/behavior_dataset/annotations --include "annotations/task-0030/*"`
+
+https://huggingface.co/datasets/behavior-1k/2025-challenge-demos/tree/main
+
+### Rolling out Gr00t
+python eval_scripts/behavior_eval.py --task_name make_microwave_popcorn --rollout_name rollout_0000_00402500 --playback
+
+

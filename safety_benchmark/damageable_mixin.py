@@ -80,19 +80,21 @@ class DamageableMixin:
                 new_health = max(0.0, self.link_healths[link_name] - damage)
                 self.link_healths[link_name] = new_health
 
-                # For debugging
-                if self.name == "coffee_cup_1" and link_name == "base_link":
-                    print("new_health: ", new_health)
-                    # if new_health == 0.0:
-                    #     breakpoint()
+                # # For debugging
+                # if self.name == "coffee_cup_1" and link_name == "base_link":
+                #     print("new_health: ", new_health)
+                #     # if new_health == 0.0:
+                #     #     breakpoint()
 
                 # Update the mechanical damage information
                 if evaluator.name == "mechanical":
                     if "mechanical" not in self.damage_info[link_name]:
                         self.damage_info[link_name]["mechanical"] = {}
                     self.damage_info[link_name]["mechanical"]["impact_forces"] = evaluator.impact_forces[link_name][-1]
-                    self.damage_info[link_name]["mechanical"]["raw_forces_from_sim"] = evaluator.raw_forces_from_sim[link_name][-1]
-                    self.damage_info[link_name]["mechanical"]["qs_forces"] = evaluator.qs_forces[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["unfiltered_raw_sim_forces"] = evaluator.unfiltered_raw_sim_forces[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["filtered_raw_sim_forces"] = evaluator.filtered_raw_sim_forces[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["unfiltered_qs_forces"] = evaluator.unfiltered_qs_forces[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["filtered_qs_forces"] = evaluator.filtered_qs_forces[link_name][-1]
                     self.damage_info[link_name]["mechanical"]["contacts"] = evaluator.contacts_by_link[link_name][-1]
 
 

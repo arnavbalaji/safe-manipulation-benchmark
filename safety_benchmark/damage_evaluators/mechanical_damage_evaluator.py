@@ -39,6 +39,10 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         self.qs_damage_sensitivity = qs_damage_sensitivity
         self.link_config_overrides = {k.lower(): v for k, v in (link_config_overrides or {}).items()}
         self.name = "mechanical"
+        # For EMA filtering of the raw forces from simulation
+        self.alpha = 0.2
+        # Window size for averaging the filtered forces from simulation
+        self.window_size = int((1.0 / og.sim.get_sim_step_dt()) / 2.0)
 
         # Running state for impact / sustained computations
         self.prev_link_positions: dict[str, th.Tensor] = {}
@@ -47,21 +51,35 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         self.prev_link_velocities: dict[str, th.Tensor] = {}
         init_link_velocities = {link_name: th.zeros(3) for link_name in self.entity.links.keys()}
         self.prev_link_velocities.update(init_link_velocities)
-        self.last_accel_dir_by_link: dict[str, th.Tensor | None] = {}
         self.previous_unique_contact_bodies: dict[str, set[str]] = {}
+
+        # For tracking the unique contact bodies for each link
         for link_name, link in self.entity.links.items():
             init_contacts_list = link.contact_list()
-            init_previous_unique_contact_bodies = {c.body1 for c in init_contacts_list}
+            body0_list = {c.body0 for c in init_contacts_list}
+            body1_list = {c.body1 for c in init_contacts_list}
+            init_previous_unique_contact_bodies = body0_list | body1_list
             self.previous_unique_contact_bodies[link_name] = init_previous_unique_contact_bodies
 
         # For additional logging
         self.damage_potentials: dict[str, list] = {}
-        self.raw_forces_from_sim: dict[str, list] = {}
+        self.unfiltered_raw_sim_forces: dict[str, list] = {}
+        self.filtered_raw_sim_forces: dict[str, list] = {}
+        self.unfiltered_qs_forces: dict[str, list] = {}
+        self.filtered_qs_forces: dict[str, list] = {}
         self.impact_forces: dict[str, list] = {}
-        self.qs_forces: dict[str, list] = {}
         self.contacts_by_link: dict[str, list] = {}
         self.num_unique_contacts: dict[str, list] = {}
 
+    def check_new_contact_body(self, current_unique_contact_bodies, link_name) -> bool:
+        """
+        Check if a new category object was contacted for the first time in this step.
+        """
+        if len(current_unique_contact_bodies) > len(self.previous_unique_contact_bodies[link_name]):
+            return True, current_unique_contact_bodies - self.previous_unique_contact_bodies[link_name]
+        else:
+            return False, set()
+    
     def generate_damage(self) -> Dict[str, float]:
         link_damages: Dict[str, float] = {}
         
@@ -80,8 +98,10 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             # Initialize the relevant logging lists for the link if they don't exist.
             if link_name not in self.impact_forces:
                 self.impact_forces[link_name] = []
-                self.raw_forces_from_sim[link_name] = []
-                self.qs_forces[link_name] = []
+                self.unfiltered_raw_sim_forces[link_name] = []
+                self.filtered_raw_sim_forces[link_name] = []
+                self.unfiltered_qs_forces[link_name] = []
+                self.filtered_qs_forces[link_name] = []
                 self.contacts_by_link[link_name] = []
             
             # Get contacts for the link (from the physics engine)
@@ -91,15 +111,19 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                 contacts_list = []
             self.contacts_by_link[link_name].append(contacts_list)
 
-            # Compute impact force (force that leads to acceleration) via finite-differenced acceleration
-            position_previous = self.prev_link_positions.get(link_name)
-            position_current, _ = link.get_position_orientation()
-            displacement = position_current - position_previous
-            velocity_previous = self.prev_link_velocities.get(link_name, th.zeros(3))
-            velocity_current = displacement / max(dt, 1e-8) # dx/dt
-            delta_velocity = velocity_current - velocity_previous
-            acceleration = delta_velocity / max(dt, 1e-8) # dv/dt
-            acceleration_unit_vector = acceleration / th.linalg.vector_norm(acceleration).item()
+            try:
+                # Compute impact force (force that leads to acceleration) via finite-differenced acceleration
+                position_previous = self.prev_link_positions.get(link_name)
+                position_current, _ = link.get_position_orientation()
+                displacement = position_current - position_previous
+                velocity_previous = self.prev_link_velocities.get(link_name, th.zeros(3))
+                velocity_current = displacement / max(dt, 1e-8) # dx/dt
+                delta_velocity = velocity_current - velocity_previous
+                acceleration = delta_velocity / max(dt, 1e-8) # dv/dt
+                acceleration_unit_vector = acceleration / th.linalg.vector_norm(acceleration).item()
+            except Exception as e:
+                print("1 Error: ", e)
+                breakpoint()
 
             # Track for next step
             self.prev_link_positions[link_name] = position_current.clone()
@@ -114,18 +138,15 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             #     impact_magnitude = 0.0
             # self.previous_unique_contact_bodies[link_name] = current_unique_contact_bodies
             
-            # TODO: Currently using only the acceleration as a proxy for impact force.
-            impact_force = 1.0 * acceleration
-            # impact_force =  float(getattr(link, "mass", 1.0)) * acceleration
+            # If using only the acceleration as a proxy for impact force.
+            # impact_force = 1.0 * acceleration
+            impact_force =  float(getattr(link, "mass", 1.0)) * acceleration
             impact_force_magnitude = th.linalg.vector_norm(impact_force).item()
-            # impact_force_magnitude = th.linalg.vector_norm(impact_force).item()
             self.impact_forces[link_name].append(impact_force_magnitude)
 
-            # For debugging
-            if self.entity.name == "coffee_cup_1" and link_name == "base_link":
-                print("impact_force_magnitude: ", impact_force_magnitude)
-                # if impact_force_magnitude > 10.0:
-                #     breakpoint()
+            # # For debugging
+            # if self.entity.name == "coffee_cup_1" and link_name == "base_link":
+            #     print("impact_force_magnitude: ", impact_force_magnitude)
             
             adjust_sim_forces = True
             # TODO: check if this condition is needed.
@@ -137,41 +158,87 @@ class MechanicalDamageEvaluator(DamageEvaluator):
 
             # Compute rest of the forces on the object (quasistatic forces or in other words, forces other than the one causing acceleration)
             impulses: list[th.Tensor] = []
+            current_unfiltered_qs_force_magnitude = 0.0
+            current_filtered_qs_force_magnitude = 0.0
             for c in contacts_list:
                 impulses.append(th.tensor(c.impulse.tolist(), dtype=th.float32))
-            
-            total_qs_force_magnitude = 0.0
-            if impulses:
-                if not adjust_sim_forces:
-                    # Note that we sum the magnitudes of the impulses (for each contact point) and divide
-                    # by dt to get the force. So, the output is a scalar value for the force on the link.
-                    total_qs_force_magnitude += (float(th.sum(th.stack([th.linalg.vector_norm(v) for v in impulses]))) / max(dt, 1e-8))
-                    # # For debugging
-                    # if self.entity.name == "vase" and link_name == "base_link":
-                    #     for j, impulse in enumerate(impulses):
-                    #         print("j, impulses: ", j, th.linalg.vector_norm(impulse))
-                    #     breakpoint()
-                else:
-                    adjusted_qs_force_magnitudes = []
-                    for j, impulse_vec in enumerate(impulses):
-                        proj_imp = th.dot(impulse_vec, acceleration_unit_vector).item()
-                        effective_impulse = impulse_vec - proj_imp * acceleration_unit_vector if proj_imp > 0 else impulse_vec
-                        adjusted_qs_force_magnitudes.append(th.linalg.vector_norm(effective_impulse))
+            try:
+                if impulses:
+                    current_unfiltered_raw_sim_force_magnitude = (float(th.sum(th.stack([th.linalg.vector_norm(v) for v in impulses]))) / max(dt, 1e-8))
+                    if self.entity.category == "agent" and link_name in ["right_gripper_finger_link1", "right_gripper_finger_link2"]:
+                        print("link_name, current_unfiltered_raw_sim_force_magnitude: ", link_name, current_unfiltered_raw_sim_force_magnitude)                    
 
-                        # For debugging
-                        # if self.entity.name == "swivel_chair" and link_name == "base_link":
-                        #     print("j, impulses: ", j, th.linalg.vector_norm(effective_impulse))
+                    # =======================================================
+                    # 1) Obtain only the quasistatic forces
+                    if not adjust_sim_forces:
+                        # Note that we sum the magnitudes of the impulses (for each contact point) and divide
+                        # by dt to get the force. So, the output is a scalar value for the force on the link.
+                        current_unfiltered_qs_force_magnitude += current_unfiltered_raw_sim_force_magnitude
+                    else:
+                        adjusted_qs_force_magnitudes = []
+                        for j, impulse_vec in enumerate(impulses):
+                            proj_imp = th.dot(impulse_vec, acceleration_unit_vector).item()
+                            effective_impulse = impulse_vec - proj_imp * acceleration_unit_vector if proj_imp > 0 else impulse_vec
+                            adjusted_qs_force_magnitudes.append(th.linalg.vector_norm(effective_impulse))                        
+                        current_unfiltered_qs_force_magnitude += (float(th.sum(th.stack(adjusted_qs_force_magnitudes))) / max(dt, 1e-8))
+
+                    self.unfiltered_qs_forces[link_name].append(current_unfiltered_qs_force_magnitude)
                     
-                    if adjusted_qs_force_magnitudes:
-                        total_qs_force_magnitude += (float(th.sum(th.stack(adjusted_qs_force_magnitudes))) / max(dt, 1e-8))
+                    # Option 2) Average over a window
+                    if len(self.unfiltered_qs_forces[link_name]) >= self.window_size:
+                        current_filtered_qs_force_magnitude = sum(self.unfiltered_qs_forces[link_name][-self.window_size:]) / self.window_size
+                    else:
+                        current_filtered_qs_force_magnitude = current_unfiltered_qs_force_magnitude
+                    self.filtered_qs_forces[link_name].append(current_filtered_qs_force_magnitude)
+                    # =======================================================
+                    
+                    # 2) Obtain the raw sim forces
+                    self.unfiltered_raw_sim_forces[link_name].append(current_unfiltered_raw_sim_force_magnitude)
+                    # Option 1: EMA
+                    # if len(self.raw_forces_from_sim[link_name]) == 0:
+                    #     filtered_force = current_force
+                    # else:
+                    #     filtered_force = self.alpha * current_force + (1 - self.alpha) * self.raw_forces_from_sim[link_name][-1]
 
-                self.raw_forces_from_sim[link_name].append(float(th.sum(th.stack([th.linalg.vector_norm(v) for v in impulses]))) / max(dt, 1e-8))
-                self.qs_forces[link_name].append(total_qs_force_magnitude)
+                    # # Option 2: Average over a window
+                    # if len(self.unfiltered_raw_sim_forces[link_name]) >= self.window_size:
+                    #     filtered_raw_sim_force_magnitude = sum(self.unfiltered_raw_sim_forces[link_name][-self.window_size:]) / self.window_size
+                    # else:
+                    #     filtered_raw_sim_force_magnitude = current_unfiltered_raw_sim_force_magnitude
+                    
+                    # Option 3: Filter first contact force
+                    # check if a new category object was contacted for the first time in this step
+                    body0_list = {c.body0 for c in contacts_list}
+                    body1_list = {c.body1 for c in contacts_list}
+                    current_unique_contact_bodies = body0_list | body1_list
+                    new_contact_bool, new_contact_bodies = self.check_new_contact_body(current_unique_contact_bodies, link_name)
+                    if new_contact_bool:
+                        print("link_name, new_contact_body: ", link_name, new_contact_bodies)
+                        filtered_raw_sim_force_magnitude = sum(self.unfiltered_raw_sim_forces[link_name][-self.window_size:]) / self.window_size
+                    else:
+                        filtered_raw_sim_force_magnitude = current_unfiltered_raw_sim_force_magnitude
+                    self.previous_unique_contact_bodies[link_name] = current_unique_contact_bodies
 
-            else:
-                self.raw_forces_from_sim[link_name].append(0.0)
-                self.qs_forces[link_name].append(0.0)
+                    self.filtered_raw_sim_forces[link_name].append(filtered_raw_sim_force_magnitude)
+                    
+                    # For debugging
+                    # if self.entity.category == "agent" and link_name in ["right_gripper_finger_link1", "right_gripper_finger_link2"]:
+                    #     print("link_name, filtered_raw_sim_force_magnitude: ", link_name, filtered_raw_sim_force_magnitude)                    
+                    if self.entity.category == "agent"  and link_name in ["gripper_right_left_finger_link", "gripper_right_right_finger_link"]:
+                        if filtered_raw_sim_force_magnitude > 50.0:
+                            print("link_name, filtered_raw_sim_force_magnitude: ", link_name, filtered_raw_sim_force_magnitude)
+                            breakpoint()
+                    
+                else:
+                    self.unfiltered_raw_sim_forces[link_name].append(0.0)
+                    self.filtered_raw_sim_forces[link_name].append(0.0)
+                    self.unfiltered_qs_forces[link_name].append(0.0)
+                    self.filtered_qs_forces[link_name].append(0.0)
             
+            except Exception as e:
+                print("2 Error: ", e)
+                breakpoint()
+
             # # For debugging
             # if self.entity.name == "cup" and link_name == "base_link":
             #     # breakpoint()
@@ -206,14 +273,19 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                         link_damage_scale = overrides["damage_scale"]
                     break
 
-            impact_damage_potential = link_impact_damage_sensitivity * impact_force_magnitude
-            qs_damage_potential = link_qs_damage_sensitivity * total_qs_force_magnitude
+            try:
+                impact_damage_potential = link_impact_damage_sensitivity * impact_force_magnitude
+                qs_damage_potential = link_qs_damage_sensitivity * current_filtered_qs_force_magnitude
 
-            link_damage_potential = impact_damage_potential + qs_damage_potential
-            self.damage_potentials[link_name] = link_damage_potential
-            link_damage = max(0.0, (link_damage_potential - link_damage_threshold)) * link_damage_scale
-            link_damages[link_name] = link_damage
+                link_damage_potential = impact_damage_potential + qs_damage_potential
+                self.damage_potentials[link_name] = link_damage_potential
+                link_damage = max(0.0, (link_damage_potential - link_damage_threshold)) * link_damage_scale
+                link_damages[link_name] = link_damage
             
+            except Exception as e:
+                print("3 Error: ", e)
+                breakpoint()
+                
             # For debugging
             if self.entity.name == "coffee_cup_1" and link_name == "base_link":
                 print("impact_damage_potential, qs_damage_potential, link_damage_potential, link_damage_threshold, link_damage: ", impact_damage_potential, qs_damage_potential, link_damage_potential, link_damage_threshold, link_damage)
@@ -224,8 +296,16 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         return link_damages
 
     def reset_tracking(self):
-        """Reset strain tracking state."""
-        self.prev_link_positions = {}
-        self.prev_link_velocities = {}
-        self.last_accel_dir_by_link = {}
+        """Reset mechanical damage tracking state"""
+        self.prev_link_positions: dict[str, th.Tensor] = {}
+        init_link_positions = {link_name: link.get_position_orientation()[0] for link_name, link in self.entity.links.items()}
+        self.prev_link_positions.update(init_link_positions)
+        self.prev_link_velocities: dict[str, th.Tensor] = {}
+        init_link_velocities = {link_name: th.zeros(3) for link_name in self.entity.links.keys()}
+        self.prev_link_velocities.update(init_link_velocities)
+        self.previous_unique_contact_bodies: dict[str, set[str]] = {}
+        for link_name, link in self.entity.links.items():
+            init_contacts_list = link.contact_list()
+            init_previous_unique_contact_bodies = {c.body1 for c in init_contacts_list}
+            self.previous_unique_contact_bodies[link_name] = init_previous_unique_contact_bodies
     

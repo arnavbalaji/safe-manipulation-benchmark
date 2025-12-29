@@ -15,7 +15,7 @@ PARAMS = {
     # Robot's category in OG is "agent"
     "agent": {
         "damage_evaluators": ["mechanical"],
-        "damageable_links": ["base_link",
+        "damageabletiago_damageable_links": ["base_link",
                             "arm_right_1_link",
                             "arm_right_2_link",
                             "arm_right_3_link",
@@ -26,6 +26,30 @@ PARAMS = {
                             "gripper_right_link",
                             "gripper_right_left_finger_link",
                             "gripper_right_right_finger_link"
+                        ],
+        "damageabler1pro_damageable_links": ["base_link",
+                            "left_arm_link1",
+                            "left_arm_link2",
+                            "left_arm_link3",
+                            "left_arm_link4",
+                            "left_arm_link5",
+                            "left_arm_link6",
+                            "left_arm_link7",
+                            "left_gripper_link",
+                            "left_gripper_finger_link1",
+                            "left_gripper_finger_link2",
+                            "left_realsense_link",
+                            "right_arm_link1",
+                            "right_arm_link2",
+                            "right_arm_link3",
+                            "right_arm_link4",
+                            "right_arm_link5",
+                            "right_arm_link6",
+                            "right_arm_link7",
+                            "right_gripper_link",
+                            "right_gripper_finger_link1",
+                            "right_gripper_finger_link2",
+                            "right_realsense_link"
                         ],
         "mechanical": {
             "impact_damage_sensitivity": 0.01,
@@ -75,7 +99,19 @@ PARAMS = {
             "damage_threshold": 50.0,
             "damage_scale": 1.0,
         }
+    },
+    # BEHAVIOR-1K VALUES
+    "microwave": {
+        "damage_evaluators": ["mechanical"],
+        "damageable_links": ["base_link", "link_0", "glass"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 1.0,
+            "damage_threshold": 100.0,
+            "damage_scale": 1.0,
+        }
     }
+    
     
     
     # OLD VALUES
