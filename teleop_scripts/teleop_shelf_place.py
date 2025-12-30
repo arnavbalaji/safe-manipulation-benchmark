@@ -27,13 +27,13 @@ gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
 
 
-FLOUR_INIT_POS = [0.95, 0.6, 0.6]
+FLOUR_INIT_POS = [6.00, 0.3, 1.3]
 FLOUR_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
-VASE_INIT_POS = [0.9, 0.4, 0.6]
+VASE_INIT_POS = [6.00, 0.1, 1.3]
 VASE_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
-SHELF_INIT_POS = [1.0, 0.517, 0.6]
+SHELF_INIT_POS = [6.00, 0.2, 1.3]
 SHELF_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 SHELF_SCALE = [0.4, 0.8, 0.5]
 
@@ -44,7 +44,8 @@ TASK_OBJECTS = {
         "name": "box_of_crackers",
         "category": "box_of_crackers",
         "model": "cmdigf",
-        "scale": [1.0, 1.0, 1.0],
+        "position": [6.30, 0.2, 1.3],
+        "orientation": [0.0, 0.0, 0.0, 1.0],
     }, 
     "bag_of_flour": {
         "type": "DatasetObject",
@@ -108,8 +109,8 @@ def __main__():
     cfg["robots"][0] = {
         "type": "FrankaPanda",
         "name": "franka0",
-        "position": [0.2, 0.517, 0.0],  # Match Tiago base position
-        "orientation": [0.0, 0.0, 0.0, 1.0],
+        "position": [6.7, 0.2, 1.0],  # Match Tiago base position
+        "orientation": [0.0, 0.0, 1.0, 0.0],
         "grasping_mode": "assisted",
         "obs_modalities": ["rgb", "depth"],
         "action_normalize": False,
@@ -232,8 +233,8 @@ def __main__():
     robot = env.robots[0]
     # set viewer camera
     og.sim.viewer_camera.set_position_orientation(
-        position=th.tensor([0.27, 0.17, 1.37]),
-        orientation=th.tensor([0.5, 0.32, 0.21, 0.76]),
+        position=th.tensor([7.5, 0.05, 1.37]),
+        orientation=th.tensor([0.5051, -0.0412, -0.0701,  0.8592]),
     )
     for _ in range(10): og.sim.step()
 
@@ -297,8 +298,8 @@ def __main__():
         breakpoint()
         while True:
             # Not using telemoma for now
-            action = teleop_sys.get_action(teleop_sys.get_obs())
-            _, keypress_str = action_generator.get_teleop_action()
+            # action = teleop_sys.get_action(teleop_sys.get_obs())
+            action, keypress_str = action_generator.get_teleop_action()
             if keypress_str == "TAB":
                 breakpoint()
                 break
