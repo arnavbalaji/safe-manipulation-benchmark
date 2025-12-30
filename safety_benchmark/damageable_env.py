@@ -378,8 +378,11 @@ class DamageableEnvironment(Environment):
                 for link_name, health in obj.link_healths.items():
                     obs["health"].append(health)
         obs["health"] = th.tensor(obs["health"], dtype=th.float32)
-        obs["right_eef_pos"] = self.robots[0].get_eef_position("right")
-        obs["right_eef_ori"] = self.robots[0].get_eef_orientation("right")
+        # Use robot's default arm (handles both Tiago "right"/"left" and Franka "0")
+        robot = self.robots[0]
+        default_arm = robot.default_arm if hasattr(robot, "default_arm") else "right"
+        obs["eef_pos"] = robot.get_eef_position(default_arm)
+        obs["eef_ori"] = robot.get_eef_orientation(default_arm)
         return obs
 
     def set_damageable_object_params(self):

@@ -23,7 +23,7 @@ import omnigibson.lazy as lazy
 
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper
 
-gm.USE_GPU_DYNAMICS=True
+gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
 
 
@@ -74,16 +74,7 @@ TASK_OBJECTS = {
         "scale": SHELF_SCALE,
         "fixed_base": True,
     },
-    # "stand": {
-    #     "type": "DatasetObject",
-    #     "name": "stand",
-    #     "category": "bookcase",
-    #     "model": "xurqal",
-    #     "position": SHELF_INIT_POS,
-    #     "orientation": SHELF_INIT_ORI,
-    #     "scale": [0.8, 0.5, 0.5],
-    # },
-    }
+}
 
 
 def __main__():
@@ -110,62 +101,69 @@ def __main__():
     cfg["scene"]["scene_model"] = "house_single_floor"
     cfg["scene"]["not_load_object_categories"] = ["ottoman"]
     cfg["scene"]["load_room_instances"] = ["kitchen_0", "dining_room_0", "entryway_0", "living_room_0"]
-    # Always spawn robot at the origin with no rotation (this is to be compatible with curobo)
-    cfg["robots"][0]["name"] = "tiago0"
-    cfg["robots"][0]["position"] = [0.0, 0.0, 0.0]
-    cfg["robots"][0]["orientation"] = [0.0, 0.0, 0.0, 1.0]
-    cfg["robots"][0]["default_arm_pose"] = "horizontal"
-    cfg["robots"][0]["grasping_mode"] = "assisted"
-    cfg["robots"][0]["obs_modalities"] = ["rgb", "depth"]
-    cfg["robots"][0]["action_normalize"] = False
-    cfg["robots"][0]["controller_config"] = {
-        "arm_left": {
-            "name": "InverseKinematicsController",
-            "command_input_limits": None,
-        },
-        "gripper_left": {
-            "name": "MultiFingerGripperController",
-            "command_input_limits": (0.0, 1.0),
-            "mode": "smooth",
-        },
-        "arm_right": {
-            "name": "InverseKinematicsController",
-            "command_input_limits": None,
-        },
-        "gripper_right": {
-            "name": "MultiFingerGripperController",
-            "command_input_limits": (0.0, 1.0),
-            "mode": "smooth",
+    
+    ############### Franka robot ###############
+    # TODO(junhong): if we have a better way (a franka-specific config file), we should use that
+    # Completely replace robot config to avoid Tiago-specific settings carrying over
+    cfg["robots"][0] = {
+        "type": "FrankaPanda",
+        "name": "franka0",
+        "position": [0.2, 0.517, 0.0],  # Match Tiago base position
+        "orientation": [0.0, 0.0, 0.0, 1.0],
+        "grasping_mode": "assisted",
+        "obs_modalities": ["rgb", "depth"],
+        "action_normalize": False,
+        "self_collisions": True,
+        # Franka has single arm (arm_0, gripper_0) instead of left/right
+        "controller_config": {
+            "arm_0": {
+                "name": "InverseKinematicsController",
+                "command_input_limits": None,
+            },
+            "gripper_0": {
+                "name": "MultiFingerGripperController",
+                "command_input_limits": (0.0, 1.0),
+                "mode": "smooth",
+            },
         },
     }
-    cfg["robots"][0]["exclude_sensor_names"] = ["left_eef_link"]
+    ############### Franka robot ###############
 
-    # Generate external sensors config automatically
-    # Get robot name and type from config to construct correct prim path
-    ############### Frank robot
-    # cfg["robots"][0]["type"] = "FrankaPanda"  # or "FrankaMounted"
-    # cfg["robots"][0]["name"] = "franka0"
-    # # Remove: cfg["robots"][0]["default_arm_pose"] = "horizontal"  # Tiago-specific
+    ############### Tiago robot (commented out) ###############
+    # cfg["robots"][0]["name"] = "tiago0"
+    # cfg["robots"][0]["position"] = [0.0, 0.0, 0.0]
+    # cfg["robots"][0]["orientation"] = [0.0, 0.0, 0.0, 1.0]
+    # cfg["robots"][0]["default_arm_pose"] = "horizontal"
     # cfg["robots"][0]["grasping_mode"] = "assisted"
     # cfg["robots"][0]["obs_modalities"] = ["rgb", "depth"]
     # cfg["robots"][0]["action_normalize"] = False
-    # cfg["robots"][0]["self_collisions"] = True
-
-    # # Franka has single arm (arm_0, gripper_0) instead of left/right
     # cfg["robots"][0]["controller_config"] = {
-    #     "arm_0": {
+    #     "arm_left": {
     #         "name": "InverseKinematicsController",
     #         "command_input_limits": None,
     #     },
-    #     "gripper_0": {
+    #     "gripper_left": {
+    #         "name": "MultiFingerGripperController",
+    #         "command_input_limits": (0.0, 1.0),
+    #         "mode": "smooth",
+    #     },
+    #     "arm_right": {
+    #         "name": "InverseKinematicsController",
+    #         "command_input_limits": None,
+    #     },
+    #     "gripper_right": {
     #         "name": "MultiFingerGripperController",
     #         "command_input_limits": (0.0, 1.0),
     #         "mode": "smooth",
     #     },
     # }
-    ############### Frank robot
-    robot_name = cfg["robots"][0].get("name", "tiago0")  # Default to "robot0" if not specified
-    robot_type = cfg["robots"][0].get("type", "Tiago").lower()  # Get robot type, default to "tiago"
+    # cfg["robots"][0]["exclude_sensor_names"] = ["left_eef_link"]
+    ############### Tiago robot (commented out) ###############
+
+    # Generate external sensors config automatically
+    # Get robot name and type from config to construct correct prim path
+    robot_name = cfg["robots"][0].get("name", "franka0")
+    robot_type = cfg["robots"][0].get("type", "FrankaPanda").lower()
 
     # Set external cameras for videos
     EXTERNAL_CAMERA_CONFIGS = {
@@ -234,43 +232,35 @@ def __main__():
     robot = env.robots[0]
     # set viewer camera
     og.sim.viewer_camera.set_position_orientation(
-        position=th.tensor([-0.2607, -3.0889, 1.2703]),
-        orientation=th.tensor([0.5051, -0.0412, -0.0701, 0.8592]),
+        position=th.tensor([0.27, 0.17, 1.37]),
+        orientation=th.tensor([0.5, 0.32, 0.21, 0.76]),
     )
     for _ in range(10): og.sim.step()
 
-    robot.set_joint_positions(th.tensor([0.2, 0.517,  3.4369e-04,  3.0920e-07, -1.2731e-07,
-         4.6876e-02,  2.1064e-01,  8.6563e-01,  8.3026e-01,  9.4543e-04,
-        -5.4681e-01, -2.5515e-01, -9.8940e-01,  2.1207e+00,  1.6975e+00,
-         1.6488e+00,  1.6281e+00,  8.5711e-01,  2.5175e-01, -9.2479e-01,
-        -1.4137e+00, -1.0974e+00, -7.0588e-01,  4.5000e-02,  4.5000e-02,
-         4.5000e-02,  4.5000e-02]))
-    # robot.set_joint_positions(th.tensor([0.0, -1.0]), indices=robot.camera_control_idx)
-    # robot.set_position_orientation(position=th.tensor([-1.2076e+00, -1.0810e+00,  3.4369e-04]), orientation=th.tensor([3.5039e-09, 1.5145e-08, 2.3436e-02, 9.9973e-01]))
-    # robot.set_joint_positions(robot.default_arm_poses["vertical"], indices=robot.arm_control_idx["right"])
+    # Franka default joint positions (7 arm joints + 2 gripper joints)
+    robot.set_joint_positions(th.tensor([0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]))
+    
+    # Tiago joint positions (commented out - different DOF count)
+    # robot.set_joint_positions(th.tensor([0.2, 0.517,  3.4369e-04,  3.0920e-07, -1.2731e-07,
+    #      4.6876e-02,  2.1064e-01,  8.6563e-01,  8.3026e-01,  9.4543e-04,
+    #     -5.4681e-01, -2.5515e-01, -9.8940e-01,  2.1207e+00,  1.6975e+00,
+    #      1.6488e+00,  1.6281e+00,  8.5711e-01,  2.5175e-01, -9.2479e-01,
+    #     -1.4137e+00, -1.0974e+00, -7.0588e-01,  4.5000e-02,  4.5000e-02,
+    #      4.5000e-02,  4.5000e-02]))
 
-    # sponge = env.scene.object_registry("name", "sponge")
-    # coffee_table = next(iter(env.scene.object_registry("category", "coffee_table")))
-    # sponge.states[object_states.OnTop].set_value(coffee_table, True)
-    # sponge.keep_still()
-
-    # wardrobe = next(iter(env.scene.object_registry("category", "wardrobe")))
-    # wardrobe_pos = wardrobe.get_position_orientation()[0]
-    # # Move the wardrobe downward so that tiago is able to reach the shelf.
-    # wardrobe_new_pos = th.tensor([wardrobe_pos[0], wardrobe_pos[1], wardrobe_pos[2] - 0.5])
-    # wardrobe.set_position_orientation(position=wardrobe_new_pos)
     bag_of_flour = env.scene.object_registry("name", "book")
-
     vase = env.scene.object_registry("name", "vase")
-
     for _ in range(10):
         og.sim.step()
 
     # Telemoma: Teleoperate robot
     arm_teleop_method = "spacemouse"
-    base_teleop_method = "spacemouse" 
-    teleop_config.arm_left_controller = arm_teleop_method
-    teleop_config.arm_right_controller = arm_teleop_method
+    base_teleop_method = "spacemouse"
+    # Franka uses arm_0 instead of arm_left/arm_right
+    teleop_config.arm_0_controller = arm_teleop_method
+    # Tiago config (commented out):
+    # teleop_config.arm_left_controller = arm_teleop_method
+    # teleop_config.arm_right_controller = arm_teleop_method
     teleop_config.base_controller = base_teleop_method
     teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
     teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.01}

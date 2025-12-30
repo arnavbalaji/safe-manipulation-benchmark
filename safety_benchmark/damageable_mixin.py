@@ -6,6 +6,7 @@ from omnigibson.objects.controllable_object import ControllableObject
 from omnigibson.objects.light_object import LightObject
 from omnigibson.objects.stateful_object import StatefulObject
 from omnigibson.robots.franka import FrankaPanda
+from omnigibson.robots.franka_mounted import FrankaMounted
 from omnigibson.robots.tiago import Tiago
 from omnigibson.robots.r1pro import R1Pro
 from safety_benchmark.params.test_params import PARAMS, DAMAGE_EVALUATORS
@@ -122,9 +123,18 @@ class DamageableFrankaPanda(DamageableMixin, FrankaPanda):
     def usd_path(self):
         # Override to use the original FrankaPanda model path, not the damageable version
         import os
-        from omnigibson.macros import gm
-        return os.path.join(gm.ASSET_PATH, "models/franka/franka_panda/usd/franka_panda.usda")
-        return os.path.join(gm.DATA_PATH, f"omnigibson-robot-assets/models/{model}/usd/{model}.usda")
+        from omnigibson.utils.asset_utils import get_dataset_path
+        return os.path.join(get_dataset_path("omnigibson-robot-assets"), "models/franka/franka_panda/usd/franka_panda.usda")
+
+
+class DamageableFrankaMounted(DamageableMixin, FrankaMounted):
+    @property
+    def usd_path(self):
+        # Override to use the original FrankaMounted model path
+        import os
+        from omnigibson.utils.asset_utils import get_dataset_path
+        return os.path.join(get_dataset_path("omnigibson-robot-assets"), "models/franka/franka_mounted/usd/franka_mounted.usda")
+
 
 class DamageableTiago(DamageableMixin, Tiago):
     # def __init__(self, *args, **kwargs):
