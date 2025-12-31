@@ -26,6 +26,9 @@ BehaviorTask:
   clean_a_trumpet:
     categories: []
     names: []
+  attach_a_camera_to_a_tripod:
+    categories: ["camera_tripod", "digital_camera"]
+    names: []
 
 
 

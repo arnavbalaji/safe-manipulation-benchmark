@@ -37,6 +37,14 @@ def get_visualization_config(task_name, robot_name):
             "force_keys": ["filtered_qs_forces"],
             "target_contact_bodies": ["microwave"]
         }    
+    elif task_name == "attach_a_camera_to_a_tripod":
+        return {
+            "target_objects_health_with_links": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "camera_tripod_86@base_link", "digital_camera_87@base_link"],  # "scrub@base_link", "trumpet@base_link"
+            "target_objects_health": [robot_name, "camera_tripod_86", "digital_camera_87"],  # "scrub", "trumpet"
+            "target_objects_forces": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "camera_tripod_86@base_link", "digital_camera_87@base_link"],
+            "force_keys": ["filtered_qs_forces", "impact_forces"],
+            "target_contact_bodies": ["camera_tripod_86", "digital_camera_87"]
+        }
 
 def __main__():
     np.random.seed(0)

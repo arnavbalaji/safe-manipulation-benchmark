@@ -674,6 +674,16 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             reward = traj_grp["reward"]
             terminated = traj_grp["terminated"]
             truncated = traj_grp["truncated"]
+
+            # The state after reset/spawining of scene (timestep 0) during data collection and the start of teleop (timestep 1) is very different leadning to 
+            # high computation of impact forces. So, we skip the first action, state, state_size, reward, terminated, truncated.
+            action = action[1:]
+            state = state[1:]
+            state_size = state_size[1:]
+            reward = reward[1:]
+            terminated = terminated[1:]
+            truncated = truncated[1:]
+        
         except KeyError as e:
             print(f"Got error when trying to load episode {episode_id}:")
             print(f"Error: {str(e)}")

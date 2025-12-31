@@ -110,8 +110,25 @@ PARAMS = {
             "damage_threshold": 100.0,
             "damage_scale": 1.0,
         }
+    },
+    "camera_tripod": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 0.1,
+            "qs_damage_sensitivity": 1.0,
+            "damage_threshold": 150.0,
+            "damage_scale": 1.0,
+        }
+    },
+    "digital_camera": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 0.5,
+            "damage_threshold": 60.0,
+            "damage_scale": 100.0,
+        }
     }
-    
     
     
     # OLD VALUES
