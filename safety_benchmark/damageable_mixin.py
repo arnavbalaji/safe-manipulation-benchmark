@@ -96,6 +96,7 @@ class DamageableMixin:
                     self.damage_info[link_name]["mechanical"]["unfiltered_qs_forces"] = evaluator.unfiltered_qs_forces[link_name][-1]
                     self.damage_info[link_name]["mechanical"]["filtered_qs_forces"] = evaluator.filtered_qs_forces[link_name][-1]
                     self.damage_info[link_name]["mechanical"]["contacts"] = evaluator.contacts_by_link[link_name][-1]
+                    self.damage_info[link_name]["mechanical"]["damage"] = damage
 
 
 '''Damageable Object subclasses'''

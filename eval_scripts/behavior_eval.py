@@ -7,6 +7,7 @@ import h5py
 import torch as th
 import numpy as np
 import argparse
+from collections import defaultdict
 
 import omnigibson as og
 from omnigibson import object_states
@@ -55,6 +56,7 @@ def __main__():
     parser.add_argument('--rollout_name', type=str, help='Rollout name')
     parser.add_argument('--visualize', action='store_true', help='Visualize the data')
     parser.add_argument('--playback', action='store_true', help='Playback the data')
+    parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics')
     args = parser.parse_args()
 
     # TODO: Set this 
@@ -115,23 +117,18 @@ def __main__():
         )
         robot = env.robots[0]
         # breakpoint()
-
         # # set viewer camera
         # og.sim.viewer_camera.set_position_orientation(position=th.tensor([-0.2607, -3.0889,  1.2703]), orientation=th.tensor([ 0.5051, -0.0412, -0.0701,  0.8592]))
-        
         for _ in range(10): og.sim.step()
-
-        # # Best to explicitly set the object params here in case object params were modified since data collection
-        # env.set_object_params()
 
         # Playback the dataset
         env.playback_dataset(record_data=True)
         # breakpoint()
             
-        env.save_data()
-        
+        env.save_data()        
+    
     # Visualize the episode
-    if args.visualize:
+    if args.visualize or args.compute_metrics:
         f = h5py.File(output_hdf5_path, "r")
         scene_file = json.loads(f["data"].attrs["scene_file"])
         # robot_name = [obj_name for obj_name in scene_file["objects_info"]["init_info"].keys() if "robot" in obj_name.lower()][0]
@@ -176,73 +173,92 @@ def __main__():
                 else:
                     health[obj_name] = None
 
-            # Save video for rgb camera
-            output_video_path = f"{output_video_dir}/{args.rollout_name}_demo_{demo_idx}_camera_video"
-            save_camera_video(hdf5_file=f, 
-                        output_video_path=output_video_path,
-                        robot_name=robot_name, 
-                        camera_type=camera_type, 
-                        camera_name=camera_name,
-                        target_objects=target_objects_health,
-                        obs_info_list=obs_info_list,
-                        health=health,
-                        demo_idx=demo_idx)
-
-        
-            # Obtain forces information for the target objects
-            # target_objects_forces = [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"]
-            # target_objects_forces = [f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2"]
-            # target_objects_forces = [f"microwave_hjjxmi_0@base_link", f"microwave_hjjxmi_0@link_0", f"microwave_hjjxmi_0@glass"]
-            # target_objects_forces = [f"microwave_hjjxmi_0@base_link", f"microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"]
-            # options: ["unfiltered_raw_sim_forces", "filtered_raw_sim_forces", "unfiltered_qs_forces", "filtered_qs_forces"]
-            # force_keys = ["filtered_raw_sim_forces"]
-            data = dict()
-            for obj_name in target_objects_forces:
-                data[obj_name] = dict()
-                for force_key in force_keys:
-                    data[obj_name][force_key] = []
-            for i in range(len(f[f"data/demo_{demo_idx}/info/damage_info"])):
-                damage_info = json.loads(f[f"data/demo_{demo_idx}/info/damage_info"][i].decode("utf-8"))
-                for obj_name in target_objects_forces:
-                    for force_key in force_keys:
-                        data[obj_name][force_key].append(damage_info[obj_name.split("@")[0]][obj_name.split("@")[1]]["mechanical"][force_key])
+            if args.compute_metrics:
+                print("Episode: ", demo_idx)
+                final_obj_healths = defaultdict(list)
+                final_env_healths = []
+                current_env_health = 0.0
+                for obj_name in target_objects_health:
+                    final_obj_healths[obj_name].append(health[obj_name][-1])
+                    print(f"{obj_name} health: {health[obj_name][-1]}")
+                    current_env_health += health[obj_name][-1]
+                final_env_healths.append(current_env_health / len(target_objects_health))
+                print(f"Current environment health: ", final_env_healths[-1])
+                # task_success_without_health =
             
-            # Save videos for forces plot
-            forces_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_forces_video.mp4")
-            save_forces_video(output_video_path=forces_video_path, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
-            combined_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_combined_video_forces.mp4")
-            save_combined_video(video_1=output_video_path+".mp4", video_2=forces_video_path, output_video_path=combined_video_path, delete_intermediate_video_2=True)
+            if args.visualize:
+                # Save video for rgb camera
+                output_video_path = f"{output_video_dir}/{args.rollout_name}_demo_{demo_idx}_camera_video"
+                save_camera_video(hdf5_file=f, 
+                            output_video_path=output_video_path,
+                            robot_name=robot_name, 
+                            camera_type=camera_type, 
+                            camera_name=camera_name,
+                            target_objects=target_objects_health,
+                            obs_info_list=obs_info_list,
+                            health=health,
+                            demo_idx=demo_idx)
 
-            # Save video for health plot
-            health_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_health_video.mp4")
-            save_health_video(output_video_path=health_video_path, target_objects=target_objects_health, health=health)
-            combined_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_combined_video_health.mp4")
-            save_combined_video(video_1=output_video_path+".mp4", video_2=health_video_path, output_video_path=combined_video_path, delete_intermediate_video_2=True)
+            
+                # Obtain forces information for the target objects
+                # target_objects_forces = [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"]
+                # target_objects_forces = [f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2"]
+                # target_objects_forces = [f"microwave_hjjxmi_0@base_link", f"microwave_hjjxmi_0@link_0", f"microwave_hjjxmi_0@glass"]
+                # target_objects_forces = [f"microwave_hjjxmi_0@base_link", f"microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"]
+                # options: ["unfiltered_raw_sim_forces", "filtered_raw_sim_forces", "unfiltered_qs_forces", "filtered_qs_forces"]
+                # force_keys = ["filtered_raw_sim_forces"]
+                data = dict()
+                for obj_name in target_objects_forces:
+                    data[obj_name] = dict()
+                    for force_key in force_keys:
+                        data[obj_name][force_key] = []
+                for i in range(len(f[f"data/demo_{demo_idx}/info/damage_info"])):
+                    damage_info = json.loads(f[f"data/demo_{demo_idx}/info/damage_info"][i].decode("utf-8"))
+                    for obj_name in target_objects_forces:
+                        for force_key in force_keys:
+                            data[obj_name][force_key].append(damage_info[obj_name.split("@")[0]][obj_name.split("@")[1]]["mechanical"][force_key])
+                
+                # Save videos for forces plot
+                forces_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_forces_video.mp4")
+                save_forces_video(output_video_path=forces_video_path, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
+                combined_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_combined_video_forces.mp4")
+                save_combined_video(video_1=output_video_path+".mp4", video_2=forces_video_path, output_video_path=combined_video_path, delete_intermediate_video_2=True)
 
-            # Save video for force and contact plot
-            # Obtain contact information for the target objects
-            contact_info = dict()
-            for obj_name in target_objects_forces:
-                contact_info[obj_name] = []
-            for i in range(len(f[f"data/demo_{demo_idx}/info/damage_info"])):
-                damage_info = json.loads(f[f"data/demo_{demo_idx}/info/damage_info"][i].decode("utf-8"))
-                for obj_full_name in target_objects_forces:
-                    obj_name = obj_full_name.split("@")[0]
-                    obj_link_name = obj_full_name.split("@")[1]
-                    contact_list = damage_info[obj_name][obj_link_name]["mechanical"]["contacts"]
-                    contact_found = False
-                    for contact in contact_list:
-                        for target_contact_body in target_contact_bodies:
-                            if target_contact_body in contact[2] or target_contact_body in contact[3]:
-                                contact_found = True
-                                break
-                    contact_info[obj_full_name].append(contact_found)
+                # Save video for health plot
+                health_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_health_video.mp4")
+                save_health_video(output_video_path=health_video_path, target_objects=target_objects_health, health=health)
+                combined_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_combined_video_health.mp4")
+                save_combined_video(video_1=output_video_path+".mp4", video_2=health_video_path, output_video_path=combined_video_path, delete_intermediate_video_2=True)
 
-            imgs = f[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
-            imgs = imgs[1:]
-            force_contact_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_force_contact_video.mp4")
-            save_force_contact_video(output_video_path=force_contact_video_path, data=data, imgs=imgs, contact_info=contact_info, target_objects=target_objects_forces, forces_to_plot=force_keys)
+                # Save video for force and contact plot
+                # Obtain contact information for the target objects
+                contact_info = dict()
+                for obj_name in target_objects_forces:
+                    contact_info[obj_name] = []
+                for i in range(len(f[f"data/demo_{demo_idx}/info/damage_info"])):
+                    damage_info = json.loads(f[f"data/demo_{demo_idx}/info/damage_info"][i].decode("utf-8"))
+                    for obj_full_name in target_objects_forces:
+                        obj_name = obj_full_name.split("@")[0]
+                        obj_link_name = obj_full_name.split("@")[1]
+                        contact_list = damage_info[obj_name][obj_link_name]["mechanical"]["contacts"]
+                        contact_found = False
+                        for contact in contact_list:
+                            for target_contact_body in target_contact_bodies:
+                                if target_contact_body in contact[2] or target_contact_body in contact[3]:
+                                    contact_found = True
+                                    break
+                        contact_info[obj_full_name].append(contact_found)
 
+                imgs = f[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
+                imgs = imgs[1:]
+                force_contact_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_force_contact_video.mp4")
+                save_force_contact_video(output_video_path=force_contact_video_path, data=data, imgs=imgs, contact_info=contact_info, target_objects=target_objects_forces, forces_to_plot=force_keys)
+
+    if args.compute_metrics:
+        for obj_name in target_objects_health:
+            print(f"Average health for {obj_name}: {np.mean(final_obj_healths[obj_name])}")
+        print(f"Average environment health: {np.mean(final_env_healths)}")
+    
     # Shutdown simulation after all processing is complete
     og.shutdown()
 
