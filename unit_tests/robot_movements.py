@@ -16,7 +16,7 @@ from omnigibson.macros import gm
 import omnigibson.lazy as lazy
 
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
-from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video, save_forces_video
+from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video, save_forces_video, save_force_contact_video
 
 gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
@@ -31,7 +31,7 @@ def __main__():
     args = parser.parse_args()
 
     # TODO: Set this 
-    f_name = "drop_mug_on_table"
+    f_name = "robot_tiago_motion_3"
     collect_hdf5_path = f"resources/teleop_data/{f_name}.hdf5"
     output_hdf5_path = f"resources/playback_data/{f_name}_playback.hdf5"
 
@@ -45,33 +45,11 @@ def __main__():
         EXTERNAL_CAMERA_CONFIGS = {
             # Side camera (fixed to base_link frame)
             "external_sensor_0": {
-                "position": [1.1553, -2.2072,  1.0119],
-                "orientation": [ 0.4284, 0.4160, 0.5588, 0.5755],
-                "horizontal_aperture": 20.0,
-                "relative_prim_path": f"/external_sensor0",
-            },
-            # # Left Shoulder (fixed to base_link frame)
-            # "external_sensor_1": {
-            #     # wrt base frame
-            #     "position": [0.2522, 0.0470, 1.0696],
-            #     "orientation": [ 0.1991, -0.1991, -0.6785,  0.6785],
-            #     "horizontal_aperture": 30.0,
-            #     "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor1",
-            # },
-            # # Back camera (fixed to base_link frame)
-            # "external_sensor_2": {
-            #     "position": [-0.7765, -0.8203,  0.9939],
-            #     "orientation": [ 0.4566, -0.3285, -0.4831,  0.6710],
-            #     "horizontal_aperture": 30.0,
-            #     "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor2",
-            # },
-            # # Front camera (fixed to base_link frame)
-            # "external_sensor_3": {
-            #     "position": [1.7508, -0.0198,  1.1778],
-            #     "orientation": [0.3821, 0.4173, 0.6080, 0.5570],
-            #     "horizontal_aperture": 20.0,
-            #     "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor3",
-            # }
+                "position": [0.4859, -1.8219,  1.1402],
+                "orientation": [ 0.5857, -0.0093, -0.0129,  0.8103],
+                "horizontal_aperture": 10.0,
+                "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor0",
+            }
         }  
         external_sensors_config = []
         for name, camera_cfg in EXTERNAL_CAMERA_CONFIGS.items():
@@ -107,7 +85,7 @@ def __main__():
         env = DamageableDataPlaybackWrapper.create_from_hdf5(
             input_path=collect_hdf5_path,
             output_path=output_hdf5_path,
-            # robot_obs_modalities=["proprio", "rgb", "depth", "seg_instance"],
+            robot_obs_modalities=["proprio"],
             robot_sensor_config=robot_sensor_config,
             external_sensors_config=external_sensors_config,
             n_render_iterations=1,
@@ -137,7 +115,6 @@ def __main__():
         robot_name = "tiago0"       
         camera_type = "external"
         camera_name = "external_sensor0"
-        # breakpoint()
 
         # Parse info to obtain relevant information for visualization
         obs_info_list = []
@@ -148,7 +125,7 @@ def __main__():
         # breakpoint()
 
         # Obtain health information for the target objects
-        target_objects = ["coffee_cup_1@base_link"]
+        target_objects = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link"]
         all_obj_healths = np.array(f["data/demo_0/obs/health"])
         health_list_link_names = f["data/demo_0"].attrs["health_list_link_names"]
         health = dict()
@@ -168,7 +145,7 @@ def __main__():
         os.makedirs(output_video_dir, exist_ok=True)
         
         # Save video for rgb camera
-        target_objects_health = ["coffee_cup_1@base_link"]
+        target_objects_health = ["tiago0"]
         output_video_path = f"{output_video_dir}/{f_name}_camera_video"
         save_camera_video(hdf5_file=f, 
                     output_video_path=output_video_path,
@@ -182,10 +159,10 @@ def __main__():
         
         # Obtain forces information for the target objects
         # target_objects_forces = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link", "tiago0@arm_right_6_link", "tiago0@arm_right_5_link", "tiago0@arm_right_4_link", "tiago0@arm_right_3_link", "tiago0@arm_right_2_link", "tiago0@arm_right_1_link"]
-        target_objects_forces = ["coffee_cup_2@base_link"]
+        target_objects_forces = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link"]
         data = dict()
         # options: ["impact_forces", "qs_forces", "raw_forces_from_sim"]
-        force_keys = ["impact_forces", "qs_forces", "raw_forces_from_sim"]
+        force_keys = ["raw_forces_from_sim"]
         for obj_name in target_objects_forces:
             data[obj_name] = dict()
             for force_key in force_keys:
@@ -195,7 +172,31 @@ def __main__():
             for obj_name in target_objects_forces:
                 for force_key in force_keys:
                     data[obj_name][force_key].append(damage_info[obj_name.split("@")[0]][obj_name.split("@")[1]]["mechanical"][force_key])
+
+        # Obtain contact information for the target objects
+        contact_info = dict()
+        for obj_name in target_objects_forces:
+            contact_info[obj_name] = []
+        for i in range(len(f["data/demo_0/info/damage_info"])):
+            damage_info = json.loads(f["data/demo_0/info/damage_info"][i].decode("utf-8"))
+            for obj_full_name in target_objects_forces:
+                obj_name = obj_full_name.split("@")[0]
+                obj_link_name = obj_full_name.split("@")[1]
+                contact_list = damage_info[obj_name][obj_link_name]["mechanical"]["contacts"]
+                contact_found = False
+                for contact in contact_list:
+                    if "coffee_table" in contact[2] or "coffee_table" in contact[3]:
+                        contact_found = True
+                        break
+                contact_info[obj_full_name].append(contact_found)
         
+        # Save video for force and contact plot
+        imgs = f[f"data/demo_0/obs/{camera_type}::{camera_name}::rgb"]
+        imgs = imgs[1:]
+        force_contact_video_path = os.path.join(output_video_dir, f"{f_name}_force_contact_video.mp4")
+        save_force_contact_video(output_video_path=force_contact_video_path, data=data, imgs=imgs, contact_info=contact_info, target_objects=target_objects_forces, forces_to_plot=force_keys)
+        
+        breakpoint()
         # Save videos for forces plot
         forces_video_path = os.path.join(output_video_dir, f"{f_name}_forces_video.mp4")
         save_forces_video(output_video_path=forces_video_path, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)

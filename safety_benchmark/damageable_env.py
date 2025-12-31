@@ -30,6 +30,9 @@ from omnigibson.envs.data_wrapper import DataPlaybackWrapper, DataCollectionWrap
 from omnigibson.objects import REGISTERED_OBJECTS
 from omnigibson.robots import REGISTERED_ROBOTS
 
+# Flag to ensure we only patch the OmniGibson object registry once per process
+BEHAVIOR_DAMAGEABLE_PATCHED = False
+
 # Mapping from base object types to their damageable versions
 DAMAGEABLE_OBJECT_MAPPING = {
     "DatasetObject": DamageableDatasetObject,
@@ -205,8 +208,8 @@ class DamageableEnvironment(Environment):
         # info["obs_info"]["health_list_link_names"] = health_list    
         self.health_list_link_names = health_list
 
-        # Reset damage evaluator initialization flag
-        self.damage_evaluators_initialized = False
+        # # Reset damage evaluator initialization flag
+        # self.damage_evaluators_initialized = False
         
         return obs, info
 
@@ -296,37 +299,56 @@ class DamageableEnvironment(Environment):
                 - bool: truncated, i.e. whether this episode ended due to a time limit etc.
                 - dict: info, i.e. dictionary with any useful information
         """
-        # Initialize damage evaluators if this is the first env step
-        if not self.damage_evaluators_initialized:
-            for obj in self.scene.objects:
-                if hasattr(obj, "track_damage") and obj.track_damage:
-                    obj._initialize_damage_evaluators()
-            self.damage_evaluators_initialized = True
-        
-        obs, reward, terminated, truncated, info = super().step(action, n_render_iterations)
-        obj_damage_info = {}
-        
-        if not self.lock_health:
-            # Update all damageable objects
-            for obj in self.scene.objects:
-                if hasattr(obj, "track_damage") and obj.track_damage:
-                    obj.update_health()
-                    obj_damage_info[obj.name] = obj.damage_info
-                    
-            info["damage_info"] = obj_damage_info
-            
-            # health_list = []
-            # for obj in self.scene.objects:
-            #     if hasattr(obj, "track_damage") and obj.track_damage:
-            #         for link_name, health in obj.link_healths.items():
-            #             health_list.append(f"{obj.name}@{link_name}")
-            # info["obs_info"]["health_list_link_names"] = health_list
+        try:
+            # Initialize damage evaluators if this is the first env step
+            if not self.damage_evaluators_initialized:
+                for obj in self.scene.objects:
+                    if hasattr(obj, "track_damage") and obj.track_damage:
+                        obj._initialize_damage_evaluators()
+                self.damage_evaluators_initialized = True
 
-            if self._reward_fn is not None:
-                reward, terminated = self._reward_fn(self, obs)
+        except Exception as e:
+            print("1 Error: ", e)
+            breakpoint()
+            raise e
+        try:
+            obs, reward, terminated, truncated, info = super().step(action, n_render_iterations)
+        except Exception as e:
+            print("2 Error: ", e)
+            breakpoint()
+            raise e
+        try:
+            obj_damage_info = {}
+            if not self.lock_health:
+                # Update all damageable objects
+                for obj in self.scene.objects:
+                    if hasattr(obj, "track_damage") and obj.track_damage:
+                        obj.update_health()
+                        obj_damage_info[obj.name] = obj.damage_info
+                        
+                info["damage_info"] = obj_damage_info
+                
+                # health_list = []
+                # for obj in self.scene.objects:
+                #     if hasattr(obj, "track_damage") and obj.track_damage:
+                #         for link_name, health in obj.link_healths.items():
+                #             health_list.append(f"{obj.name}@{link_name}")
+                # info["obs_info"]["health_list_link_names"] = health_list
+
+                if self._reward_fn is not None:
+                    reward, terminated = self._reward_fn(self, obs)
+        except Exception as e:
+            print("3 Error: ", e)
+            breakpoint()
+            raise e
+        try:
+            obs = self._process_obs(obs)
+            # info = self._process_info(info)
+        except Exception as e:
+            print("4 Error: ", e)
+            breakpoint()
+            raise e
         
-        obs = self._process_obs(obs)
-        # info = self._process_info(info)
         return obs, reward, terminated, truncated, info
 
 
@@ -356,6 +378,11 @@ class DamageableEnvironment(Environment):
                 for link_name, health in obj.link_healths.items():
                     obs["health"].append(health)
         obs["health"] = th.tensor(obs["health"], dtype=th.float32)
+        # Use robot's default arm (handles both Tiago "right"/"left" and Franka "0")
+        robot = self.robots[0]
+        default_arm = robot.default_arm if hasattr(robot, "default_arm") else "right"
+        obs["eef_pos"] = robot.get_eef_position(default_arm)
+        obs["eef_ori"] = robot.get_eef_orientation(default_arm)
         return obs
 
     def set_damageable_object_params(self):
@@ -365,9 +392,13 @@ class DamageableEnvironment(Environment):
                 if obj.category in PARAMS:
                     obj.set_params(PARAMS[obj.category])
                     print(f"Set params for {obj.name} to {PARAMS[obj.category]}")
-                    if PARAMS[obj.category].get("damageable_links") is not None:
-                        obj.set_damageable_links(PARAMS[obj.category].get("damageable_links"))
-                        print(f"Set damageable links for {obj.name} to {PARAMS[obj.category].get('damageable_links')}")
+                    if PARAMS[obj.category].get("damageable_links") is not None or PARAMS[obj.category].get(f"{obj.__class__.__name__.lower()}_damageable_links") is not None:
+                        if obj.category == "agent":
+                            obj.set_damageable_links(PARAMS[obj.category].get(f"{obj.__class__.__name__.lower()}_damageable_links"))
+                            print(f"Set damageable links for {obj.name} to {PARAMS[obj.category].get(f'{obj.__class__.__name__.lower()}_damageable_links')}")
+                        else:
+                            obj.set_damageable_links(PARAMS[obj.category].get("damageable_links"))
+                            print(f"Set damageable links for {obj.name} to {PARAMS[obj.category].get('damageable_links')}")
                 else:
                     obj.set_params(PARAMS["default"])
 
@@ -559,6 +590,27 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         if external_sensors_config is not None:
             config["env"]["external_sensors"] = external_sensors_config
 
+        # Patch the OmniGibson object registry so that BEHAVIOR-created objects use
+        # damageable variants (e.g., DatasetObject -> DamageableDatasetObject).
+        # This must happen before the underlying OG environment (and its BehaviorTask)
+        # create any scene objects.
+        global BEHAVIOR_DAMAGEABLE_PATCHED
+        if not BEHAVIOR_DAMAGEABLE_PATCHED:
+            damageable_class_map = {
+                "DatasetObject": DamageableDatasetObject,
+                "PrimitiveObject": DamageablePrimitiveObject,
+                "USDObject": DamageableUSDObject,
+                "ControllableObject": DamageableControllableObject,
+                "LightObject": DamageableLightObject,
+                "StatefulObject": DamageableStatefulObject,
+            }
+            for class_name, damageable_cls in damageable_class_map.items():
+                if class_name in REGISTERED_OBJECTS:
+                    REGISTERED_OBJECTS[class_name] = damageable_cls
+                # if class_name in REGISTERED_ROBOTS:
+                #     REGISTERED_ROBOTS[class_name] = damageable_cls
+            BEHAVIOR_DAMAGEABLE_PATCHED = True
+
         # Load env - Use DamageableEnvironment instead of og.Environment
         env = DamageableEnvironment(configs=config)
 
@@ -632,6 +684,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
 
         result = []
         
+        # breakpoint()
         # Reset environment and update this to be the new initial state
         self.scene.restore(self.scene_file, update_initial_file=True)
 
@@ -641,8 +694,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             self.env.initialize_damageable_objects()
         if hasattr(self.env, "set_damageable_object_params"):
             self.env.set_damageable_object_params()
-        breakpoint()
-
+        
         # Reset object attributes from the stored metadata
         with og.sim.stopped():
             for attr, vals in init_metadata.items():
@@ -682,6 +734,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             self.current_obs, _, _, _, init_info = self.env.step(
                 action=action[0], n_render_iterations=self.n_render_iterations + first_time_load_n_iteration
             )
+            # breakpoint()
             step_data = {"obs": self._process_obs(obs=self.current_obs, info=init_info)}
             self.current_traj_history.append(step_data)
 
@@ -690,6 +743,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             print(f"================= object names in the scene =================")
             all_objs = og.sim.scenes[0].objects
             print([o.name for o in all_objs])
+        # breakpoint()
 
         for i, (a, s, ss, r, te, tr) in enumerate(
             zip(action, state[1:], state_size[1:], reward, terminated, truncated)
@@ -702,7 +756,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                     breakpoint()
 
             # # For debugging
-            # if i > 100:
+            # if i > 20:
             #     break
 
             # Execute any transitions that should occur at this current step

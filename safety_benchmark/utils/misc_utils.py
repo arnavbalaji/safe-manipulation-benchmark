@@ -27,10 +27,10 @@ def json_default(o):
             pass
     raise TypeError(f"Object of type {type(o)} not JSON serializable")
 
-def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, camera_name, target_objects, obs_info_list, health):
-    imgs = hdf5_file[f"data/demo_0/obs/{camera_type}::{camera_name}::rgb"]
+def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, camera_name, target_objects, obs_info_list, health, demo_idx=0):
+    imgs = hdf5_file[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
     imgs = imgs[1:]
-    imgs_seg_instance = hdf5_file[f"data/demo_0/obs/{camera_type}::{camera_name}::seg_instance"]
+    imgs_seg_instance = hdf5_file[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::seg_instance"]
     imgs_seg_instance = imgs_seg_instance[1:]
 
     # Write  camera video
@@ -55,9 +55,9 @@ def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, cam
                 if health[obj_name][i] == 0.0:
                     # breakpoint()
                     img[img_seg_instance == seg_instance_key] = (0, 0, 255)
-                    if obj_name == "tiago0":
-                        break_loop = True
-                        break
+                    # if obj_name == "tiago0":
+                    #     break_loop = True
+                    #     break
             vw_e.write(np.ascontiguousarray(img, dtype=np.uint8))
             if break_loop:
                 for _ in range(5):
@@ -176,3 +176,123 @@ def save_combined_video(video_1, video_2, output_video_path, delete_intermediate
         os.remove(video_1)
     if delete_intermediate_video_2:
         os.remove(video_2)
+
+def save_force_contact_video(
+    output_video_path, data, imgs, contact_info, target_objects, forces_to_plot=["dynamic_forces", "static_forces", "raw_forces_from_sim"]):
+    T = len(data[target_objects[0]][forces_to_plot[0]])
+    fps = 30
+
+    # ---------------------------
+    # Figure: 1 row, 2 columns
+    # Left  = video
+    # Right = your 3 vertical subplots
+    # ---------------------------
+    fig = plt.figure(figsize=(14, 6))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.2])
+
+    # ---------------------------
+    # LEFT: RGB VIDEO PANEL
+    # ---------------------------
+    ax_video = fig.add_subplot(gs[0, 0])
+    ax_video.axis("off")
+    video_im = ax_video.imshow(imgs[0][:, :, :3])  # will be updated each frame
+
+    # ---------------------------
+    # RIGHT: THREE STACKED SUBPLOTS
+    # ---------------------------
+    right = gs[0, 1].subgridspec(2, 1, hspace=0.45)
+    ax1 = fig.add_subplot(right[0, 0])
+    ax2 = fig.add_subplot(right[1, 0], sharex=ax1)
+
+    # Fix layout manually so they don't overlap
+    fig.subplots_adjust(hspace=0.45, left=0.05, right=0.97)
+
+    # ---------------------------
+    # AX1 — Force History
+    # ---------------------------
+    force_lines = dict()
+    ax1.set_title("Force History")
+    ax1.set_ylabel("End-effector Force (N)")
+    ax1.set_ylim(0, 500.0)
+    ax1.set_xlim(0, T)
+    ax1.grid(True)
+
+    # ---------------------------
+    # AX2 — Contact History
+    # ---------------------------
+    contact_lines = dict()
+    ax2.set_title("Contact History")
+    ax2.set_ylabel("Contact (1) or No Contact (0)")
+    ax2.set_xlabel("Time step")
+    ax2.set_ylim(-0.1, 1.1)
+    ax2.grid(True)
+    ax2.set_xlim(0, T)
+
+    for obj_name in target_objects:
+        for force_key in forces_to_plot:
+            force_lines[f"{obj_name}_{force_key}"], = ax1.plot([], [], lw=2, label=obj_name + ' ' + force_key + ' Forces')
+            contact_lines[f"{obj_name}"], = ax2.plot([], [], lw=2, label=obj_name + ' Contact')
+
+    ax1.legend(loc="upper right", fontsize=9)
+    ax2.legend(loc="upper right", fontsize=9)
+
+    # ---------------------------
+    # INIT FUNCTION
+    # ---------------------------
+    def init():
+        video_im.set_data(imgs[0])
+
+        for line in force_lines.values():
+            line.set_data([], [])
+
+        for line in contact_lines.values():
+            line.set_data([], [])
+        
+        return (
+            [video_im]
+            + list(force_lines.values())
+            + list(contact_lines.values())
+        )
+
+    # ---------------------------
+    # ANIMATION STEP
+    # ---------------------------
+    def animate(i):
+        # --- RGB video update ---
+        video_im.set_data(imgs[i][:, :, :3])
+
+        # --- Force ---
+        for obj_name in target_objects:
+            for force_key in forces_to_plot:
+                force_lines[f"{obj_name}_{force_key}"].set_data(range(i + 1), data[obj_name][force_key][:i + 1])
+
+        # --- Contact ---
+        for obj_name in target_objects:
+            contact_lines[f"{obj_name}"].set_data(range(i + 1), contact_info[obj_name][:i + 1])
+
+        return (
+            [video_im]
+            + list(force_lines.values())
+            + list(contact_lines.values())
+        )
+
+    # ---------------------------
+    # SAVE ANIMATION
+    # ---------------------------
+    ani = animation.FuncAnimation(
+        fig,
+        animate,
+        init_func=init,
+        frames=T,
+        interval=1000 / fps,
+        blit=True
+    )
+
+    writer = animation.FFMpegWriter(
+        fps=fps,
+        codec="mpeg4",
+        extra_args=["-vcodec", "mpeg4", "-qscale", "5"]
+    )
+
+    ani.save(output_video_path, writer=writer)
+    plt.close(fig)

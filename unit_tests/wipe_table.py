@@ -185,7 +185,7 @@ def __main__():
         target_objects_forces = ["tiago0@gripper_right_link", "tiago0@gripper_right_left_finger_link", "tiago0@gripper_right_right_finger_link"]
         data = dict()
         # options: ["impact_forces", "qs_forces", "raw_forces_from_sim"]
-        force_keys = ["impact_forces", "qs_forces"]
+        force_keys = ["filtered_raw_sim_forces"]
         for obj_name in target_objects_forces:
             data[obj_name] = dict()
             for force_key in force_keys:

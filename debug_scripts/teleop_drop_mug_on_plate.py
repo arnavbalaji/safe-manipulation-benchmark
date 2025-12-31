@@ -56,7 +56,8 @@ TASK_OBJECTS = {
         "name": "coffee_cup_1",
         "category": "coffee_cup",
         "model": "rypdvd",
-        "position": [-0.6, -1.7, 1.2],
+        # "position": [-0.6, -1.7, 1.2],
+        "position": [-0.6, -1.7, 3.0],
         "orientation": [0.0, 0.0, 0.0, 1.0]
         # "scale": [1.0, 1.0, 1.0],
     },
@@ -65,7 +66,8 @@ TASK_OBJECTS = {
         "name": "coffee_cup_2",
         "category": "coffee_cup",
         "model": "rypdvd",
-        "position": [-0.6, -2.6, 0.7],
+        # "position": [-0.6, -2.6, 0.7],
+        "position": [-0.6, -2.6, 3.0],
         "orientation": [0.0, 0.0, 0.0, 1.0],
         # "scale": [1.0, 1.0, 1.0],
     },
@@ -96,6 +98,7 @@ def __main__():
     # cfg["scene"]["type"] = "Scene"
     # cfg["scene"]["scene_id"] = "empty"
     cfg["scene"]["load_object_categories"] = ["floors", "walls", "coffee_table"]
+    cfg["scene"]["not_load_object_categories"] = ["ceilings"]
 
 
     # Always spawn robot at the origin with no rotation (this is to be compatible with curobo)
@@ -207,6 +210,9 @@ def __main__():
 
     # set viewer camera
     og.sim.viewer_camera.set_position_orientation(position=th.tensor([ 1.1553, -2.2072,  1.0119]), orientation=th.tensor([0.4284, 0.4160, 0.5588, 0.5755]))
+    
+    obj = env.scene.object_registry("name", "ceilings_phrrml_0")
+    env.scene.remove_object(obj)
     
     # To obtain keyboard events
     if teleop:
