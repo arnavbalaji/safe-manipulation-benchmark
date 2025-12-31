@@ -125,8 +125,9 @@ class DamageableEnvironment(Environment):
         # Load the scene, robots, and task
         og.sim.stop()
         self._load_scene()
-        self._load_robots()
+        # NOTE: Load robot after objects to ensure correct loading of AG
         self._load_objects()
+        self._load_robots()
         self._load_task()
         self._load_external_sensors()
         og.sim.play()
@@ -381,8 +382,9 @@ class DamageableEnvironment(Environment):
         # Use robot's default arm (handles both Tiago "right"/"left" and Franka "0")
         robot = self.robots[0]
         default_arm = robot.default_arm if hasattr(robot, "default_arm") else "right"
-        obs["eef_pos"] = robot.get_eef_position(default_arm)
-        obs["eef_ori"] = robot.get_eef_orientation(default_arm)
+        eef_pose = robot.get_relative_eef_pose(default_arm)
+        obs["eef_pos"] = eef_pose[0]
+        obs["eef_ori"] = eef_pose[1]
         return obs
 
     def set_damageable_object_params(self):
@@ -677,6 +679,16 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             reward = traj_grp["reward"]
             terminated = traj_grp["terminated"]
             truncated = traj_grp["truncated"]
+
+            # The state after reset/spawining of scene (timestep 0) during data collection and the start of teleop (timestep 1) is very different leadning to 
+            # high computation of impact forces. So, we skip the first action, state, state_size, reward, terminated, truncated.
+            action = action[1:]
+            state = state[1:]
+            state_size = state_size[1:]
+            reward = reward[1:]
+            terminated = terminated[1:]
+            truncated = truncated[1:]
+
         except KeyError as e:
             print(f"Got error when trying to load episode {episode_id}:")
             print(f"Error: {str(e)}")
@@ -723,7 +735,9 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         # Ensure simulator is playing before loading state (required by load_state)
         if not og.sim.is_playing():
             og.sim.play()
-        og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
+        # Need to step simulator twice for AG for some reason
+        for _ in range(2):
+            og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
         if callback is not None:
             result.append(callback(action=action[0]))
 
@@ -756,8 +770,11 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                     breakpoint()
 
             # # For debugging
-            # if i > 20:
-            #     break
+            # if i < 5:
+            #     import matplotlib.pyplot as plt
+            #     plt.imshow(self.current_obs["franka0::franka0:eef_link:Camera:0::rgb"])
+            #     plt.show()
+            #     breakpoint()
 
             # Execute any transitions that should occur at this current step
             if str(i) in transitions:

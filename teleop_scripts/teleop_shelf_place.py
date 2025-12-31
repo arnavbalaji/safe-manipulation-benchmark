@@ -21,17 +21,31 @@ from omnigibson.utils.ui_utils import KeyboardRobotController
 from omnigibson.envs import DataCollectionWrapper, DataPlaybackWrapper
 import omnigibson.lazy as lazy
 
+from omnigibson.controllers.controller_base import IsGraspingState
+
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper
 
 gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
 
 
-FLOUR_INIT_POS = [6.00, 0.3, 1.3]
+FLOUR_INIT_POS = [6.00, 0.35, 1.3]
 FLOUR_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
-VASE_INIT_POS = [6.00, 0.1, 1.3]
-VASE_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+# CAN_OF_SODA_INIT_POS = [6.00, 0.4, 1.3]
+# CAN_OF_SODA_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+
+BOTTLE_OF_WINE_INIT_POS = [6.00, 0.2, 1.3]
+BOTTLE_OF_WINE_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+
+WINEGLASS_INIT_POS = [6.00, 0.12, 1.3]
+WINEGLASS_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+
+BOTTLE_OF_WHISKEY_INIT_POS = [6.00, 0.0, 1.3]
+BOTTLE_OF_WHISKEY_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+
+# VASE_INIT_POS = [6.00, 0.1, 1.3]
+# VASE_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
 SHELF_INIT_POS = [6.00, 0.2, 1.3]
 SHELF_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
@@ -44,8 +58,8 @@ TASK_OBJECTS = {
         "name": "box_of_crackers",
         "category": "box_of_crackers",
         "model": "cmdigf",
-        "position": [6.30, 0.2, 1.3],
-        "orientation": [0.0, 0.0, 0.0, 1.0],
+        "position": [6.0, 0.2, 2.0],
+        "orientation": [0.0, 0.0, 0.70710678, 0.70710678],
     }, 
     "bag_of_flour": {
         "type": "DatasetObject",
@@ -56,15 +70,55 @@ TASK_OBJECTS = {
         "orientation": FLOUR_INIT_ORI,
         "scale": [1.0, 1.0, 1.0],
     },
-    "vase": {
+    # "can_of_soda": {
+    #     "type": "DatasetObject",
+    #     "name": "can_of_soda",
+    #     "category": "can_of_soda",
+    #     "model": "iloapr",
+    #     "position": CAN_OF_SODA_INIT_POS,
+    #     "orientation": CAN_OF_SODA_INIT_ORI,
+    #     "scale": [1.0, 1.0, 1.0],
+    # },
+    "bottle_of_wine": {
         "type": "DatasetObject",
-        "name": "vase",
-        "category": "vase",
-        "model": "hliauj",
-        "position": VASE_INIT_POS,
-        "orientation": VASE_INIT_ORI,
-        "scale": [0.3, 0.5, 0.7],
+        "name": "bottle_of_wine",
+        "category": "bottle_of_wine",
+        "model": "hnkiog",
+        "position": BOTTLE_OF_WINE_INIT_POS,
+        "orientation": BOTTLE_OF_WINE_INIT_ORI,
+        "scale": [1.0, 1.0, 1.0],
     },
+    "wineglass": {
+        "type": "DatasetObject",
+        "name": "wineglass",
+        "category": "wineglass",
+        "model": "adiwil",
+        "position": WINEGLASS_INIT_POS,
+        "orientation": WINEGLASS_INIT_ORI,
+        "scale": [1.0, 1.0, 1.0],
+    },
+    "bottle_of_whiskey": {
+        "type": "DatasetObject",
+        "name": "bottle_of_whiskey",
+        "category": "bottle_of_whiskey",
+        "model": "wfflbd",
+        "position": BOTTLE_OF_WHISKEY_INIT_POS,
+        "orientation": BOTTLE_OF_WHISKEY_INIT_ORI,
+        "scale": [1.0, 1.0, 1.0],
+    },
+    # whiskey.set_position_orientation([6.00, 0.00, 1.3], [0.0, 0.0, 0.0, 1.0])
+    # wineglass.set_position_orientation([6.00, 0.15, 1.3], [0.0, 0.0, 0.0, 1.0])
+    # winebottle.set_position_orientation([6.00, 0.25, 1.3], [0.0, 0.0, 0.0, 1.0])
+    # box.set_position_orientation([6.0, 0.2, 2.0], [0.0, 0.0, 0.70710678, 0.70710678])
+    # "vase": {
+    #     "type": "DatasetObject",
+    #     "name": "vase",
+    #     "category": "vase",
+    #     "model": "hliauj",
+    #     "position": VASE_INIT_POS,
+    #     "orientation": VASE_INIT_ORI,
+    #     "scale": [0.3, 0.5, 0.7],
+    # },
     "stand": {
         "type": "DatasetObject",
         "name": "stand",
@@ -76,7 +130,6 @@ TASK_OBJECTS = {
         "fixed_base": True,
     },
 }
-
 
 def __main__():
     np.random.seed(0)
@@ -109,7 +162,7 @@ def __main__():
     cfg["robots"][0] = {
         "type": "FrankaPanda",
         "name": "franka0",
-        "position": [6.7, 0.2, 1.0],  # Match Tiago base position
+        "position": [6.8, 0.2, 1.0],  # Match Tiago base position
         "orientation": [0.0, 0.0, 1.0, 0.0],
         "grasping_mode": "assisted",
         "obs_modalities": ["rgb", "depth"],
@@ -119,6 +172,7 @@ def __main__():
         "controller_config": {
             "arm_0": {
                 "name": "InverseKinematicsController",
+                # "name": "JointController",
                 "command_input_limits": None,
             },
             "gripper_0": {
@@ -230,16 +284,33 @@ def __main__():
         # obj_attr_keys=["scale", "visible"],
         enable_dump_filters=False,
     )
+    # env = og.Environment(configs=cfg)        
+    # env = DataCollectionWrapper(
+    #     env=env,
+    #     output_path=collect_hdf5_path,
+    #     only_successes=False,
+    #     # obj_attr_keys=["scale", "visible"],
+    #     enable_dump_filters=False,
+    # )
+
     robot = env.robots[0]
     # set viewer camera
     og.sim.viewer_camera.set_position_orientation(
-        position=th.tensor([7.5, 0.05, 1.37]),
-        orientation=th.tensor([0.5051, -0.0412, -0.0701,  0.8592]),
+        position=th.tensor([ 7.0659, -0.7141,  1.9185]),
+        orientation=th.tensor([0.4850, 0.1528, 0.2586, 0.8213]),
     )
     for _ in range(10): og.sim.step()
 
     # Franka default joint positions (7 arm joints + 2 gripper joints)
     robot.set_joint_positions(th.tensor([0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]))
+
+    # load state
+    # with open("shelf_init_state_dict.pkl", "rb") as f: state_dict = pickle.load(f)
+    # with open("resources/saved_states/shelf_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
+    # og.sim.load_state(state_flat_array, serialized=True)
+    # for _ in range(10): og.sim.step()
+    # breakpoint()
+
     
     # Tiago joint positions (commented out - different DOF count)
     # robot.set_joint_positions(th.tensor([0.2, 0.517,  3.4369e-04,  3.0920e-07, -1.2731e-07,
@@ -254,19 +325,23 @@ def __main__():
     for _ in range(10):
         og.sim.step()
 
-    # Telemoma: Teleoperate robot
-    arm_teleop_method = "spacemouse"
-    base_teleop_method = "spacemouse"
-    # Franka uses arm_0 instead of arm_left/arm_right
-    teleop_config.arm_0_controller = arm_teleop_method
-    # Tiago config (commented out):
-    # teleop_config.arm_left_controller = arm_teleop_method
-    # teleop_config.arm_right_controller = arm_teleop_method
-    teleop_config.base_controller = base_teleop_method
-    teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
-    teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.01}
-    teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
-    teleop_sys.start()
+    # controller_config = {"arm_0": {"name": "JointController", "command_input_limits": None}, "gripper_0": {"name": "MultiFingerGripperController", "command_input_limits": (0.0, 1.0), "mode": "smooth"},}
+    # controller_config = {"arm_0": {"name": "InverseKinematicsController", "command_input_limits": None}, "gripper_0": {"name": "MultiFingerGripperController", "command_input_limits": (0.0, 1.0), "mode": "smooth"},}
+    # robot.reload_controllers(controller_config=controller_config)
+
+    # # Telemoma: Teleoperate robot
+    # arm_teleop_method = "spacemouse"
+    # base_teleop_method = "spacemouse"
+    # # Franka uses arm_0 instead of arm_left/arm_right
+    # teleop_config.arm_0_controller = arm_teleop_method
+    # # Tiago config (commented out):
+    # # teleop_config.arm_left_controller = arm_teleop_method
+    # # teleop_config.arm_right_controller = arm_teleop_method
+    # teleop_config.base_controller = base_teleop_method
+    # teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
+    # teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.01}
+    # teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
+    # teleop_sys.start()
 
     # Keyboard Teleop
     action_generator = KeyboardRobotController(robot=robot)
@@ -300,9 +375,14 @@ def __main__():
             # Not using telemoma for now
             # action = teleop_sys.get_action(teleop_sys.get_obs())
             action, keypress_str = action_generator.get_teleop_action()
+            # if robot.is_grasping().value == IsGraspingState.TRUE:
+            #     action[robot.gripper_action_idx[robot.default_arm]] = -1.0
             if keypress_str == "TAB":
+                # state = og.sim.dump_state(serialized=True)
+                # with open("shelf_init_state_2.pkl", "wb") as f: pickle.dump(state, f)
+
                 breakpoint()
-                break
+                # break
             env.step(action)
     print("Data saved")
     env.save_data()
