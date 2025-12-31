@@ -59,9 +59,20 @@ def __main__():
     parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics')
     args = parser.parse_args()
 
+    from pathlib import Path
+
+    root_path = "/home/arpit"
+    print("Searching for Isaac-GR00T in ", root_path)
+    root = Path(root_path)
+    matches = list(root.rglob("Isaac-GR00T"))
+    for m in matches:
+        if m.is_dir():
+            print(m)
+    isaac_gr00t_path = m
+
     # TODO: Set this 
-    collect_hdf5_path = f"/home/arpit/test_projects/groot/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.rollout_name}.hdf5"
-    output_hdf5_path = f"/home/arpit/test_projects/groot/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.rollout_name}_playback.hdf5"
+    collect_hdf5_path = f"{isaac_gr00t_path}/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.rollout_name}.hdf5"
+    output_hdf5_path = f"{isaac_gr00t_path}/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.rollout_name}_playback.hdf5"
     hdf5_file = h5py.File(collect_hdf5_path, "r")
 
     if args.playback:
