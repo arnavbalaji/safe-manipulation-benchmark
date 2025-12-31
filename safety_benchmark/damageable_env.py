@@ -125,8 +125,9 @@ class DamageableEnvironment(Environment):
         # Load the scene, robots, and task
         og.sim.stop()
         self._load_scene()
-        self._load_robots()
+        # NOTE: Load robot after objects to ensure correct loading of AG
         self._load_objects()
+        self._load_robots()
         self._load_task()
         self._load_external_sensors()
         og.sim.play()
@@ -730,7 +731,9 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         # Ensure simulator is playing before loading state (required by load_state)
         if not og.sim.is_playing():
             og.sim.play()
-        og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
+        # Need to step simulator twice for AG for some reason
+        for _ in range(2):
+            og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
         if callback is not None:
             result.append(callback(action=action[0]))
 
