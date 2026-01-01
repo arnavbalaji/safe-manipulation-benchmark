@@ -1,6 +1,7 @@
 from ast import Pass
 import os
 os.environ["CARB_LOG_CHANNELS"] = "omni.physx.plugin=off"
+import cv2
 import yaml
 import json
 import h5py
@@ -16,7 +17,7 @@ from omnigibson.macros import gm
 import omnigibson.lazy as lazy
 
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
-from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video, save_forces_video, save_force_contact_video
+from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video, save_forces_video, save_force_contact_video, save_rgb_force_video, save_rgb_health_video
 
 gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
@@ -61,14 +62,17 @@ def __main__():
 
     from pathlib import Path
 
-    root_path = "/home/arpit"
-    print("Searching for Isaac-GR00T in ", root_path)
-    root = Path(root_path)
-    matches = list(root.rglob("Isaac-GR00T"))
-    for m in matches:
-        if m.is_dir():
-            print(m)
-    isaac_gr00t_path = m
+    # root_path = "/home/arpit"
+    # print("Searching for Isaac-GR00T in ", root_path)
+    # root = Path(root_path)
+    # matches = list(root.rglob("Isaac-GR00T"))
+    # for m in matches:
+    #     if m.is_dir():
+    #         print(m)
+    # isaac_gr00t_path = m
+
+    # If want to use a specific path, uncomment the following line
+    isaac_gr00t_path = "/home/arpit/projects/Isaac-GR00T"
 
     # TODO: Set this 
     collect_hdf5_path = f"{isaac_gr00t_path}/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.rollout_name}.hdf5"
@@ -92,7 +96,7 @@ def __main__():
                 "position": [-0.2, 0.6, 2.0],
                 "orientation": [-0.1930, 0.4163, 0.8062, -0.3734],
             },
-            # Right Shoulder (fixed to base_link frame)
+            # # Right Shoulder (fixed to base_link frame)
             # "external_sensor2": {
             #     "position": [-0.2, -0.6, 2.0],
             #     "orientation": [0.4164, -0.1929, -0.3737, 0.8060],
@@ -115,6 +119,12 @@ def __main__():
                 "pose_frame": "parent",
             })
 
+        # if output_hdf5_path already exists, ask user if they want to overwrite it
+        if os.path.exists(output_hdf5_path):
+            overwrite = input(f"Output file {output_hdf5_path} already exists. Do you want to overwrite it? (y/n): ")
+            if overwrite != "y":
+                print("Exiting...")
+                return
         
         env = DamageableDataPlaybackWrapper.create_from_hdf5(
             input_path=collect_hdf5_path,
@@ -148,7 +158,7 @@ def __main__():
         camera_name = "external_sensor1"
         # breakpoint()
 
-        output_video_dir = f"/home/arpit/test_projects/groot/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/videos"
+        output_video_dir = f"{isaac_gr00t_path}/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/videos"
         os.makedirs(output_video_dir, exist_ok=True)
         visualization_config = get_visualization_config(args.task_name, robot_name)
         target_objects_health_with_links = visualization_config["target_objects_health_with_links"]
@@ -157,6 +167,9 @@ def __main__():
         target_contact_bodies = visualization_config["target_contact_bodies"]
         force_keys = visualization_config["force_keys"]
 
+        final_obj_healths = defaultdict(list)
+        final_env_healths = []
+        
         for demo_idx in range(len(f["data"])):
             # Parse info to obtain relevant information for visualization
             obs_info_list = []
@@ -164,16 +177,14 @@ def __main__():
                 # Obtain observation information 
                 obs_info = json.loads(f[f"data/demo_{demo_idx}/info/obs_info"][i].decode("utf-8"))
                 obs_info_list.append(obs_info)
-            # breakpoint()
 
             # Obtain health information for the target objects per link
-            # target_objects = [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "microwave_hjjxmi_0@base_link", "microwave_hjjxmi_0@link_0"]
-            # target_objects = [f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2"]
             all_obj_healths = np.array(f[f"data/demo_{demo_idx}/obs/health"])
             health_list_link_names = f[f"data/demo_{demo_idx}"].attrs["health_list_link_names"]
             health = dict()
             for obj_name in target_objects_health_with_links:
                 health[obj_name] = all_obj_healths[:, np.where(health_list_link_names == obj_name)[0][0]]
+                health[obj_name] = health[obj_name][1:]
 
             # Obtain health information for the entire target objects 
             for obj_name in target_objects_health:
@@ -186,8 +197,6 @@ def __main__():
 
             if args.compute_metrics:
                 print("Episode: ", demo_idx)
-                final_obj_healths = defaultdict(list)
-                final_env_healths = []
                 current_env_health = 0.0
                 for obj_name in target_objects_health:
                     final_obj_healths[obj_name].append(health[obj_name][-1])
@@ -195,21 +204,40 @@ def __main__():
                     current_env_health += health[obj_name][-1]
                 final_env_healths.append(current_env_health / len(target_objects_health))
                 print(f"Current environment health: ", final_env_healths[-1])
-                # task_success_without_health =
             
             if args.visualize:
                 # Save video for rgb camera
                 output_video_path = f"{output_video_dir}/{args.rollout_name}_demo_{demo_idx}_camera_video"
-                save_camera_video(hdf5_file=f, 
-                            output_video_path=output_video_path,
-                            robot_name=robot_name, 
-                            camera_type=camera_type, 
-                            camera_name=camera_name,
-                            target_objects=target_objects_health,
-                            obs_info_list=obs_info_list,
-                            health=health,
-                            demo_idx=demo_idx)
+                imgs = f[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
+                imgs = imgs[1:]
+                new_imgs = []
+                imgs_seg_instance = f[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::seg_instance"]
+                imgs_seg_instance = imgs_seg_instance[1:]
 
+                for i, img in enumerate(imgs):
+                    img = cv2.cvtColor(img[:, :, :3], cv2.COLOR_RGB2BGR)
+                    img_seg_instance = imgs_seg_instance[i]
+                    obs_info = obs_info_list[i]
+                    for obj_name in target_objects_health:
+                        seg_instance_info = obs_info[camera_type][camera_name]["seg_instance"]
+                        seg_instance_key = int(next((k for k, v in seg_instance_info.items() if v == obj_name), -1))
+
+                        # # If binary visualization, set to red if 0
+                        # if health[obj_name][i] is not None and health[obj_name][i] == 0.0:
+                        #     mask = img_seg_instance == seg_instance_key
+                        #     overlay_color = np.array([0, 0, 255], dtype=np.uint8)  # BGR
+                        #     img[mask] = overlay_color
+
+                        # If continuous visualization, set to different shades of red if < 100
+                        if health[obj_name][i] is not None and health[obj_name][i] < 100:
+                            mask = img_seg_instance == seg_instance_key
+                            alpha = 1 - health[obj_name][i] / 100.0  # 0 = full health, 1 = dead
+                            overlay_color = np.array([0, 0, 255], dtype=np.uint8)  # BGR
+                            img[mask] = ((1 - alpha) * img[mask] + alpha * overlay_color).astype(np.uint8)
+                    
+                    new_imgs.append(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                imgs = np.array(new_imgs)
+                save_camera_video(output_video_path=output_video_path, imgs=imgs)
             
                 # Obtain forces information for the target objects
                 # target_objects_forces = [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"]
@@ -231,44 +259,40 @@ def __main__():
                 
                 # Save videos for forces plot
                 forces_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_forces_video.mp4")
-                save_forces_video(output_video_path=forces_video_path, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
-                combined_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_combined_video_forces.mp4")
-                save_combined_video(video_1=output_video_path+".mp4", video_2=forces_video_path, output_video_path=combined_video_path, delete_intermediate_video_2=True)
+                save_rgb_force_video(output_video_path=forces_video_path, imgs=imgs, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
 
                 # Save video for health plot
                 health_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_health_video.mp4")
-                save_health_video(output_video_path=health_video_path, target_objects=target_objects_health, health=health)
-                combined_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_combined_video_health.mp4")
-                save_combined_video(video_1=output_video_path+".mp4", video_2=health_video_path, output_video_path=combined_video_path, delete_intermediate_video_2=True)
+                save_rgb_health_video(output_video_path=health_video_path, imgs=imgs, target_objects=target_objects_health, health=health)
 
-                # Save video for force and contact plot
                 # Obtain contact information for the target objects
-                contact_info = dict()
-                for obj_name in target_objects_forces:
-                    contact_info[obj_name] = []
-                for i in range(len(f[f"data/demo_{demo_idx}/info/damage_info"])):
-                    damage_info = json.loads(f[f"data/demo_{demo_idx}/info/damage_info"][i].decode("utf-8"))
-                    for obj_full_name in target_objects_forces:
-                        obj_name = obj_full_name.split("@")[0]
-                        obj_link_name = obj_full_name.split("@")[1]
-                        contact_list = damage_info[obj_name][obj_link_name]["mechanical"]["contacts"]
-                        contact_found = False
-                        for contact in contact_list:
-                            for target_contact_body in target_contact_bodies:
-                                if target_contact_body in contact[2] or target_contact_body in contact[3]:
-                                    contact_found = True
-                                    break
-                        contact_info[obj_full_name].append(contact_found)
+                if args.task_name in ["clean_a_trumpet", "make_microwave_popcorn"]:
+                    contact_info = dict()
+                    for obj_name in target_objects_forces:
+                        contact_info[obj_name] = []
+                    for i in range(len(f[f"data/demo_{demo_idx}/info/damage_info"])):
+                        damage_info = json.loads(f[f"data/demo_{demo_idx}/info/damage_info"][i].decode("utf-8"))
+                        for obj_full_name in target_objects_forces:
+                            obj_name = obj_full_name.split("@")[0]
+                            obj_link_name = obj_full_name.split("@")[1]
+                            contact_list = damage_info[obj_name][obj_link_name]["mechanical"]["contacts"]
+                            contact_found = False
+                            for contact in contact_list:
+                                for target_contact_body in target_contact_bodies:
+                                    if target_contact_body in contact[2] or target_contact_body in contact[3]:
+                                        contact_found = True
+                                        break
+                            contact_info[obj_full_name].append(contact_found)
 
-                imgs = f[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
-                imgs = imgs[1:]
-                force_contact_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_force_contact_video.mp4")
-                save_force_contact_video(output_video_path=force_contact_video_path, data=data, imgs=imgs, contact_info=contact_info, target_objects=target_objects_forces, forces_to_plot=force_keys)
+                    # Save video for force and contact plot
+                    force_contact_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_force_contact_video.mp4")
+                    save_force_contact_video(output_video_path=force_contact_video_path, data=data, imgs=imgs, contact_info=contact_info, target_objects=target_objects_forces, forces_to_plot=force_keys)
 
     if args.compute_metrics:
         for obj_name in target_objects_health:
             print(f"Average health for {obj_name}: {np.mean(final_obj_healths[obj_name])}")
         print(f"Average environment health: {np.mean(final_env_healths)}")
+        breakpoint()
     
     # Shutdown simulation after all processing is complete
     og.shutdown()

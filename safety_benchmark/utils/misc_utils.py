@@ -27,155 +27,231 @@ def json_default(o):
             pass
     raise TypeError(f"Object of type {type(o)} not JSON serializable")
 
-def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, camera_name, target_objects, obs_info_list, health, demo_idx=0):
-    imgs = hdf5_file[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
-    imgs = imgs[1:]
-    imgs_seg_instance = hdf5_file[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::seg_instance"]
-    imgs_seg_instance = imgs_seg_instance[1:]
 
-    # Write  camera video
-    fps = 30
+def save_camera_video(output_video_path, imgs, fps=30):
     avi_video = output_video_path + ".avi"
     mp4_video = output_video_path + ".mp4"
-    break_loop = False
     if len(imgs) > 0:
         he, we = imgs[0].shape[:2]
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
         vw_e = cv2.VideoWriter(avi_video, fourcc, fps, (we, he))
         for i, img in enumerate(imgs):
             img = cv2.cvtColor(img[:, :, :3], cv2.COLOR_RGB2BGR)
-            # breakpoint()
-            # vw_e.write(np.ascontiguousarray(img, dtype=np.uint8))
-            img_seg_instance = imgs_seg_instance[i]
-            obs_info = obs_info_list[i]
-            for obj_name in target_objects:
-                seg_instance_info = obs_info[camera_type][camera_name]["seg_instance"]
-                # print("seg_instance_info: ", i, seg_instance_info)
-                seg_instance_key = int(next((k for k, v in seg_instance_info.items() if v == obj_name), -1))
-                if health[obj_name][i] == 0.0:
-                    # breakpoint()
-                    img[img_seg_instance == seg_instance_key] = (0, 0, 255)
-                    # if obj_name == "tiago0":
-                    #     break_loop = True
-                    #     break
             vw_e.write(np.ascontiguousarray(img, dtype=np.uint8))
-            if break_loop:
-                for _ in range(5):
-                    vw_e.write(np.ascontiguousarray(img, dtype=np.uint8))                
-                break
-
         vw_e.release()
-        subprocess.run(["ffmpeg", "-y", "-i", avi_video, "-c:v", "mpeg4", mp4_video], check=True)
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-i", avi_video,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            mp4_video
+        ], check=True)
         os.remove(avi_video)
 
-def save_forces_video(output_video_path, target_objects, data, forces_to_plot=["dynamic_forces", "static_forces", "raw_forces_from_sim"]):
-    # 3. Plot them side by side
-    T = len(data[target_objects[0]][forces_to_plot[0]])
-    # Clamp health plot to [0, 100]
-    y_min = -1.0
-    y_max = 500.0
-    fps = 30
 
-    fig, ax = plt.subplots(figsize=(9.6, 5.4))
-    dynamic_forces_lines = dict()
-    lines = dict()
+def save_rgb_force_video(
+    output_video_path,
+    imgs,
+    target_objects,
+    data,
+    forces_to_plot=("dynamic_forces", "static_forces", "raw_forces_from_sim"),
+    fps=30,
+):
+    T = len(data[target_objects[0]][forces_to_plot[0]])
+
+    # ---------------------------
+    # FIGURE: 1 row, 2 columns
+    # ---------------------------
+    fig = plt.figure(figsize=(14, 6))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.2])
+
+    # ---------------------------
+    # LEFT: RGB VIDEO
+    # ---------------------------
+    ax_video = fig.add_subplot(gs[0, 0])
+    ax_video.axis("off")
+    video_im = ax_video.imshow(imgs[0][:, :, :3])
+
+    # ---------------------------
+    # RIGHT: FORCE PLOT
+    # ---------------------------
+    ax_force = fig.add_subplot(gs[0, 1])
+    ax_force.set_title("Force History")
+    ax_force.set_xlabel("Time (s)")
+    ax_force.set_ylabel("End-effector Force (N)")
+    ax_force.set_xlim(0, T / fps)
+    ax_force.set_ylim(0, 500.0)
+    ax_force.grid(True)
+
+    force_lines = {}
+
     for obj_name in target_objects:
         for force_key in forces_to_plot:
-            lines[f"{obj_name}_{force_key}"], = ax.plot([], [], lw=2, label=obj_name + ' ' + force_key + ' Forces')
-    ax.set_xlim(0, max(1, T) / fps)
-    ax.set_ylim(y_min, y_max)
-    ax.set_xlabel('Time (s)', fontsize=20)
-    ax.set_ylabel('Force', fontsize=20)
-    ax.set_title('Forces Over Time', fontsize=26)
-    ax.legend(loc='best', fontsize=16)
-    ax.tick_params(axis='both', which='major', labelsize=16, width=1.5)
-    ax.grid(True, linewidth=1.0, alpha=0.3)
-    plt.tight_layout()
+            force_lines[f"{obj_name}_{force_key}"], = ax_force.plot(
+                [],
+                [],
+                lw=2,
+                label=f"{obj_name} {force_key}",
+            )
 
-    def init_forces():
-        for key, value in data.items():
+    ax_force.legend(loc="upper right", fontsize=9)
+
+    fig.subplots_adjust(left=0.05, right=0.97, wspace=0.25)
+
+    # Precompute time axis
+    time = [i / fps for i in range(T)]
+
+    # ---------------------------
+    # INIT
+    # ---------------------------
+    def init():
+        video_im.set_data(imgs[0][:, :, :3])
+        for line in force_lines.values():
+            line.set_data([], [])
+        return [video_im] + list(force_lines.values())
+
+    # ---------------------------
+    # ANIMATE
+    # ---------------------------
+    def animate(i):
+        # RGB frame
+        video_im.set_data(imgs[i][:, :, :3])
+
+        # Force plot
+        for obj_name in target_objects:
             for force_key in forces_to_plot:
-                lines[f"{key}_{force_key}"].set_data([], [])
-        return lines.values()
+                force_lines[f"{obj_name}_{force_key}"].set_data(
+                    time[: i + 1],
+                    data[obj_name][force_key][: i + 1],
+                )
 
-    def animate_forces(i):
-        x = [k / fps for k in range(1, i + 2)]
-        for key, value in data.items():
-            for force_key in forces_to_plot:
-                lines[f"{key}_{force_key}"].set_data(x, value[force_key][: i + 1])
+        return [video_im] + list(force_lines.values())
 
-        return lines.values()
-
+    # ---------------------------
+    # SAVE
+    # ---------------------------
     ani = animation.FuncAnimation(
-        fig, animate_forces, init_func=init_forces, frames=T, interval=1000 / fps, blit=True
+        fig,
+        animate,
+        init_func=init,
+        frames=T,
+        interval=1000 / fps,
+        blit=True,
     )
-    # breakpoint()
-    writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
+
+    writer = animation.FFMpegWriter(
+        fps=fps,
+        codec="libx264",
+        extra_args=[
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+        ],
+    )
+
     ani.save(output_video_path, writer=writer)
     plt.close(fig)
 
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
-def save_health_video(output_video_path, target_objects, health):
+def save_rgb_health_video(
+    output_video_path,
+    imgs,
+    target_objects,
+    health,
+    fps=30,
+):
     T = len(health[target_objects[0]])
-    y_min = -5.0
-    y_max = 105.0
-    fps = 30
 
-    fig, ax = plt.subplots(figsize=(9.6, 5.4))
-    health_lines = dict()
+    # ---------------------------
+    # FIGURE: 1 row, 2 columns
+    # ---------------------------
+    fig = plt.figure(figsize=(14, 6))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.2])
+
+    # ---------------------------
+    # LEFT: RGB VIDEO
+    # ---------------------------
+    ax_video = fig.add_subplot(gs[0, 0])
+    ax_video.axis("off")
+    video_im = ax_video.imshow(imgs[0][:, :, :3])
+
+    # ---------------------------
+    # RIGHT: HEALTH PLOT
+    # ---------------------------
+    ax_health = fig.add_subplot(gs[0, 1])
+    ax_health.set_title("Health Over Time")
+    ax_health.set_xlabel("Time (s)")
+    ax_health.set_ylabel("Health")
+    ax_health.set_xlim(0, T / fps)
+    ax_health.set_ylim(-5.0, 105.0)
+    ax_health.grid(True)
+
+    health_lines = {}
     for obj_name in target_objects:
-        health_line, = ax.plot([], [], lw=2, label=obj_name + ' Health')
-        health_lines[obj_name] = health_line
-    ax.set_xlim(0, max(1, T) / fps)
-    ax.set_ylim(y_min, y_max)
-    ax.set_xlabel('Time (s)', fontsize=20)
-    ax.set_ylabel('Health', fontsize=20)
-    ax.set_title('Health Over Time', fontsize=26)
-    ax.legend(loc='best', fontsize=16)
-    ax.tick_params(axis='both', which='major', labelsize=16, width=1.5)
-    ax.grid(True, linewidth=1.0, alpha=0.3)
-    plt.tight_layout()
+        health_lines[obj_name], = ax_health.plot(
+            [],
+            [],
+            lw=2,
+            label=f"{obj_name} Health",
+        )
 
-    def init_health():
+    ax_health.legend(loc="upper right", fontsize=9)
+    fig.subplots_adjust(left=0.05, right=0.97, wspace=0.25)
+
+    # Precompute time axis
+    time = [i / fps for i in range(T)]
+
+    # ---------------------------
+    # INIT
+    # ---------------------------
+    def init():
+        video_im.set_data(imgs[0][:, :, :3])
+        for line in health_lines.values():
+            line.set_data([], [])
+        return [video_im] + list(health_lines.values())
+
+    # ---------------------------
+    # ANIMATE
+    # ---------------------------
+    def animate(i):
+        # RGB frame
+        video_im.set_data(imgs[i][:, :, :3])
+
+        # Health plot
         for obj_name in target_objects:
-            health_lines[obj_name].set_data([], [])
-        return health_lines.values()
+            health_lines[obj_name].set_data(
+                time[: i + 1],
+                health[obj_name][: i + 1],
+            )
 
-    def animate_health(i):
-        x = [k / fps for k in range(1, i + 2)]
-        for obj_name in target_objects:
-            y_obj_health = health[obj_name][: i + 1]
-            health_lines[obj_name].set_data(x, y_obj_health)
+        return [video_im] + list(health_lines.values())
 
-        return health_lines.values()
-
+    # ---------------------------
+    # SAVE
+    # ---------------------------
     ani = animation.FuncAnimation(
-        fig, animate_health, init_func=init_health, frames=T, interval=1000 / fps, blit=True
+        fig,
+        animate,
+        init_func=init,
+        frames=T,
+        interval=1000 / fps,
+        blit=True,
     )
-    # breakpoint()
-    writer = animation.FFMpegWriter(fps=fps, codec='mpeg4', extra_args=['-vcodec', 'mpeg4', '-qscale', '5'])
+
+    writer = animation.FFMpegWriter(
+        fps=fps,
+        codec="libx264",
+        extra_args=[
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+        ],
+    )
+
     ani.save(output_video_path, writer=writer)
     plt.close(fig)
 
-def save_combined_video(video_1, video_2, output_video_path, delete_intermediate_video_1=False, delete_intermediate_video_2=False):
-    # Rename final combined video to {object}_with_health.mp4
-    if os.path.exists(video_1) and os.path.exists(video_2):
-        subprocess.run([
-            'ffmpeg', '-y',
-            '-i', video_1,
-            '-i', video_2,
-            '-filter_complex',
-            '[0:v]scale=1080:720,setsar=1[left];[1:v]scale=1080:720,setsar=1[right];[left][right]hstack=inputs=2[v]',
-            '-map', '[v]',
-            '-c:v', 'mpeg4',
-            '-q:v', '5',
-            output_video_path
-        ], check=True)
-
-    if delete_intermediate_video_1:
-        os.remove(video_1)
-    if delete_intermediate_video_2:
-        os.remove(video_2)
 
 def save_force_contact_video(
     output_video_path, data, imgs, contact_info, target_objects, forces_to_plot=["dynamic_forces", "static_forces", "raw_forces_from_sim"]):
@@ -290,8 +366,11 @@ def save_force_contact_video(
 
     writer = animation.FFMpegWriter(
         fps=fps,
-        codec="mpeg4",
-        extra_args=["-vcodec", "mpeg4", "-qscale", "5"]
+        codec='libx264',
+        extra_args=[
+            '-pix_fmt', 'yuv420p',
+            '-movflags', '+faststart'
+        ]
     )
 
     ani.save(output_video_path, writer=writer)
