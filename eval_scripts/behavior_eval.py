@@ -121,7 +121,7 @@ def __main__():
             output_path=output_hdf5_path,
             # robot_obs_modalities=["proprio", "rgb", "depth", "seg_instance"],
             # robot_sensor_config=robot_sensor_config,
-            external_sensors_config=external_sensors_config,
+            # external_sensors_config=external_sensors_config,
             n_render_iterations=1,
             only_successes=False,
             exclude_sensor_names=["left_eef_link", "right_eef_link"]
