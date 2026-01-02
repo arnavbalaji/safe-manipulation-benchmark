@@ -28,7 +28,7 @@ def json_default(o):
     raise TypeError(f"Object of type {type(o)} not JSON serializable")
 
 
-def save_camera_video(output_video_path, imgs, fps=30):
+def save_rgb_camera_video(output_video_path, imgs, fps=30):
     avi_video = output_video_path + ".avi"
     mp4_video = output_video_path + ".mp4"
     if len(imgs) > 0:
@@ -253,7 +253,7 @@ def save_rgb_health_video(
     plt.close(fig)
 
 
-def save_force_contact_video(
+def save_rgb_force_contact_video(
     output_video_path, data, imgs, contact_info, target_objects, forces_to_plot=["dynamic_forces", "static_forces", "raw_forces_from_sim"]):
     T = len(data[target_objects[0]][forces_to_plot[0]])
     fps = 30

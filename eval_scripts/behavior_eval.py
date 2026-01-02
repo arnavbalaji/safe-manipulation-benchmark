@@ -17,7 +17,7 @@ from omnigibson.macros import gm
 import omnigibson.lazy as lazy
 
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
-from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video, save_forces_video, save_force_contact_video, save_rgb_force_video, save_rgb_health_video
+from safety_benchmark.utils.misc_utils import save_rgb_camera_video, save_rgb_force_contact_video, save_rgb_force_video, save_rgb_health_video
 
 gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
@@ -131,6 +131,7 @@ def __main__():
             output_path=output_hdf5_path,
             # robot_obs_modalities=["proprio", "rgb", "depth", "seg_instance"],
             # robot_sensor_config=robot_sensor_config,
+            # NOTE: comment this out to save space by not saving rgb images for all the episodes. Choose the ones you want to visualize later.
             # external_sensors_config=external_sensors_config,
             n_render_iterations=1,
             only_successes=False,
@@ -237,7 +238,7 @@ def __main__():
                     
                     new_imgs.append(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
                 imgs = np.array(new_imgs)
-                save_camera_video(output_video_path=output_video_path, imgs=imgs)
+                save_rgb_camera_video(output_video_path=output_video_path, imgs=imgs)
             
                 # Obtain forces information for the target objects
                 # target_objects_forces = [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"]
@@ -286,7 +287,7 @@ def __main__():
 
                     # Save video for force and contact plot
                     force_contact_video_path = os.path.join(output_video_dir, f"{args.rollout_name}_demo_{demo_idx}_force_contact_video.mp4")
-                    save_force_contact_video(output_video_path=force_contact_video_path, data=data, imgs=imgs, contact_info=contact_info, target_objects=target_objects_forces, forces_to_plot=force_keys)
+                    save_rgb_force_contact_video(output_video_path=force_contact_video_path, data=data, imgs=imgs, contact_info=contact_info, target_objects=target_objects_forces, forces_to_plot=force_keys)
 
     if args.compute_metrics:
         for obj_name in target_objects_health:
