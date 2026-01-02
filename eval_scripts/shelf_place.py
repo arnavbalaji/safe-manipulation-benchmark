@@ -1,3 +1,5 @@
+# TODO(junhong): we haven't made the global class ID mapping in the observation processor yet.
+
 import sys
 sys.path.insert(0, "/home/juxu/Research/safe-manipulation/rl-flow-matching")
 
