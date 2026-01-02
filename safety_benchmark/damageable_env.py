@@ -694,6 +694,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         
         # breakpoint()
         # Reset environment and update this to be the new initial state
+        self.reset()
         self.scene.restore(self.scene_file, update_initial_file=True)
 
         # Call set_damageable_object_params() on the wrapped environment if it has this method
