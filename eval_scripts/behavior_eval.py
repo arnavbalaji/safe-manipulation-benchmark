@@ -148,7 +148,7 @@ def __main__():
         for _ in range(10): og.sim.step()
 
         # Playback the dataset
-        env.playback_dataset(record_data=True, demo_ids=[0, 1, 2])
+        env.playback_dataset(record_data=True)
         # breakpoint()
             
         env.save_data()        

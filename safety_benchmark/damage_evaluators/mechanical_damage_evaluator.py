@@ -310,4 +310,14 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             init_contacts_list = link.contact_list()
             init_previous_unique_contact_bodies = {c.body1 for c in init_contacts_list}
             self.previous_unique_contact_bodies[link_name] = init_previous_unique_contact_bodies
+            self.impact_forces[link_name] = []
+            self.unfiltered_raw_sim_forces[link_name] = []
+            self.filtered_raw_sim_forces[link_name] = []
+            self.unfiltered_qs_forces[link_name] = []
+            self.filtered_qs_forces[link_name] = []
+            self.contacts_by_link[link_name] = []
+
+    def update_link_positions_and_velocities(self):
+        self.prev_link_positions = {link_name: link.get_position_orientation()[0] for link_name, link in self.entity.links.items()}
+        self.prev_link_velocities = {link_name: th.zeros(3) for link_name in self.entity.links.keys()}
     

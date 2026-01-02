@@ -677,7 +677,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             terminated = traj_grp["terminated"]
             truncated = traj_grp["truncated"]
 
-            # The state after reset/spawining of scene (timestep 0) during data collection and the start of teleop (timestep 1) is very different leadning to 
+            # The state after reset/spawining of scene (timestep 0) during data collection and the start of teleop (timestep 1) is very different leading to 
             # high computation of impact forces. So, we skip the first action, state, state_size, reward, terminated, truncated.
             action = action[1:]
             state = state[1:]
@@ -713,9 +713,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                 for attr, vals in init_metadata.items():
                     val = vals[i]
                     setattr(obj, attr, val.item() if val.ndim == 0 else val)
-        if episode_id == 1:
-            breakpoint()
-
+        
         # If not controlling robots, disable for all robots
         if not self.include_robot_control:
             for robot in self.robots:
@@ -736,10 +734,17 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         # Ensure simulator is playing before loading state (required by load_state)
         if not og.sim.is_playing():
             og.sim.play()
-        # Need to step simulator twice for AG for some reason
-        for _ in range(2): og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
+        og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
+        for _ in range(10): og.sim.step()
         if callback is not None:
             result.append(callback(action=action[0]))
+
+        # Update link positions and velocities for all damage evaluators
+        for obj in self.scene.objects:
+            if hasattr(obj, "track_damage") and obj.track_damage:
+                for evaluator in obj.damage_evaluators:
+                    if evaluator.name == "mechanical":
+                        evaluator.update_link_positions_and_velocities()
 
         # If record, record initial observations
         if record_data:
