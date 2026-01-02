@@ -187,6 +187,7 @@ class DamageableEnvironment(Environment):
         
         # Reset damage evaluators for all objects
         for obj in self.scene.objects:
+            print("obj.name, obj.track_damage: ", obj.name, obj.track_damage)
             if hasattr(obj, "track_damage") and obj.track_damage:
                 obj.reset_damage_evaluators()
                 obj._initialize_health()
@@ -693,7 +694,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         result = []
         
         # breakpoint()
-        # Reset environment and update this to be the new initial state
+        # Reset environment and update this to be the new initial state. NOTE: It is important to call reset() before calling scene.restore()
         self.reset()
         self.scene.restore(self.scene_file, update_initial_file=True)
 
@@ -712,7 +713,8 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                 for attr, vals in init_metadata.items():
                     val = vals[i]
                     setattr(obj, attr, val.item() if val.ndim == 0 else val)
-        self.reset()
+        if episode_id == 1:
+            breakpoint()
 
         # If not controlling robots, disable for all robots
         if not self.include_robot_control:
@@ -728,13 +730,14 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                             kd=None,
                         )
 
+        print(f"================= starting playback for demo {episode_id} ===================")
+        
         # Restore to initial state
         # Ensure simulator is playing before loading state (required by load_state)
         if not og.sim.is_playing():
             og.sim.play()
         # Need to step simulator twice for AG for some reason
-        for _ in range(2):
-            og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
+        for _ in range(2): og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
         if callback is not None:
             result.append(callback(action=action[0]))
 
@@ -749,26 +752,29 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             step_data = {"obs": self._process_obs(obs=self.current_obs, info=init_info)}
             self.current_traj_history.append(step_data)
 
-        # Print all object names in the scene
-        if replay_for_annotation:
-            print(f"================= object names in the scene =================")
-            all_objs = og.sim.scenes[0].objects
-            print([o.name for o in all_objs])
-        # breakpoint()
+        # # Print all object names in the scene (For debugging)
+        # if replay_for_annotation:
+        #     print(f"================= object names in the scene =================")
+        #     all_objs = og.sim.scenes[0].objects
+        #     print([o.name for o in all_objs])
 
         for i, (a, s, ss, r, te, tr) in enumerate(
             zip(action, state[1:], state_size[1:], reward, terminated, truncated)
         ):
-            print(f"================= simulation step {i} =================")
+            if i % 50 == 0:
+                print(f"step {i} completed")
+                camera = self.scene.object_registry("name", "digital_camera_87")
+                print("camera health: ", camera.health)
+
             if replay_for_annotation:
                 if i % break_after_n_steps == 0:
                     # Note: You can use the following to step the rendering in OG: for _ in range(500): og.sim.render()
                     # And then you can click on objects in the viewer to get the OG specific name of the object
                     breakpoint()
-
-            # # For debugging
-            # if i > 20:
-            #     break
+        
+            # For debugging
+            if i > 700:
+                break
 
             # Execute any transitions that should occur at this current step
             if str(i) in transitions:

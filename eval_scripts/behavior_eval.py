@@ -55,6 +55,7 @@ def __main__():
     parser = argparse.ArgumentParser()
     parser.add_argument('--task_name', type=str, help='Task name') # e.g. rollout_0000_00402500
     parser.add_argument('--rollout_name', type=str, help='Rollout name')
+    parser.add_argument('--output_fname', type=str, help='If want to overwrite the output hdf5 file')
     parser.add_argument('--visualize', action='store_true', help='Visualize the data')
     parser.add_argument('--playback', action='store_true', help='Playback the data')
     parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics')
@@ -76,7 +77,10 @@ def __main__():
 
     # TODO: Set this 
     collect_hdf5_path = f"{isaac_gr00t_path}/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.rollout_name}.hdf5"
-    output_hdf5_path = f"{isaac_gr00t_path}/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.rollout_name}_playback.hdf5"
+    if args.output_fname:
+        output_hdf5_path = f"{isaac_gr00t_path}/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.output_fname}_playback.hdf5"
+    else:
+        output_hdf5_path = f"{isaac_gr00t_path}/gr00t/eval/sim/BEHAVIOR/rollouts/{args.task_name}/{args.rollout_name}_playback.hdf5"
     hdf5_file = h5py.File(collect_hdf5_path, "r")
 
     if args.playback:
@@ -132,7 +136,7 @@ def __main__():
             # robot_obs_modalities=["proprio", "rgb", "depth", "seg_instance"],
             # robot_sensor_config=robot_sensor_config,
             # NOTE: comment this out to save space by not saving rgb images for all the episodes. Choose the ones you want to visualize later.
-            # external_sensors_config=external_sensors_config,
+            external_sensors_config=external_sensors_config,
             n_render_iterations=1,
             only_successes=False,
             exclude_sensor_names=["left_eef_link", "right_eef_link"]
@@ -144,7 +148,7 @@ def __main__():
         for _ in range(10): og.sim.step()
 
         # Playback the dataset
-        env.playback_dataset(record_data=True)
+        env.playback_dataset(record_data=True, demo_ids=[0, 1, 2])
         # breakpoint()
             
         env.save_data()        
