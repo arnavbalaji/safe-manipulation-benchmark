@@ -20,10 +20,12 @@ from omnigibson.utils.teleop_utils import TeleopSystem
 from omnigibson.utils.ui_utils import KeyboardRobotController
 from omnigibson.envs import DataCollectionWrapper, DataPlaybackWrapper
 import omnigibson.lazy as lazy
-
+import omnigibson.utils.transform_utils as T
 from omnigibson.controllers.controller_base import IsGraspingState
+from scipy.spatial.transform import Rotation as R
 
-from safety_benchmark.utils.misc_utils import save_camera_video, save_health_video, save_combined_video, save_forces_video, save_force_contact_video
+
+from safety_benchmark.utils.misc_utils import save_camera_video, create_panda_eef_cylinders
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper, DamageableDataPlaybackWrapper
 
 gm.USE_GPU_DYNAMICS=False
@@ -117,6 +119,19 @@ TASK_OBJECTS = {
     },
 }
 
+def check_object_upright(obj):
+    q = obj.get_position_orientation()[1]
+    r = R.from_quat(q)
+
+    # Rotate the up vector
+    up_rotated = r.apply([0, 0, 1])
+    z_alignment = up_rotated[2]  # should be close to 1 if not toppled
+
+    threshold = 0.995  # cos(small angle) ~1
+    upright = z_alignment > threshold
+    
+    return upright
+
 def reset_env(env):
     env.reset()
     # load state
@@ -124,6 +139,50 @@ def reset_env(env):
     og.sim.load_state(state_flat_array, serialized=True)
 
     # TODO: Add object pose and scale randomization
+    flour = env.scene.object_registry("name", "book")
+    wineglass = env.scene.object_registry("name", "wineglass")
+    winebottle = env.scene.object_registry("name", "bottle_of_wine")
+    beerbottle = env.scene.object_registry("name", "bottle_of_beer")
+    objects = [flour, wineglass, winebottle, beerbottle]
+    trial_number = 0
+    while True:
+        print("trial number: ", trial_number)
+        for obj in objects:
+            pos, orn = obj.get_position_orientation()
+            pos_magnitude = [-0.05, 0.05] 
+            rot_magnitude = np.pi / 12 # 15 degrees
+            pos_diff_xy = np.random.uniform(pos_magnitude[0], pos_magnitude[1], size=2)
+            pos_diff = th.from_numpy(np.concatenate([pos_diff_xy, np.zeros(1)])).float()
+            new_pos = pos + pos_diff
+            orn_diff = th.from_numpy(np.array([0.0, 0.0, np.random.uniform(-rot_magnitude, rot_magnitude)]))
+            new_orn = T.mat2quat(T.euler2mat(orn_diff) @ T.quat2mat(orn))
+            obj.set_position_orientation(new_pos, new_orn)
+
+        # randomize scale
+        temp_state = og.sim.dump_state(serialized=False)
+        og.sim.stop()
+        for obj in objects:
+            x_scale_magnitude = np.random.uniform(0.9, 1.1)
+            y_scale_magnitude = np.random.uniform(0.9, 1.1)
+            z_scale_magnitude = np.random.uniform(0.9, 1.1)
+            new_scale = [obj.scale[0] * x_scale_magnitude, obj.scale[1] * y_scale_magnitude, obj.scale[2] * z_scale_magnitude]
+            obj.scale = th.tensor(new_scale)
+        og.sim.play()
+        og.sim.load_state(temp_state)
+
+        # Make sure all objects are upright
+        all_upright = True
+        for obj in objects:
+            upright = check_object_upright(obj)
+            print("object, upright: ", obj.name, upright)
+            if not upright:
+                print(f"Object {obj.name} is not upright, randomizing again")
+                all_upright = False
+                break
+        if all_upright:
+            print("All objects are upright, breaking")
+            break
+        trial_number += 1
 
     for _ in range(10): og.sim.step()
 
@@ -204,6 +263,15 @@ def __main__():
             orientation=th.tensor([0.4850, 0.1528, 0.2586, 0.8213]),
         )
         for _ in range(10): og.sim.step()
+
+        # trying
+        eef_vis = create_panda_eef_cylinders(robot, env.scene)
+        robot.links["eef_link"].prim.GetAttribute("visibility").Set("inherited")
+        # breakpoint()
+        for geom_list in eef_vis.values():
+            for geom in geom_list:
+                geom.prim.GetAttribute("visibility").Set("inherited")  #.set("invisible") for hiding
+        for _ in range(10): og.sim.render()
 
         # # Telemoma: Teleoperate robot
         # arm_teleop_method = "spacemouse"
