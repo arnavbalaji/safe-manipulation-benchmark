@@ -777,6 +777,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             #     breakpoint()
 
             # Execute any transitions that should occur at this current step
+            print("Action", a)
             if str(i) in transitions:
                 cur_transitions = transitions[str(i)]
                 scene = og.sim.scenes[0]
