@@ -273,19 +273,19 @@ def __main__():
                 geom.prim.GetAttribute("visibility").Set("inherited")  #.set("invisible") for hiding
         for _ in range(10): og.sim.render()
 
-        # # Telemoma: Teleoperate robot
-        # arm_teleop_method = "spacemouse"
-        # base_teleop_method = "spacemouse"
+        # Telemoma: Teleoperate robot
+        arm_teleop_method = "spacemouse"
+        base_teleop_method = "spacemouse"
         # # Franka uses arm_0 instead of arm_left/arm_right
-        # teleop_config.arm_0_controller = arm_teleop_method
+        teleop_config.arm_0_controller = arm_teleop_method
         # # Tiago config (commented out):
-        # # teleop_config.arm_left_controller = arm_teleop_method
-        # # teleop_config.arm_right_controller = arm_teleop_method
-        # teleop_config.base_controller = base_teleop_method
-        # teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
-        # teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.01}
-        # teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
-        # teleop_sys.start()
+        teleop_config.arm_left_controller = arm_teleop_method
+        teleop_config.arm_right_controller = arm_teleop_method
+        teleop_config.base_controller = base_teleop_method
+        teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
+        teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.01}
+        teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
+        teleop_sys.start()
 
         # Keyboard Teleop
         action_generator = KeyboardRobotController(robot=robot)
@@ -298,6 +298,7 @@ def __main__():
 
         # ======================== Data collection ========================
         n_episodes = args.n_episodes
+        last_telemoma_grip_action = 1.0 
         for i in range(n_episodes):
             print(f"Episode {i} starts")
             reset_env(env)
@@ -305,10 +306,20 @@ def __main__():
             # If the robot is grasping, set the persistent gripper action to -1.0
             if robot.is_grasping().value == IsGraspingState.TRUE:
                 action_generator.persistent_gripper_action[action_generator.binary_grippers[0]] = -1.0
+            action = th.zeros(robot.action_dim)
+            action[-1] = -1.0
+            # Default gripper action is 1.0
             while True:
                 # Not using telemoma for now
-                # action = teleop_sys.get_action(teleop_sys.get_obs())
-                action, keypress_str = action_generator.get_teleop_action()
+                telemoma_action = teleop_sys.get_action(teleop_sys.get_obs())
+                telemoma_grip_action = telemoma_action[-1]
+                if telemoma_grip_action != last_telemoma_grip_action:
+                    action[-1] = -action[-1]
+                last_telemoma_grip_action = telemoma_grip_action
+                action[:-1] = telemoma_action[:-1]
+
+                _, keypress_str = action_generator.get_teleop_action()
+                print("action: ", action)
                 if keypress_str == "TAB":
                     breakpoint()
                     break
@@ -396,38 +407,44 @@ def __main__():
 
     if args.visualize:
         f = h5py.File(args.playback_hdf5_path, "r")
-        f_name = "shelve_item"
+        f_name = "shelve_item_bad"
         scene_file = json.loads(f["data"].attrs["scene_file"])
-        # robot_name = [obj_name for obj_name in scene_file["objects_info"]["init_info"].keys() if "robot" in obj_name.lower()][0]
         robot_name = "franka0"       
         camera_type = "external"
         camera_name = "external_sensor0"
-        # breakpoint()
-
-        # Parse info to obtain relevant information for visualization
-        obs_info_list = []
-        for i in range(len(f["data/demo_0/info/obs_info"])):            
-            # Obtain observation information 
-            obs_info = json.loads(f["data/demo_0/info/obs_info"][i].decode("utf-8"))
-            obs_info_list.append(obs_info)
-        # breakpoint()
-
-        health = []
 
         output_video_dir = "resources/videos"
         os.makedirs(output_video_dir, exist_ok=True)
         
-        # Save video for rgb camera
-        target_objects_health = []
-        output_video_path = f"{output_video_dir}/{f_name}_camera_video"
-        save_camera_video(hdf5_file=f, 
-                    output_video_path=output_video_path,
-                    robot_name=robot_name, 
-                    camera_type=camera_type, 
-                    camera_name=camera_name,
-                    target_objects=target_objects_health,
-                    obs_info_list=obs_info_list,
-                    health=health)
+        # Get all demo keys
+        demo_keys = sorted([k for k in f["data"].keys() if k.startswith("demo_")])
+        print(f"Found {len(demo_keys)} demos to visualize")
+        
+        # Save video for each demo
+        for demo_idx, demo_key in enumerate(demo_keys):
+            print(f"Processing {demo_key} ({demo_idx + 1}/{len(demo_keys)})")
+            
+            # Parse info to obtain relevant information for visualization
+            obs_info_list = []
+            obs_info_data = f[f"data/{demo_key}/info/obs_info"]
+            for i in range(len(obs_info_data)):            
+                obs_info = json.loads(obs_info_data[i].decode("utf-8"))
+                obs_info_list.append(obs_info)
+
+            health = []
+            target_objects_health = []
+            output_video_path = f"{output_video_dir}/{f_name}_demo_{demo_idx}_camera_video"
+            save_camera_video(hdf5_file=f, 
+                        output_video_path=output_video_path,
+                        robot_name=robot_name, 
+                        camera_type=camera_type, 
+                        camera_name=camera_name,
+                        target_objects=target_objects_health,
+                        obs_info_list=obs_info_list,
+                        health=health,
+                        demo_idx=demo_idx)
+        
+        print(f"Saved {len(demo_keys)} videos to {output_video_dir}")
 
 
 if __name__ == "__main__":
