@@ -24,7 +24,7 @@ BehaviorTask:
     categories: ["microwave"]
     names: []
   clean_a_trumpet:
-    categories: []
+    categories: ["scrub_brush"]
     names: []
   attach_a_camera_to_a_tripod:
     categories: ["camera_tripod", "digital_camera"]

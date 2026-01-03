@@ -33,9 +33,9 @@ def get_visualization_config(task_name, robot_name):
         }
     elif task_name == "make_microwave_popcorn": 
         return {
-            "target_objects_health_with_links": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"],  # "scrub@base_link", "trumpet@base_link"
-            "target_objects_health": [robot_name],  # "scrub", "trumpet"
-            "target_objects_forces": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"],
+            "target_objects_health_with_links": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "microwave_hjjxmi_0@base_link", "microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass", "microwave_hjjxmi_0@meta__base_link_togglebutton_0_0_link"],  # "scrub@base_link", "trumpet@base_link"
+            "target_objects_health": [robot_name, "microwave_hjjxmi_0"],
+            "target_objects_forces": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "microwave_hjjxmi_0@base_link", "microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass", "microwave_hjjxmi_0@meta__base_link_togglebutton_0_0_link"],
             "force_keys": ["filtered_qs_forces"],
             "target_contact_bodies": ["microwave"]
         }    
@@ -59,6 +59,8 @@ def __main__():
     parser.add_argument('--visualize', action='store_true', help='Visualize the data')
     parser.add_argument('--playback', action='store_true', help='Playback the data')
     parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics')
+    parser.add_argument("--demo_ids", type=int, nargs="+", help="List of integers")
+    parser.add_argument("--save_images", action="store_true", help="Save images")
     args = parser.parse_args()
 
     from pathlib import Path
@@ -136,7 +138,7 @@ def __main__():
             # robot_obs_modalities=["proprio", "rgb", "depth", "seg_instance"],
             # robot_sensor_config=robot_sensor_config,
             # NOTE: comment this out to save space by not saving rgb images for all the episodes. Choose the ones you want to visualize later.
-            external_sensors_config=external_sensors_config,
+            external_sensors_config=external_sensors_config if args.save_images else None,
             n_render_iterations=1,
             only_successes=False,
             exclude_sensor_names=["left_eef_link", "right_eef_link"]
@@ -148,7 +150,10 @@ def __main__():
         for _ in range(10): og.sim.step()
 
         # Playback the dataset
-        env.playback_dataset(record_data=True)
+        if args.demo_ids:
+            env.playback_dataset(record_data=True, demo_ids=args.demo_ids)
+        else:
+            env.playback_dataset(record_data=True)
         # breakpoint()
             
         env.save_data()        

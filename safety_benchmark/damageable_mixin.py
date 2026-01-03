@@ -33,7 +33,6 @@ class DamageableMixin:
         self.damage_info = {}
 
     def _initialize_damage_evaluators(self):
-        # Set damage evaluators once sim is playing
         for evaluator_name in self.params.get("damage_evaluators", []):
             eval_cls = DAMAGE_EVALUATORS[evaluator_name] # Getting correct damage evaluator
             self.damage_evaluators.append(eval_cls(self, **self.params[evaluator_name]))

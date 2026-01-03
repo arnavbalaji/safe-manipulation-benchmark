@@ -6,8 +6,8 @@ np.set_printoptions(precision=4, suppress=True)
 import os
 import matplotlib.pyplot as plt
 
-data_path = "/home/arpit/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim/sim_behavior_r1_pro.task-0000_turning_on_radio/data/chunk-000/episode_00000000.parquet"
-df = pd.read_parquet(data_path, engine="pyarrow")
+# data_path = "/home/arpit/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim/sim_behavior_r1_pro.task-0000_turning_on_radio/data/chunk-000/episode_00000000.parquet"
+# df = pd.read_parquet(data_path, engine="pyarrow")
 
 # f1 = h5py.File("/home/arpit/behavior_dataset/task-0034/episode_00340020_replayed.hdf5", "r")
 # f2 = h5py.File("/home/arpit/behavior_dataset/task-0034/episode_00340020.hdf5", "r")
@@ -18,7 +18,7 @@ df = pd.read_parquet(data_path, engine="pyarrow")
 # f1 = h5py.File("/home/arpit/behavior_dataset/task-0040/episode_00402500_replayed.hdf5", "r")
 # f2 = h5py.File("/home/arpit/behavior_dataset/task-0040/episode_00402500.hdf5", "r")
 
-f4 = h5py.File("/home/arpit/test_projects/groot/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/make_microwave_popcorn/rollout_0000_00402500.hdf5", "r")
+# f4 = h5py.File("/home/arpit/test_projects/groot/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/make_microwave_popcorn/rollout_0000_00402500.hdf5", "r")
 # f3 = h5py.File("/home/arpit/test_projects/groot/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/clean_a_trumpet/rollout_0000_00372720_playback.hdf5", "r")
 
 # fig, axs = plt.subplots(2, 2, figsize=(10, 10))
@@ -34,7 +34,37 @@ f4 = h5py.File("/home/arpit/test_projects/groot/Isaac-GR00T/gr00t/eval/sim/BEHAV
 #     damage_info = json.loads(f["data/demo_0/info/damage_info"][i].decode("utf-8"))
 #     print(damage_info["tiago0"]["gripper_right_left_finger_link"]["mechanical"]["contacts"])
 
-breakpoint()
+# breakpoint()
+
+# ========== debug health of robot =========
+f = h5py.File("/home/arpit/projects/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/attach_a_camera_to_a_tripod/rollout_0021_00351240_playback.hdf5", "r")
+for demo_idx in range(len(f["data"])):
+    print("episode: ", demo_idx)
+    all_obj_healths = np.array(f[f"data/demo_{demo_idx}/obs/health"])
+    health_list_link_names = f[f"data/demo_{demo_idx}"].attrs["health_list_link_names"]
+    health = dict()
+    for obj_name in health_list_link_names:
+        health[obj_name] = all_obj_healths[:, np.where(health_list_link_names == obj_name)[0][0]]
+        health[obj_name] = health[obj_name][1:]
+        # for debugging
+        if np.any(health[obj_name] < 100.0):
+            # breakpoint()
+            print(f"{obj_name} has health less than 100.0")
+
+    target_objects_health = ["robot_r1"]
+    # Obtain health information for the entire target objects 
+    for obj_name in target_objects_health:
+        arrays = [v for k, v in health.items() if k.startswith(f"{obj_name}@")]
+        # Compute element-wise min
+        if arrays:
+            health[obj_name] = np.minimum.reduce(arrays)
+        else:
+            health[obj_name] = None
+    print("robot_r1_health: ", health["robot_r1"][-1])
+    print(" ========================================== ")
+    # breakpoint()
+
+# ===========================================
 
 # Debugging action vs delta right eef position z
 # action_list = []

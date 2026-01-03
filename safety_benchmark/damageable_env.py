@@ -187,7 +187,7 @@ class DamageableEnvironment(Environment):
         
         # Reset damage evaluators for all objects
         for obj in self.scene.objects:
-            print("obj.name, obj.track_damage: ", obj.name, obj.track_damage)
+            # print("obj.name, obj.track_damage: ", obj.name, obj.track_damage)
             if hasattr(obj, "track_damage") and obj.track_damage:
                 obj.reset_damage_evaluators()
                 obj._initialize_health()
@@ -768,8 +768,17 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         ):
             if i % 50 == 0:
                 print(f"step {i} completed")
-                camera = self.scene.object_registry("name", "digital_camera_87")
-                print("camera health: ", camera.health)
+                robot = self.scene.robots[0]
+                if self.task.activity_name == "attach_a_camera_to_a_tripod":
+                    camera = self.scene.object_registry("name", "digital_camera_87")
+                    tripod = self.scene.object_registry("name", "camera_tripod_86")
+                    print(f"healths: camera {camera.health}, tripod {tripod.health}, robot {robot.health}")
+                elif self.task.activity_name == "make_microwave_popcorn":
+                    microwave = self.scene.object_registry("name", "microwave_hjjxmi_0")
+                    print(f"healths: microwave {microwave.health}, robot {robot.health}")
+                elif self.task.activity_name == "clean_a_trumpet":
+                    scrub = self.scene.object_registry("name", "scrub_brush_86")
+                    print(f"healths: scrub {scrub.health}, robot {robot.health}")
 
             if replay_for_annotation:
                 if i % break_after_n_steps == 0:
@@ -777,9 +786,9 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                     # And then you can click on objects in the viewer to get the OG specific name of the object
                     breakpoint()
         
-            # For debugging
-            if i > 700:
-                break
+            # # For debugging
+            # if i > 700:
+            #     break
 
             # Execute any transitions that should occur at this current step
             if str(i) in transitions:

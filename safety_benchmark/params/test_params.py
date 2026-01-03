@@ -56,17 +56,19 @@ PARAMS = {
             "qs_damage_sensitivity": 1.0,
             "damage_threshold": 30.0,
             "damage_scale": 0.1,
-            "link_thresholds": {
+            "link_config_overrides": {
                 "gripper": {
                     "impact_damage_sensitivity": 0.01,
                     "qs_damage_sensitivity": 1.0,
                     "damage_threshold": 70.0,
                     "damage_scale": 0.1,
                 },
-                # "base": {
-                #     "crushing_threshold": 8.0,
-                #     "crushing_scale": 0.001,
-                # },
+                "base": {
+                    "impact_damage_sensitivity": 0.01,
+                    "qs_damage_sensitivity": 1.0,
+                    "damage_threshold": 100.0,
+                    "damage_scale": 0.1,                
+                },
                 "arm": {
                     "impact_damage_sensitivity": 0.01,
                     "qs_damage_sensitivity": 1.0,
@@ -126,6 +128,15 @@ PARAMS = {
             "impact_damage_sensitivity": 1.0,
             "qs_damage_sensitivity": 0.5,
             "damage_threshold": 60.0,
+            "damage_scale": 100.0,
+        }
+    },
+    "scrub_brush": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 0.01,
+            "qs_damage_sensitivity": 0.01,
+            "damage_threshold": 300.0,
             "damage_scale": 100.0,
         }
     }

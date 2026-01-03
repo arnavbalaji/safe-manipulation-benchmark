@@ -170,7 +170,6 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                     # if self.entity.category == "agent" and link_name in ["right_gripper_finger_link1", "right_gripper_finger_link2"]:
                     #     print("link_name, current_unfiltered_raw_sim_force_magnitude: ", link_name, current_unfiltered_raw_sim_force_magnitude)                    
 
-                    # =======================================================
                     # 1) Obtain only the quasistatic forces
                     if not adjust_sim_forces:
                         # Note that we sum the magnitudes of the impulses (for each contact point) and divide
@@ -185,17 +184,40 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                         current_unfiltered_qs_force_magnitude += (float(th.sum(th.stack(adjusted_qs_force_magnitudes))) / max(dt, 1e-8))
 
                     self.unfiltered_qs_forces[link_name].append(current_unfiltered_qs_force_magnitude)
+
+                    # Option 0: No filtering
+                    current_filtered_qs_force_magnitude = current_unfiltered_qs_force_magnitude
                     
-                    # Option 2) Average over a window
-                    if len(self.unfiltered_qs_forces[link_name]) >= self.window_size:
-                        current_filtered_qs_force_magnitude = sum(self.unfiltered_qs_forces[link_name][-self.window_size:]) / self.window_size
-                    else:
-                        current_filtered_qs_force_magnitude = current_unfiltered_qs_force_magnitude
+                    # Option 1: EMA (not used and not implemented yet)
+                    
+                    # # Option 2) Average over a window
+                    # if len(self.unfiltered_qs_forces[link_name]) >= self.window_size:
+                    #     current_filtered_qs_force_magnitude = sum(self.unfiltered_qs_forces[link_name][-self.window_size:]) / self.window_size
+                    # else:
+                    #     current_filtered_qs_force_magnitude = current_unfiltered_qs_force_magnitude
+
+                    # # option 3: filter first contact force
+                    # # check if a new category object was contacted for the first time in this step
+                    # body0_list = {c.body0 for c in contacts_list}
+                    # body1_list = {c.body1 for c in contacts_list}
+                    # current_unique_contact_bodies = body0_list | body1_list
+                    # new_contact_bool, new_contact_bodies = self.check_new_contact_body(current_unique_contact_bodies, link_name)
+                    # self.previous_unique_contact_bodies[link_name] = current_unique_contact_bodies
+                    # if new_contact_bool:
+                    #     # print("link_name, new_contact_body: ", link_name, new_contact_bodies)
+                    #     current_filtered_qs_force_magnitude = sum(self.unfiltered_qs_forces[link_name][-self.window_size:]) / self.window_size
+                    # else:
+                    #     current_filtered_qs_force_magnitude = current_unfiltered_qs_force_magnitude
+
                     self.filtered_qs_forces[link_name].append(current_filtered_qs_force_magnitude)
                     # =======================================================
                     
                     # 2) Obtain the raw sim forces
                     self.unfiltered_raw_sim_forces[link_name].append(current_unfiltered_raw_sim_force_magnitude)
+
+                    # Option 0: No filtering
+                    filtered_raw_sim_force_magnitude = current_unfiltered_raw_sim_force_magnitude
+                    
                     # Option 1: EMA
                     # if len(self.raw_forces_from_sim[link_name]) == 0:
                     #     filtered_force = current_force
@@ -208,20 +230,15 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                     # else:
                     #     filtered_raw_sim_force_magnitude = current_unfiltered_raw_sim_force_magnitude
                     
-                    # Option 3: Filter first contact force
-                    # check if a new category object was contacted for the first time in this step
-                    body0_list = {c.body0 for c in contacts_list}
-                    body1_list = {c.body1 for c in contacts_list}
-                    current_unique_contact_bodies = body0_list | body1_list
-                    new_contact_bool, new_contact_bodies = self.check_new_contact_body(current_unique_contact_bodies, link_name)
-                    if new_contact_bool:
-                        # print("link_name, new_contact_body: ", link_name, new_contact_bodies)
-                        filtered_raw_sim_force_magnitude = sum(self.unfiltered_raw_sim_forces[link_name][-self.window_size:]) / self.window_size
-                    else:
-                        filtered_raw_sim_force_magnitude = current_unfiltered_raw_sim_force_magnitude
-                    self.previous_unique_contact_bodies[link_name] = current_unique_contact_bodies
+                    # # Option 3: filter first contact force
+                    # if new_contact_bool:
+                    #     filtered_raw_sim_force_magnitude = sum(self.unfiltered_raw_sim_forces[link_name][-self.window_size:]) / self.window_size
+                    # else:
+                    #     filtered_raw_sim_force_magnitude = current_unfiltered_raw_sim_force_magnitude
 
                     self.filtered_raw_sim_forces[link_name].append(filtered_raw_sim_force_magnitude)
+                    # =======================================================
+
                     
                     # For debugging
                     # if self.entity.category == "agent" and link_name in ["right_gripper_finger_link1", "right_gripper_finger_link2"]:
