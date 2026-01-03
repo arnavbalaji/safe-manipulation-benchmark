@@ -1,5 +1,3 @@
-# TODO(junhong): we haven't made the global class ID mapping in the observation processor yet.
-
 import sys
 sys.path.insert(0, "/home/juxu/Research/safe-manipulation/rl-flow-matching")
 
@@ -53,6 +51,10 @@ class ObsProcessorConfig:
     # Robot settings
     robot_name: str = "franka0"
     
+    # Global class vocabulary - path to HDF5 file used for training
+    # This is used to build consistent class_to_id mapping at inference
+    vocab_hdf5_path: Optional[str] = None
+    
     def __post_init__(self):
         if self.seg_obs_keys is None:
             self.seg_obs_keys = [
@@ -67,8 +69,11 @@ class ObservationProcessor:
     Processes raw environment observations into the format expected by the policy.
     
     The policy expects:
-        - seg_images: Dict[str, Tensor] with shape [B, frame_stack, H, W] (int32 segmentation IDs)
+        - seg_images: Dict[str, Tensor] with shape [B, frame_stack, H, W] (global class IDs)
         - state: Tensor [B, state_dim] (proprio)
+    
+    Global class ID mapping ensures consistent segmentation class indices between
+    training (from HDF5 dataset) and inference (from live environment).
     """
     
     def __init__(self, config: ObsProcessorConfig = None, device: str = "cuda"):
@@ -81,6 +86,111 @@ class ObservationProcessor:
             for key in self.config.seg_obs_keys
         }
         self.initialized = False
+        
+        # Global class vocabulary (built from training HDF5)
+        self.class_to_id: Dict[str, int] = {"unknown": 0}
+        self.id_to_class: Dict[int, str] = {0: "unknown"}
+        self.num_seg_classes: int = 1
+        
+        # Load vocabulary from HDF5 if provided
+        if self.config.vocab_hdf5_path:
+            self._build_class_vocabulary_from_hdf5(self.config.vocab_hdf5_path)
+    
+    def _build_class_vocabulary_from_hdf5(self, hdf5_path: str):
+        """
+        Build global class vocabulary from training HDF5 file.
+        Scans ALL timesteps in ALL demos to ensure all possible classes are captured.
+        
+        This should use the SAME HDF5 file used for training to ensure
+        consistent class_to_id mapping at inference time.
+        
+        Args:
+            hdf5_path: Path to training HDF5 file
+        """
+        all_classes = set()
+        
+        with h5py.File(hdf5_path, "r") as f:
+            data_grp = f["data"]
+            demo_keys = sorted([k for k in data_grp.keys() if k.startswith("demo_")])
+            
+            for demo_key in demo_keys:
+                demo_grp = data_grp[demo_key]
+                
+                if "info" in demo_grp and "obs_info" in demo_grp["info"]:
+                    obs_info_data = demo_grp["info"]["obs_info"]
+                    num_timesteps = len(obs_info_data)
+                    
+                    # Iterate through ALL timesteps to gather all classes
+                    for timestep in range(num_timesteps):
+                        obs_info = json.loads(obs_info_data[timestep].decode("utf-8"))
+                        
+                        # Parse structure: obs_info[camera_type][camera_name]["seg_instance"]
+                        for camera_type in obs_info:
+                            if isinstance(obs_info[camera_type], dict):
+                                for camera_name in obs_info[camera_type]:
+                                    if isinstance(obs_info[camera_type][camera_name], dict):
+                                        if "seg_instance" in obs_info[camera_type][camera_name]:
+                                            seg_mapping = obs_info[camera_type][camera_name]["seg_instance"]
+                                            all_classes.update(seg_mapping.values())
+        
+        # Create consistent global mapping (sorted for reproducibility)
+        # Reserve index 0 for "unknown" class
+        sorted_classes = sorted(all_classes)
+        self.class_to_id = {"unknown": 0}
+        self.id_to_class = {0: "unknown"}
+        
+        for idx, cls_name in enumerate(sorted_classes, start=1):
+            self.class_to_id[cls_name] = idx
+            self.id_to_class[idx] = cls_name
+        
+        self.num_seg_classes = len(self.class_to_id)
+        
+        print(f"Built class vocabulary with {self.num_seg_classes} classes (including 'unknown'):")
+        for cls_name, idx in self.class_to_id.items():
+            print(f"  {idx}: {cls_name}")
+    
+    def set_class_vocabulary(self, class_to_id: Dict[str, int], id_to_class: Dict[int, str]):
+        """
+        Manually set the class vocabulary (e.g., from a saved checkpoint or dataset).
+        
+        Args:
+            class_to_id: Dict mapping class name -> global ID
+            id_to_class: Dict mapping global ID -> class name
+        """
+        self.class_to_id = class_to_id
+        self.id_to_class = id_to_class
+        self.num_seg_classes = len(class_to_id)
+        print(f"Set class vocabulary with {self.num_seg_classes} classes")
+    
+    def remap_seg_to_global_ids(self, seg_image: th.Tensor, obs_info: dict, camera_type: str, camera_name: str) -> th.Tensor:
+        """
+        Remap segmentation image from environment seg IDs to global class IDs.
+        
+        During inference, the environment provides seg IDs that may differ from training.
+        This function maps them to consistent global class IDs using obs_info metadata.
+        
+        Args:
+            seg_image: Segmentation image tensor [H, W] with environment seg IDs
+            obs_info: Observation info dict from environment containing seg_instance mapping
+            camera_type: Camera type (e.g., "franka0", "external")
+            camera_name: Camera name (e.g., "franka0:eef_link:Camera:0", "external_sensor0")
+        
+        Returns:
+            Remapped segmentation image with global class IDs
+        """
+        remapped = th.zeros_like(seg_image)
+        
+        # Get seg_id -> class_name mapping from obs_info
+        if camera_type in obs_info and camera_name in obs_info[camera_type]:
+            if "seg_instance" in obs_info[camera_type][camera_name]:
+                seg_mapping = obs_info[camera_type][camera_name]["seg_instance"]
+                
+                for seg_id_str, class_name in seg_mapping.items():
+                    seg_id = int(seg_id_str)
+                    global_class_id = self.class_to_id.get(class_name, 0)  # 0 = unknown
+                    remapped[seg_image == seg_id] = global_class_id
+        
+        return remapped
     
     def reset(self):
         """Reset frame buffers on episode reset."""
@@ -165,60 +275,58 @@ class ObservationProcessor:
         
         return proprio.to(self.device)
     
-    def _extract_segmentation(self, obs: dict) -> th.Tensor:
+    def _extract_segmentation(self, obs: dict, obs_info: Optional[dict] = None) -> th.Tensor:
         """
-        Extract and resize a segmentation image from observation.
+        Extract, resize, and remap segmentation images to global class IDs.
         
         Args:
             obs: Raw observation dict
-            key: Key for the segmentation observation
+            obs_info: Optional observation info dict with seg_instance mappings
+                      If provided, remaps to global class IDs
         
         Returns:
-            Resized segmentation [H, W] as long tensor
+            Tuple of (frank_seg, external_seg_0, external_seg_1) as long tensors [H, W]
         """
         frank_seg = obs['franka0']['franka0:eef_link:Camera:0']['seg_instance']
         external_seg_0 = obs['external']['external_sensor0']['seg_instance']
         external_seg_1 = obs['external']['external_sensor1']['seg_instance']
         
-        # seg_img = obs[key]
-        
-        # Convert to tensor if needed
-        # if isinstance(seg_img, np.ndarray):
-        #     seg_img = th.from_numpy(seg_img)
-        
-        # Handle different input shapes
-        # if seg_img.dim() == 3:
-        #     # [H, W, C] or [C, H, W] - take first channel or squeeze
-        #     if seg_img.shape[-1] in [1, 3, 4]:  # [H, W, C]
-        #         seg_img = seg_img[..., 0]
-        #     else:  # [C, H, W]
-        #         seg_img = seg_img[0]
-        
         # Resize to target size
-        # seg_img = self._resize_segmentation(seg_img.to(self.device))
         frank_seg = self._resize_segmentation(frank_seg.to(self.device))
         external_seg_0 = self._resize_segmentation(external_seg_0.to(self.device))
         external_seg_1 = self._resize_segmentation(external_seg_1.to(self.device))
         
+        # Remap to global class IDs if obs_info is provided and vocabulary is loaded
+        if obs_info is not None and self.num_seg_classes > 1:
+            frank_seg = self.remap_seg_to_global_ids(
+                frank_seg, obs_info, "franka0", "franka0:eef_link:Camera:0"
+            )
+            external_seg_0 = self.remap_seg_to_global_ids(
+                external_seg_0, obs_info, "external", "external_sensor0"
+            )
+            external_seg_1 = self.remap_seg_to_global_ids(
+                external_seg_1, obs_info, "external", "external_sensor1"
+            )
+        
         return frank_seg, external_seg_0, external_seg_1
     
-    def process(self, obs: dict, robot) -> Dict[str, th.Tensor]:
+    def process(self, obs: dict, robot, obs_info: Optional[dict] = None) -> Dict[str, th.Tensor]:
         """
         Process raw environment observation into policy input format.
         
         Args:
             obs: Raw observation dict from env.step() or env.reset()
             robot: Robot object for proprio extraction
+            obs_info: Optional observation info dict with seg_instance mappings.
+                      If provided, remaps segmentation to global class IDs.
         
         Returns:
             Dict with keys:
-                - 'extero': Dict[str, Tensor] with shape [1, frame_stack, H, W]
+                - 'extero': Dict[str, Tensor] with shape [1, frame_stack, H, W] (global class IDs)
                 - 'proprio': Tensor [1, state_dim]
         """
-        # Extract and buffer segmentation images
-        # for key in self.config.seg_obs_keys:
-
-        frank_seg, external_seg_0, external_seg_1 = self._extract_segmentation(obs)
+        # Extract, resize, and optionally remap segmentation images
+        frank_seg, external_seg_0, external_seg_1 = self._extract_segmentation(obs, obs_info)
         self.seg_buffers['franka0::franka0:eef_link:Camera:0::seg_instance'].append(frank_seg)
         self.seg_buffers['external::external_sensor0::seg_instance'].append(external_seg_0)
         self.seg_buffers['external::external_sensor1::seg_instance'].append(external_seg_1)
@@ -449,6 +557,9 @@ def __main__():
     parser.add_argument('--execute_horizon', type=int, default=1, 
                         help='Actions to execute before re-planning')
     parser.add_argument('--save_data', action='store_true', help='Save trajectory data')
+    parser.add_argument('--vocab_hdf5', type=str, 
+                        default="../safe-manipulation-benchmark/resources/playback_data/shelf_place_bad_trajs_playback.hdf5",
+                        help='Path to HDF5 file for building class vocabulary (should match training data)')
     args = parser.parse_args()
     
     # Set seeds for reproducibility
@@ -461,8 +572,9 @@ def __main__():
     policy = load_policy(args.checkpoint, device=device)
     policy.print_parameter_summary()
     
-    # Create observation processor and action chunker
-    obs_processor = ObservationProcessor(device=device)
+    # Create observation processor with class vocabulary from training HDF5
+    obs_config = ObsProcessorConfig(vocab_hdf5_path=args.vocab_hdf5)
+    obs_processor = ObservationProcessor(config=obs_config, device=device)
     action_chunker = ActionChunker(
         action_chunk_size=policy.config.action_chunk_size,
         execute_horizon=args.execute_horizon,
@@ -613,11 +725,14 @@ def __main__():
         episode_reward = 0.0
         episode_damage = 0.0
         
+        # Get initial obs_info for global class ID remapping
+        current_obs_info = info.get("obs_info", None)
+        
         for step in range(args.max_steps):
             # Query policy for new action chunk if needed
             if action_chunker.needs_replan():
-                # Process observation
-                policy_input = obs_processor.process(obs, robot)
+                # Process observation with global class ID remapping
+                policy_input = obs_processor.process(obs, robot, obs_info=current_obs_info)
                 
                 # Generate action chunk
                 with th.no_grad():
@@ -638,9 +753,13 @@ def __main__():
             
             # Convert to numpy for environment
             action = action.cpu().numpy()
+            print("Step", step, "Action", action)
             
             # Step environment
             obs, reward, terminated, truncated, info = env.step(action)
+            
+            # Update obs_info for next iteration's global class ID remapping
+            current_obs_info = info.get("obs_info", current_obs_info)
             
             episode_reward += reward
             if "damage_info" in info:
