@@ -61,19 +61,19 @@ PARAMS = {
                     "impact_damage_sensitivity": 0.01,
                     "qs_damage_sensitivity": 1.0,
                     "damage_threshold": 70.0,
-                    "damage_scale": 0.1,
+                    "damage_scale": 0.2,
                 },
                 "base": {
                     "impact_damage_sensitivity": 0.01,
                     "qs_damage_sensitivity": 1.0,
                     "damage_threshold": 100.0,
-                    "damage_scale": 0.1,                
+                    "damage_scale": 0.2,                
                 },
                 "arm": {
                     "impact_damage_sensitivity": 0.01,
                     "qs_damage_sensitivity": 1.0,
                     "damage_threshold": 70.0,
-                    "damage_scale": 0.1,
+                    "damage_scale": 0.2,
                 }
             }
         },

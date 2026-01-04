@@ -861,7 +861,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         if record_data:
             if self.flush_every_n_steps > 0:
                 self.flush_partial_traj(num_samples=len(action), video_writers=video_writers)
-            self.flush_current_traj()
+            self.flush_current_traj(traj_grp_name=f"demo_{episode_id}")
 
         return result
 

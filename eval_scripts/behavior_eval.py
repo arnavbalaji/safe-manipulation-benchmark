@@ -19,31 +19,34 @@ import omnigibson.lazy as lazy
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataPlaybackWrapper
 from safety_benchmark.utils.misc_utils import save_rgb_camera_video, save_rgb_force_contact_video, save_rgb_force_video, save_rgb_health_video
 
+import logging
+logging.getLogger("omnigibson").setLevel(logging.ERROR)
+
 gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
 
 def get_visualization_config(task_name, robot_name):
     if task_name == "clean_a_trumpet": 
         return {
-            "target_objects_health_with_links": [f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2"],  # "scrub@base_link", "trumpet@base_link"
+            "target_objects_health_with_links": [f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2", f"{robot_name}@base_link"],  # "scrub@base_link", "trumpet@base_link"
             "target_objects_health": [robot_name],  # "scrub", "trumpet"
-            "target_objects_forces": [f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2"],
+            "target_objects_forces": [f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2", f"{robot_name}@base_link"],
             "force_keys": ["filtered_qs_forces"],
             "target_contact_bodies": ["table", "scrub"]
         }
     elif task_name == "make_microwave_popcorn": 
         return {
-            "target_objects_health_with_links": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "microwave_hjjxmi_0@base_link", "microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass", "microwave_hjjxmi_0@meta__base_link_togglebutton_0_0_link"],  # "scrub@base_link", "trumpet@base_link"
+            "target_objects_health_with_links": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", f"{robot_name}@base_link", "microwave_hjjxmi_0@base_link", "microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass"],  # "scrub@base_link", "trumpet@base_link"
             "target_objects_health": [robot_name, "microwave_hjjxmi_0"],
-            "target_objects_forces": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "microwave_hjjxmi_0@base_link", "microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass", "microwave_hjjxmi_0@meta__base_link_togglebutton_0_0_link"],
+            "target_objects_forces": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", f"{robot_name}@base_link", "microwave_hjjxmi_0@base_link", "microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass"],
             "force_keys": ["filtered_qs_forces"],
             "target_contact_bodies": ["microwave"]
         }    
     elif task_name == "attach_a_camera_to_a_tripod":
         return {
-            "target_objects_health_with_links": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "camera_tripod_86@base_link", "digital_camera_87@base_link"],  # "scrub@base_link", "trumpet@base_link"
+            "target_objects_health_with_links": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2", f"{robot_name}@base_link", "camera_tripod_86@base_link", "digital_camera_87@base_link"],  # "scrub@base_link", "trumpet@base_link"
             "target_objects_health": [robot_name, "camera_tripod_86", "digital_camera_87"],  # "scrub", "trumpet"
-            "target_objects_forces": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", "camera_tripod_86@base_link", "digital_camera_87@base_link"],
+            "target_objects_forces": [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2", f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2", f"{robot_name}@base_link", "camera_tripod_86@base_link", "digital_camera_87@base_link"],
             "force_keys": ["filtered_qs_forces", "impact_forces"],
             "target_contact_bodies": ["camera_tripod_86", "digital_camera_87"]
         }
@@ -180,7 +183,8 @@ def __main__():
         final_obj_healths = defaultdict(list)
         final_env_healths = []
         
-        for demo_idx in range(len(f["data"])):
+        for idx in range(len(f["data"])):
+            demo_idx = int(list(f["data"].keys())[idx].split("_")[-1])
             # Parse info to obtain relevant information for visualization
             obs_info_list = []
             for i in range(len(f[f"data/demo_{demo_idx}/info/obs_info"])):            
