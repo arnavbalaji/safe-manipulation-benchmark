@@ -30,6 +30,7 @@ from omnigibson.utils.transform_utils import quat2axisangle
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper
 
 from models.cfm_policy import CFMPolicy, PolicyConfig
+from dataset.b1k_dataset import B1KDataset 
 
 gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
@@ -218,7 +219,7 @@ class ObservationProcessor:
         resized = F.interpolate(
             seg_img.float(),
             size=self.config.seg_img_size,
-            mode='nearest'
+            mode='nearest-exact'
         )
         
         return resized.squeeze(0).squeeze(0).long()  # [target_H, target_W]
@@ -508,7 +509,7 @@ def reset_env(env):
     for _ in range(10): og.sim.step()
     return obs, info
 
-def load_policy(checkpoint_path: str, device: str = "cuda") -> CFMPolicy:
+def load_policy(checkpoint_path: str, device: str = "cuda", action_min: th.Tensor = None, action_max: th.Tensor = None) -> CFMPolicy:
     """
     Load a trained CFMPolicy from checkpoint.
     
@@ -526,7 +527,7 @@ def load_policy(checkpoint_path: str, device: str = "cuda") -> CFMPolicy:
     if "config" in checkpoint:
         config = checkpoint["config"]
     else:
-        config = PolicyConfig()
+        config = PolicyConfig(action_min=action_min, action_max=action_max)
     
     policy = CFMPolicy(config)
     
@@ -548,28 +549,44 @@ def load_policy(checkpoint_path: str, device: str = "cuda") -> CFMPolicy:
 def __main__():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', type=str, 
-                        default="../rl-flow-matching/checkpoints/final.pth",
+                        default="../rl-flow-matching/checkpoints/action-norm/final.pth",
                         help='Path to policy checkpoint')
     parser.add_argument('--load_state', action='store_true', help='Load a saved state')
-    parser.add_argument('--n_episodes', type=int, default=1, help='Number of episodes to run')
-    parser.add_argument('--max_steps', type=int, default=500, help='Max steps per episode')
+    parser.add_argument('--n_episodes', type=int, default=5, help='Number of episodes to run')
+    parser.add_argument('--max_steps', type=int, default=400, help='Max steps per episode')
     parser.add_argument('--device', type=str, default='cuda', help='Device for policy')
     parser.add_argument('--execute_horizon', type=int, default=1, 
                         help='Actions to execute before re-planning')
     parser.add_argument('--save_data', action='store_true', help='Save trajectory data')
     parser.add_argument('--vocab_hdf5', type=str, 
-                        default="../safe-manipulation-benchmark/resources/playback_data/shelf_place_bad_trajs_playback.hdf5",
+                        default="../safe-manipulation-benchmark/resources/playback_data/shelve_item_good_bad_playback.hdf5",
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
+    parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=False)
     args = parser.parse_args()
     
     # Set seeds for reproducibility
-    np.random.seed(0)
-    th.manual_seed(0)
+    np.random.seed(1)
+    th.manual_seed(1)
+
+    #### Load dataset for the normalization statistics ####
+    dataset = B1KDataset(
+        data_path="../safe-manipulation-benchmark/resources/playback_data/shelve_item_good_bad_playback.hdf5",
+        frame_stack=2,
+        action_chunk_size=8,
+        seg_img_size=(128, 128),
+        normalize_action=args.normalize_action,
+    )
+    if args.normalize_action:
+        action_min = dataset.action_min
+        action_max = dataset.action_max
+    else:
+        action_min = None
+        action_max = None
     
     # Load policy
     device = args.device if th.cuda.is_available() else "cpu"
     print(f"Loading policy from {args.checkpoint}...")
-    policy = load_policy(args.checkpoint, device=device)
+    policy = load_policy(args.checkpoint, device=device, action_min=action_min, action_max=action_max)
     policy.print_parameter_summary()
     
     # Create observation processor with class vocabulary from training HDF5
@@ -730,22 +747,31 @@ def __main__():
         
         for step in range(args.max_steps):
             # Query policy for new action chunk if needed
-            if action_chunker.needs_replan():
+            # if action_chunker.needs_replan():
                 # Process observation with global class ID remapping
-                policy_input = obs_processor.process(obs, robot, obs_info=current_obs_info)
+            policy_input = obs_processor.process(obs, robot, obs_info=current_obs_info)
                 
                 # Generate action chunk
-                with th.no_grad():
-                    action_chunk = policy.generate_action(
-                        seg_images=policy_input['extero'],
-                        state=policy_input['proprio'],
-                    )
+            with th.no_grad():
+                action_chunk = policy.generate_action(
+                    seg_images=policy_input['extero'],
+                    state=policy_input['proprio'],
+                    n_actions=4
+                )
+                # import ipdb; ipdb.set_trace()
+                action_chunk = action_chunk.mean(dim=1)
+
                 
                 # Update chunker with new actions
-                action_chunker.update_chunk(action_chunk[0])  # Remove batch dim
+                # action_chunker.update_chunk(action_chunk[0])  # Remove batch dim
             
             # Get next action from chunk
-            action = action_chunker.get_action()
+            # action = action_chunker.get_action()
+            action = action_chunk[0, 0]
+            if action[-1] > 0:
+                action[-1] = 1.0
+            # TODO(junhong): force the gripper to be closed, just for testing!
+            # action[-1] = -1.0
             
             if action is None:
                 print(f"Warning: No action available at step {step}")
