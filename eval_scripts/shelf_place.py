@@ -836,8 +836,8 @@ def __main__():
             # Get next action from chunk
             # action = action_chunker.get_action()
             action = action_chunk[0, 0]
-            if action[-1] > 0:
-                action[-1] = 1.0
+            # if action[-1] > 0:
+            #     action[-1] = 1.0
             # TODO(junhong): force the gripper to be closed, just for testing!
             # action[-1] = -1.0
             
