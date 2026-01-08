@@ -20,6 +20,8 @@ import omnigibson as og
 from omnigibson import object_states
 from omnigibson.systems import FluidSystem
 from omnigibson.macros import gm
+from scipy.spatial.transform import Rotation as R
+import omnigibson.utils.transform_utils as T
 
 from omnigibson.envs import DataCollectionWrapper, DataPlaybackWrapper
 from omnigibson.controllers.controller_base import IsGraspingState
@@ -77,10 +79,10 @@ class ObservationProcessor:
     training (from HDF5 dataset) and inference (from live environment).
     """
     
-    def __init__(self, config: ObsProcessorConfig = None, device: str = "cuda"):
+    def __init__(self, config: ObsProcessorConfig = None, device: str = "cuda", objects_of_interest: List[str] = None):
         self.config = config or ObsProcessorConfig()
         self.device = device
-        
+        self.objects_of_interest = ["box_of_crackers", "book", "bottle_of_wine", "bottle_of_beer", "stand"] 
         # Frame buffer for temporal stacking
         self.seg_buffers: Dict[str, deque] = {
             key: deque(maxlen=self.config.frame_stack) 
@@ -139,13 +141,21 @@ class ObservationProcessor:
         sorted_classes = sorted(all_classes)
         self.class_to_id = {"unknown": 0}
         self.id_to_class = {0: "unknown"}
-        
-        for idx, cls_name in enumerate(sorted_classes, start=1):
-            self.class_to_id[cls_name] = idx
-            self.id_to_class[idx] = cls_name
-        
+        idx = 1
+        for cls_name in sorted_classes:
+            if self.objects_of_interest is None:
+                self.class_to_id[cls_name] = idx
+                self.id_to_class[idx] = cls_name
+                idx += 1
+            else:
+                for obj in self.objects_of_interest:
+                    # print(f"Checking if {cls_name} in {obj}, result: {cls_name in obj}")
+                    if obj in cls_name: 
+                        self.class_to_id[cls_name] = idx
+                        self.id_to_class[idx] = cls_name
+                        idx += 1
+                        break
         self.num_seg_classes = len(self.class_to_id)
-        
         print(f"Built class vocabulary with {self.num_seg_classes} classes (including 'unknown'):")
         for cls_name, idx in self.class_to_id.items():
             print(f"  {idx}: {cls_name}")
@@ -497,6 +507,18 @@ TASK_OBJECTS = {
     },
 }
 
+def check_object_upright(obj):
+    q = obj.get_position_orientation()[1]
+    r = R.from_quat(q)
+
+    # Rotate the up vector
+    up_rotated = r.apply([0, 0, 1])
+    z_alignment = up_rotated[2]  # should be close to 1 if not toppled
+
+    threshold = 0.995  # cos(small angle) ~1
+    upright = z_alignment > threshold
+    
+    return upright
 
 def reset_env(env):
     obs, info = env.reset()
@@ -505,8 +527,53 @@ def reset_env(env):
     og.sim.load_state(state_flat_array, serialized=True)
 
     # TODO: Add object pose and scale randomization
+    flour = env.scene.object_registry("name", "book")
+    wineglass = env.scene.object_registry("name", "wineglass")
+    winebottle = env.scene.object_registry("name", "bottle_of_wine")
+    beerbottle = env.scene.object_registry("name", "bottle_of_beer")
+    objects = [flour, wineglass, winebottle, beerbottle]
+    trial_number = 0
+    while True:
+        print("trial number: ", trial_number)
+        for obj in objects:
+            pos, orn = obj.get_position_orientation()
+            pos_magnitude = [-0.05, 0.05] 
+            rot_magnitude = np.pi / 12 # 15 degrees
+            pos_diff_xy = np.random.uniform(pos_magnitude[0], pos_magnitude[1], size=2)
+            pos_diff = th.from_numpy(np.concatenate([pos_diff_xy, np.zeros(1)])).float()
+            new_pos = pos + pos_diff
+            orn_diff = th.from_numpy(np.array([0.0, 0.0, np.random.uniform(-rot_magnitude, rot_magnitude)]))
+            new_orn = T.mat2quat(T.euler2mat(orn_diff) @ T.quat2mat(orn))
+            obj.set_position_orientation(new_pos, new_orn)
+
+        # randomize scale
+        temp_state = og.sim.dump_state(serialized=False)
+        og.sim.stop()
+        for obj in objects:
+            x_scale_magnitude = np.random.uniform(0.9, 1.1)
+            y_scale_magnitude = np.random.uniform(0.9, 1.1)
+            z_scale_magnitude = np.random.uniform(0.9, 1.1)
+            new_scale = [obj.scale[0] * x_scale_magnitude, obj.scale[1] * y_scale_magnitude, obj.scale[2] * z_scale_magnitude]
+            obj.scale = th.tensor(new_scale)
+        og.sim.play()
+        og.sim.load_state(temp_state)
+
+        # Make sure all objects are upright
+        all_upright = True
+        for obj in objects:
+            upright = check_object_upright(obj)
+            print("object, upright: ", obj.name, upright)
+            if not upright:
+                print(f"Object {obj.name} is not upright, randomizing again")
+                all_upright = False
+                break
+        if all_upright:
+            print("All objects are upright, breaking")
+            break
+        trial_number += 1
 
     for _ in range(10): og.sim.step()
+
     return obs, info
 
 def load_policy(checkpoint_path: str, device: str = "cuda", action_min: th.Tensor = None, action_max: th.Tensor = None) -> CFMPolicy:
@@ -549,7 +616,8 @@ def load_policy(checkpoint_path: str, device: str = "cuda", action_min: th.Tenso
 def __main__():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', type=str, 
-                        default="../rl-flow-matching/checkpoints/action-norm/final.pth",
+                        # default="../rl-flow-matching/checkpoints/new-data/step_12500.pth",
+                        default="../rl-flow-matching/checkpoints/new-data-obj-interest/step_13500.pth",
                         help='Path to policy checkpoint')
     parser.add_argument('--load_state', action='store_true', help='Load a saved state')
     parser.add_argument('--n_episodes', type=int, default=5, help='Number of episodes to run')
@@ -559,18 +627,18 @@ def __main__():
                         help='Actions to execute before re-planning')
     parser.add_argument('--save_data', action='store_true', help='Save trajectory data')
     parser.add_argument('--vocab_hdf5', type=str, 
-                        default="../safe-manipulation-benchmark/resources/playback_data/shelve_item_good_bad_playback.hdf5",
+                        default="../safe-manipulation-benchmark/resources/playback/new_data_episode_starts_shelf_playback.hdf5",
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
     parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=False)
     args = parser.parse_args()
     
     # Set seeds for reproducibility
-    np.random.seed(1)
-    th.manual_seed(1)
+    np.random.seed(0)
+    th.manual_seed(0)
 
     #### Load dataset for the normalization statistics ####
     dataset = B1KDataset(
-        data_path="../safe-manipulation-benchmark/resources/playback_data/shelve_item_good_bad_playback.hdf5",
+        data_path="../safe-manipulation-benchmark/resources/playback/new_data_episode_starts_shelf_playback.hdf5",
         frame_stack=2,
         action_chunk_size=8,
         seg_img_size=(128, 128),
@@ -756,10 +824,10 @@ def __main__():
                 action_chunk = policy.generate_action(
                     seg_images=policy_input['extero'],
                     state=policy_input['proprio'],
-                    n_actions=4
+                    # n_actions=4
                 )
                 # import ipdb; ipdb.set_trace()
-                action_chunk = action_chunk.mean(dim=1)
+                # action_chunk = action_chunk.mean(dim=1)
 
                 
                 # Update chunker with new actions
