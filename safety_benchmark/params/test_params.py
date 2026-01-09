@@ -139,9 +139,62 @@ PARAMS = {
             "damage_threshold": 300.0,
             "damage_scale": 100.0,
         }
-    }
-    
-    
+    },
+    # Shelve task
+    "bottle_of_wine": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 0.5,
+            "damage_threshold": 40.0,
+            "damage_scale": 100.0,
+        }
+    },
+    "wineglass": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 0.5,
+            "damage_threshold": 40.0,
+            "damage_scale": 100.0,
+        }
+    },
+    "bottle_of_beer": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 0.5,
+            "damage_threshold": 40.0,
+            "damage_scale": 100.0,
+        }
+    },
+    "bag_of_flour": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 0.1,
+            "qs_damage_sensitivity": 0.1,
+            "damage_threshold": 150.0,
+            "damage_scale": 100.0,
+        }
+    },
+    "box_of_crackers": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 0.1,
+            "qs_damage_sensitivity": 0.8,
+            "damage_threshold": 80.0,
+            "damage_scale": 1.0,
+        }
+    },
+    "stand": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 0.001,
+            "qs_damage_sensitivity": 0.001,
+            "damage_threshold": 300.0,
+            "damage_scale": 1.0,
+        }
+    },
     # OLD VALUES
     # "bowl": {
     #     "damage_evaluators": ["mechanical"],
