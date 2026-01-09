@@ -252,7 +252,8 @@ def __main__():
         env = DamageableDataCollectionWrapper(
             env=env,
             output_path=args.collect_hdf5_path,
-            only_successes=False,
+            # We manually set which episodes to save.
+            only_successes=True,
             enable_dump_filters=False,
         )
 
@@ -301,13 +302,16 @@ def __main__():
         last_telemoma_grip_action = 1.0 
         for i in range(n_episodes):
             print(f"Episode {i} starts")
+            keypress_str = ""
             reset_env(env)
             breakpoint()
+            env.task._success = True 
             # If the robot is grasping, set the persistent gripper action to -1.0
             if robot.is_grasping().value == IsGraspingState.TRUE:
                 action_generator.persistent_gripper_action[action_generator.binary_grippers[0]] = -1.0
             action = th.zeros(robot.action_dim)
             action[-1] = -1.0
+            episode_starts = False
             # Default gripper action is 1.0
             while True:
                 # Not using telemoma for now
@@ -317,13 +321,23 @@ def __main__():
                     action[-1] = -action[-1]
                 last_telemoma_grip_action = telemoma_grip_action
                 action[:-1] = telemoma_action[:-1]
+                if not episode_starts:
+                    episode_starts = (action[:-1].sum() > 0).item()
 
                 _, keypress_str = action_generator.get_teleop_action()
-                print("action: ", action)
+                if keypress_str == "D":
+                    print("Failure reset pressed, do not save the current trajectory.")
+                    env.task._success = False
+                    break
                 if keypress_str == "TAB":
+                    # We save the current trajectory if the task is successful.
+                    env.task._success = True
                     breakpoint()
                     break
-                env.step(action)
+                if episode_starts:
+                    print("action: ", action)
+                    print("telemoma_action: ", telemoma_action)
+                    env.step(action.clone())
         env.save_data()
         print("Data saved")
         og.shutdown()

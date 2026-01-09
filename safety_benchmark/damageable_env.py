@@ -418,7 +418,6 @@ class DamageableDataCollectionWrapper(DataCollectionWrapper):
     2. Robots are included in health metadata
     3. Proper error handling for uninitialized health
     """
-    
     def process_traj_to_hdf5(self, traj_data, traj_grp_name, nested_keys=("obs",), data_grp=None):
         """
         Processes trajectory data and stores them in HDF5, with proper health metadata collection.

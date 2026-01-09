@@ -65,7 +65,15 @@ def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, cam
                 break
 
         vw_e.release()
-        subprocess.run(["ffmpeg", "-y", "-i", avi_video, "-c:v", "mpeg4", mp4_video], check=True)
+        # Use H.264 codec for better compatibility with most video players
+        subprocess.run([
+            "ffmpeg", "-y", "-i", avi_video,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",  # Ensures compatibility with most players
+            mp4_video
+        ], check=True)
         os.remove(avi_video)
 
 def save_forces_video(output_video_path, target_objects, data, forces_to_plot=["dynamic_forces", "static_forces", "raw_forces_from_sim"]):
