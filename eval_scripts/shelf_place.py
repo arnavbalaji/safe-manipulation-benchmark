@@ -710,7 +710,9 @@ def __main__():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', type=str, 
                         # default="../rl-flow-matching/checkpoints/new-data/step_12500.pth",
-                        default="../rl-flow-matching/checkpoints/step_13500.pth",
+                        # default="../rl-flow-matching/checkpoints/new-data-obj-interest/step_15000.pth",
+                        # default="../rl-flow-matching/checkpoints/new-data/final.pth",
+                        default="../rl-flow-matching/checkpoints/latest-data/step_12500.pth",
                         help='Path to policy checkpoint')
     parser.add_argument('--load_state', action='store_true', help='Load a saved state')
     parser.add_argument('--n_episodes', type=int, default=5, help='Number of episodes to run')
@@ -720,7 +722,7 @@ def __main__():
                         help='Actions to execute before re-planning')
     parser.add_argument('--save_data', action='store_true', help='Save trajectory data')
     parser.add_argument('--vocab_hdf5', type=str, 
-                        default="../safe-manipulation-benchmark/resources/playback_data/new_data_episode_starts_shelf_playback.hdf5",
+                        default="../safe-manipulation-benchmark/resources/playback_data/20260108-shelf-place-playback.hdf5",
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
     parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=False)
     parser.add_argument('--save_videos', action='store_true', help='Save an RGB video for each episode', default=False)
@@ -921,6 +923,7 @@ def __main__():
         # Get initial obs_info for global class ID remapping
         current_obs_info = info.get("obs_info", None)
         
+        previous_action = None 
         for step in range(args.max_steps):
             # Query policy for new action chunk if needed
             # if action_chunker.needs_replan():
@@ -944,10 +947,16 @@ def __main__():
             # Get next action from chunk
             # action = action_chunker.get_action()
             action = action_chunk[0, 0]
+            # if previous_action is not None:
+            #     action = 0.8 * action + 0.2 * previous_action
+            # previous_action = action.clone()
             # if action[-1] > 0:
             #     action[-1] = 1.0
             # TODO(junhong): force the gripper to be closed, just for testing!
             # action[-1] = -1.0
+
+            if action[-1] > 0:
+                print("Gripper opened")
             
             if action is None:
                 print(f"Warning: No action available at step {step}")
