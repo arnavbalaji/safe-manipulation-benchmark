@@ -165,8 +165,8 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             try:
                 if impulses:
                     current_unfiltered_raw_sim_force_magnitude = (float(th.sum(th.stack([th.linalg.vector_norm(v) for v in impulses]))) / max(dt, 1e-8))
-                    if self.entity.category == "agent" and link_name in ["right_gripper_finger_link1", "right_gripper_finger_link2"]:
-                        print("link_name, current_unfiltered_raw_sim_force_magnitude: ", link_name, current_unfiltered_raw_sim_force_magnitude)                    
+                    # if self.entity.category == "agent" and link_name in ["right_gripper_finger_link1", "right_gripper_finger_link2"]:
+                    #     print("link_name, current_unfiltered_raw_sim_force_magnitude: ", link_name, current_unfiltered_raw_sim_force_magnitude)                    
 
                     # =======================================================
                     # 1) Obtain only the quasistatic forces
@@ -213,7 +213,7 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                     current_unique_contact_bodies = body0_list | body1_list
                     new_contact_bool, new_contact_bodies = self.check_new_contact_body(current_unique_contact_bodies, link_name)
                     if new_contact_bool:
-                        print("link_name, new_contact_body: ", link_name, new_contact_bodies)
+                        # print("link_name, new_contact_body: ", link_name, new_contact_bodies)
                         filtered_raw_sim_force_magnitude = sum(self.unfiltered_raw_sim_forces[link_name][-self.window_size:]) / self.window_size
                     else:
                         filtered_raw_sim_force_magnitude = current_unfiltered_raw_sim_force_magnitude
@@ -224,10 +224,10 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                     # For debugging
                     # if self.entity.category == "agent" and link_name in ["right_gripper_finger_link1", "right_gripper_finger_link2"]:
                     #     print("link_name, filtered_raw_sim_force_magnitude: ", link_name, filtered_raw_sim_force_magnitude)                    
-                    if self.entity.category == "agent"  and link_name in ["gripper_right_left_finger_link", "gripper_right_right_finger_link"]:
-                        if filtered_raw_sim_force_magnitude > 50.0:
-                            print("link_name, filtered_raw_sim_force_magnitude: ", link_name, filtered_raw_sim_force_magnitude)
-                            breakpoint()
+                    # if self.entity.category == "agent"  and link_name in ["gripper_right_left_finger_link", "gripper_right_right_finger_link"]:
+                    #     if filtered_raw_sim_force_magnitude > 50.0:
+                    #         print("link_name, filtered_raw_sim_force_magnitude: ", link_name, filtered_raw_sim_force_magnitude)
+                    #         breakpoint()
                     
                 else:
                     self.unfiltered_raw_sim_forces[link_name].append(0.0)

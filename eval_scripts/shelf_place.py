@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, "/home/juxu/Research/safe-manipulation/rl-flow-matching")
+sys.path.insert(0, "/home/arpit/test_projects/rl-flow-matching")
 
 from ast import Pass
 import os
@@ -9,6 +9,7 @@ import yaml
 import json
 import h5py
 import pickle
+import cv2
 import torch as th
 import torch.nn.functional as F
 import numpy as np
@@ -428,6 +429,98 @@ class ActionChunker:
         return self.chunk_idx >= self.execute_horizon
 
 
+class EpisodeVideoRecorder:
+    """
+    Minimal video recorder that streams RGB frames from a chosen camera in the
+    observation dict directly to disk (one video per episode).
+    """
+
+    def __init__(
+        self,
+        enabled: bool = False,
+        output_dir: str = "resources/videos/shelf_place",
+        camera_type: str = "external",
+        camera_name: str = "external_sensor0",
+        fps: int = 30,
+    ):
+        self.enabled = bool(enabled)
+        self.output_dir = output_dir
+        self.camera_type = camera_type
+        self.camera_name = camera_name
+        self.fps = fps
+
+        self.writer = None
+        self.current_episode = None
+        self.output_path = None
+        self.warned_missing = False
+
+        if self.enabled:
+            os.makedirs(self.output_dir, exist_ok=True)
+
+    def start_episode(self, episode_idx: int):
+        if not self.enabled:
+            return
+        # Close any previous writer
+        self.close_episode()
+        self.current_episode = episode_idx
+        self.output_path = os.path.join(
+            self.output_dir, f"episode_{episode_idx + 1:03d}_{self.camera_name}.mp4"
+        )
+        self.warned_missing = False
+        self.writer = None
+
+    def record_frame(self, obs: dict):
+        if not self.enabled:
+            return
+
+        try:
+            camera_obs = obs[self.camera_type][self.camera_name]
+        except Exception:
+            if not self.warned_missing:
+                print(
+                    f"[VideoRecorder] Missing camera '{self.camera_type}/{self.camera_name}' in observation; "
+                    "skipping video recording."
+                )
+                self.warned_missing = True
+            return
+
+        if "rgb" not in camera_obs:
+            if not self.warned_missing:
+                print(
+                    f"[VideoRecorder] Camera '{self.camera_type}/{self.camera_name}' has no 'rgb' data; "
+                    "skipping video recording."
+                )
+                self.warned_missing = True
+            return
+
+        frame = np.asarray(camera_obs["rgb"])
+        if frame.shape[-1] >= 3:
+            frame = frame[:, :, :3]
+        frame = frame.astype(np.uint8)
+
+        if self.writer is None:
+            height, width = frame.shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            self.writer = cv2.VideoWriter(
+                self.output_path, fourcc, self.fps, (width, height)
+            )
+            if not self.writer.isOpened():
+                print(
+                    f"[VideoRecorder] Failed to open video writer at {self.output_path}. Video recording disabled."
+                )
+                self.enabled = False
+                return
+
+        self.writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+    def close_episode(self):
+        if self.writer is not None:
+            self.writer.release()
+            print(f"[VideoRecorder] Saved video to {self.output_path}")
+        self.writer = None
+        self.current_episode = None
+
+
 # ======================== Environment Configuration ========================
 
 FLOUR_INIT_POS = [6.00, 0.35, 1.3]
@@ -617,7 +710,7 @@ def __main__():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', type=str, 
                         # default="../rl-flow-matching/checkpoints/new-data/step_12500.pth",
-                        default="../rl-flow-matching/checkpoints/new-data-obj-interest/step_13500.pth",
+                        default="../rl-flow-matching/checkpoints/step_13500.pth",
                         help='Path to policy checkpoint')
     parser.add_argument('--load_state', action='store_true', help='Load a saved state')
     parser.add_argument('--n_episodes', type=int, default=5, help='Number of episodes to run')
@@ -627,9 +720,14 @@ def __main__():
                         help='Actions to execute before re-planning')
     parser.add_argument('--save_data', action='store_true', help='Save trajectory data')
     parser.add_argument('--vocab_hdf5', type=str, 
-                        default="../safe-manipulation-benchmark/resources/playback/new_data_episode_starts_shelf_playback.hdf5",
+                        default="../safe-manipulation-benchmark/resources/playback_data/new_data_episode_starts_shelf_playback.hdf5",
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
     parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=False)
+    parser.add_argument('--save_videos', action='store_true', help='Save an RGB video for each episode', default=False)
+    parser.add_argument('--video_dir', type=str, default='resources/videos/shelf_place', help='Directory to save episode videos')
+    parser.add_argument('--video_camera_type', type=str, default='external', help='Observation camera_type to record (e.g., external or franka0)')
+    parser.add_argument('--video_camera_name', type=str, default='external_sensor0', help='Observation camera_name to record (e.g., external_sensor0)')
+    parser.add_argument('--video_fps', type=int, default=30, help='FPS for saved videos')
     args = parser.parse_args()
     
     # Set seeds for reproducibility
@@ -638,7 +736,7 @@ def __main__():
 
     #### Load dataset for the normalization statistics ####
     dataset = B1KDataset(
-        data_path="../safe-manipulation-benchmark/resources/playback/new_data_episode_starts_shelf_playback.hdf5",
+        data_path="../safe-manipulation-benchmark/resources/playback_data/new_data_episode_starts_shelf_playback.hdf5",
         frame_stack=2,
         action_chunk_size=8,
         seg_img_size=(128, 128),
@@ -663,6 +761,13 @@ def __main__():
     action_chunker = ActionChunker(
         action_chunk_size=policy.config.action_chunk_size,
         execute_horizon=args.execute_horizon,
+    )
+    video_recorder = EpisodeVideoRecorder(
+        enabled=args.save_videos,
+        output_dir=args.video_dir,
+        camera_type=args.video_camera_type,
+        camera_name=args.video_camera_name,
+        fps=args.video_fps,
     )
     
     # Load the pre-selected configuration and set the online_sampling flag
@@ -793,7 +898,8 @@ def __main__():
     print(f"Episodes: {args.n_episodes}, Max steps: {args.max_steps}")
     print(f"Execute horizon: {args.execute_horizon}")
     print(f"{'='*60}\n")
-    
+    episodes_with_gripper_opened = 0
+
     for episode in range(args.n_episodes):
         print(f"\n--- Episode {episode + 1}/{args.n_episodes} ---")
         
@@ -802,6 +908,8 @@ def __main__():
         # obs, info = env.reset()
         obs_processor.reset()
         action_chunker.reset()
+        video_recorder.start_episode(episode)
+        video_recorder.record_frame(obs)
         
         if args.load_state:
             for _ in range(50):
@@ -847,10 +955,11 @@ def __main__():
             
             # Convert to numpy for environment
             action = action.cpu().numpy()
-            print("Step", step, "Action", action)
+            # print("Step", step, "Action", action)
             
             # Step environment
             obs, reward, terminated, truncated, info = env.step(action)
+            video_recorder.record_frame(obs)
             
             # Update obs_info for next iteration's global class ID remapping
             current_obs_info = info.get("obs_info", current_obs_info)
@@ -875,6 +984,20 @@ def __main__():
         print(f"  Total steps: {step + 1}")
         print(f"  Total reward: {episode_reward:.4f}")
         print(f"  Total damage: {episode_damage:.4f}")
+        video_recorder.close_episode()
+
+        # Check if gripper was opened at all
+        if robot.is_grasping().value != IsGraspingState.TRUE:
+            episodes_with_gripper_opened += 1
+            print("Gripper was opened at least once")
+        
+        # Check task success
+        stand = env.scene.object_registry("name", "stand")
+        box_of_crackers = env.scene.object_registry("name", "box_of_crackers")
+        box_inside_stand = box_of_crackers.states[object_states.Inside].get_value(other=stand)
+        if box_inside_stand and robot.is_grasping(candidate_obj=box_of_crackers).value == IsGraspingState.FALSE:
+            episodes_with_task_success += 1
+            print("Task success")
     
     # Save collected data
     if args.save_data:
