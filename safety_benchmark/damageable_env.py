@@ -380,8 +380,12 @@ class DamageableEnvironment(Environment):
                 for link_name, health in obj.link_healths.items():
                     obs["health"].append(health)
         obs["health"] = th.tensor(obs["health"], dtype=th.float32)
-        obs["right_eef_pos"] = self.robots[0].get_eef_position("right")
-        obs["right_eef_ori"] = self.robots[0].get_eef_orientation("right")
+        # Use robot's default arm (handles both Tiago "right"/"left" and Franka "0")
+        robot = self.robots[0]
+        default_arm = robot.default_arm if hasattr(robot, "default_arm") else "right"
+        eef_pose = robot.get_relative_eef_pose(default_arm)
+        obs["eef_pos"] = eef_pose[0]
+        obs["eef_ori"] = eef_pose[1]
         return obs
 
     def set_damageable_object_params(self):
@@ -791,6 +795,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             #     break
 
             # Execute any transitions that should occur at this current step
+            print("Action", a)
             if str(i) in transitions:
                 cur_transitions = transitions[str(i)]
                 scene = og.sim.scenes[0]
