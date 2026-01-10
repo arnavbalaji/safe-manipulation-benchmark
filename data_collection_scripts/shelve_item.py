@@ -3,6 +3,7 @@ import os
 os.environ["CARB_LOG_CHANNELS"] = "omni.physx.plugin=off"
 import argparse
 import yaml
+import imageio
 import json
 import h5py
 import pickle
@@ -23,10 +24,58 @@ import omnigibson.lazy as lazy
 import omnigibson.utils.transform_utils as T
 from omnigibson.controllers.controller_base import IsGraspingState
 from scipy.spatial.transform import Rotation as R
+import cv2
+import subprocess
 
 
-from safety_benchmark.utils.misc_utils import save_camera_video, create_panda_eef_cylinders
+# from safety_benchmark.utils.misc_utils import save_camera_video, create_panda_eef_cylinders
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper, DamageableDataPlaybackWrapper
+
+
+def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, camera_name, target_objects, obs_info_list, health, demo_idx=0):
+    imgs = hdf5_file[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
+    imgs = imgs[1:]
+    imgs_seg_instance = hdf5_file[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::seg_instance"]
+    imgs_seg_instance = imgs_seg_instance[1:]
+
+    # Write  camera video
+    fps = 30
+    avi_video = output_video_path + ".avi"
+    mp4_video = output_video_path + ".mp4"
+    break_loop = False
+    imageio.mimsave(mp4_video, imgs)
+    # print("imgs: ", len(imgs))
+    # breakpoint()
+    # if len(imgs) > 0:
+    #     he, we = imgs[0].shape[:2]
+    #     fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    #     vw_e = cv2.VideoWriter(avi_video, fourcc, fps, (we, he))
+    #     for i, img in enumerate(imgs):
+    #         img = cv2.cvtColor(img[:, :, :3], cv2.COLOR_RGB2BGR)
+    #         # breakpoint()
+    #         # vw_e.write(np.ascontiguousarray(img, dtype=np.uint8))
+    #         # img_seg_instance = imgs_seg_instance[i]
+    #         # obs_info = obs_info_list[i]
+    #         # for obj_name in target_objects:
+    #         #     seg_instance_info = obs_info[camera_type][camera_name]["seg_instance"]
+    #         #     # print("seg_instance_info: ", i, seg_instance_info)
+    #         #     seg_instance_key = int(next((k for k, v in seg_instance_info.items() if v == obj_name), -1))
+    #         #     if health[obj_name][i] == 0.0:
+    #         #         # breakpoint()
+    #         #         img[img_seg_instance == seg_instance_key] = (0, 0, 255)
+    #                 # if obj_name == "tiago0":
+    #                 #     break_loop = True
+    #                 #     break
+    #         print("writing img", i)
+    #         vw_e.write(np.ascontiguousarray(img)) #, dtype=np.uint8))
+    #         if break_loop:
+    #             for _ in range(5):
+    #                 vw_e.write(np.ascontiguousarray(img)) #, dtype=np.uint8))                
+    #             break
+
+    #     vw_e.release()
+    #     subprocess.run(["ffmpeg", "-y", "-i", avi_video, "-c:v", "mpeg4", mp4_video], check=True)
+    #     os.remove(avi_video)
 
 gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False

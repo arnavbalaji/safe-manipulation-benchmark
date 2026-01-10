@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, "/home/arpit/test_projects/rl-flow-matching")
+sys.path.insert(0, "/home/juxu/Research/safe-manipulation/rl-flow-matching")
 
 from ast import Pass
 import os
@@ -748,7 +748,10 @@ def __main__():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', type=str, 
                         # default="../rl-flow-matching/checkpoints/new-data/step_12500.pth",
-                        default="../rl-flow-matching/checkpoints/step_13500.pth",
+                        # default="../rl-flow-matching/checkpoints/step_13500.pth",
+                        default="../rl-flow-matching/checkpoints/no-gripper-state/step_27000.pth",
+                        # default="../rl-flow-matching/checkpoints/no-gripper-state-no-idle/step_13000.pth",
+                        # default="../rl-flow-matching/checkpoints/no-gripper-state/final.pth",
                         help='Path to policy checkpoint')
     parser.add_argument('--save_raw_hdf5_path', type=str, 
                         default="resources/evals/shelve_item_raw.hdf5",
@@ -761,7 +764,7 @@ def __main__():
                         help='Actions to execute before re-planning')
     parser.add_argument('--save_data', action='store_true', help='Save trajectory data')
     parser.add_argument('--vocab_hdf5', type=str, 
-                        default="../safe-manipulation-benchmark/resources/playback_data/new_data_episode_starts_shelf_playback.hdf5",
+                        default="resources/playback_data/20260108-shelf-place-playback.hdf5",
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
     parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=False)
     parser.add_argument('--save_videos', action='store_true', help='Save an RGB video for each episode', default=False)
@@ -777,7 +780,7 @@ def __main__():
 
     #### Load dataset for the normalization statistics ####
     dataset = B1KDataset(
-        data_path="../safe-manipulation-benchmark/resources/playback_data/new_data_episode_starts_shelf_playback.hdf5",
+        data_path="resources/playback_data/20260108-shelf-place-playback.hdf5",
         frame_stack=2,
         action_chunk_size=8,
         seg_img_size=(128, 128),
@@ -908,6 +911,7 @@ def __main__():
     cfg["env"]["external_sensors"] = external_sensors_config
     for robot_cfg in cfg["robots"]:
         robot_cfg["sensor_config"] = robot_sensor_config
+        robot_cfg["obs_modalities"] = ["proprio", "rgb", "seg_instance"]
 
 
     env = DamageableEnvironment(configs=cfg)        
@@ -993,9 +997,10 @@ def __main__():
                 
                 # Generate action chunk
             with th.no_grad():
+                proprio = obs['franka0']['proprio'][None].to(device)
                 action_chunk = policy.generate_action(
                     seg_images=policy_input['extero'],
-                    state=policy_input['proprio'],
+                    state=proprio[..., :-1],
                     # n_actions=4
                 )
                 # import ipdb; ipdb.set_trace()
