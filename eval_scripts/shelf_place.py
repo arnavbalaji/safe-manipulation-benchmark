@@ -552,10 +552,13 @@ def update_health(obs, health_list_link_names, target_objects_health_with_links,
 
     # Obtain health information for the entire target objects 
     for obj_name in target_objects_health:
-        arrays = [v for k, v in health.items() if k.startswith(f"{obj_name}@")]
+        arrays = [
+            v[-1] for k, v in health.items()
+            if k.startswith(f"{obj_name}@") and len(v) > 0
+        ]
         # Compute element-wise min
         if arrays:
-            health[obj_name].append(float(np.minimum.reduce(arrays)[0]))
+            health[obj_name].append(float(min(arrays)))
         else:
             print(f"No health data for {obj_name}")
 
@@ -995,7 +998,7 @@ def __main__():
                 # Process observation with global class ID remapping
             policy_input = obs_processor.process(obs, robot, obs_info=current_obs_info)
                 
-                # Generate action chunk
+            # Generate action chunk
             with th.no_grad():
                 proprio = obs['franka0']['proprio'][None].to(device)
                 action_chunk = policy.generate_action(
