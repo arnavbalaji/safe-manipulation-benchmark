@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, "/home/arpit/test_projects/rl-flow-matching")
+sys.path.insert(0, "/home/juxu/Research/safe-manipulation/rl-flow-matching")
 
 from ast import Pass
 import os
@@ -712,7 +712,7 @@ def __main__():
                         # default="../rl-flow-matching/checkpoints/new-data/step_12500.pth",
                         # default="../rl-flow-matching/checkpoints/new-data-obj-interest/step_15000.pth",
                         # default="../rl-flow-matching/checkpoints/new-data/final.pth",
-                        default="../rl-flow-matching/checkpoints/latest-data/step_12500.pth",
+                        default="../rl-flow-matching/checkpoints/no-gripper-state/step_27000.pth",
                         help='Path to policy checkpoint')
     parser.add_argument('--load_state', action='store_true', help='Load a saved state')
     parser.add_argument('--n_episodes', type=int, default=5, help='Number of episodes to run')
@@ -738,7 +738,7 @@ def __main__():
 
     #### Load dataset for the normalization statistics ####
     dataset = B1KDataset(
-        data_path="../safe-manipulation-benchmark/resources/playback_data/new_data_episode_starts_shelf_playback.hdf5",
+        data_path="resources/playback_data/20260108-shelf-place-playback.hdf5",
         frame_stack=2,
         action_chunk_size=8,
         seg_img_size=(128, 128),
@@ -864,6 +864,7 @@ def __main__():
     }
     cfg["env"]["external_sensors"] = external_sensors_config
     for robot_cfg in cfg["robots"]:
+        robot_cfg["obs_modalities"] = ["proprio", "rgb", "seg_instance"]
         robot_cfg["sensor_config"] = robot_sensor_config
 
 
@@ -924,17 +925,23 @@ def __main__():
         current_obs_info = info.get("obs_info", None)
         
         previous_action = None 
+
+        # We need to take one step to get the initial obsevation after the environment is reset.
+        obs, reward, terminated, truncated, info = env.step(th.zeros(7))
+        
         for step in range(args.max_steps):
             # Query policy for new action chunk if needed
             # if action_chunker.needs_replan():
                 # Process observation with global class ID remapping
             policy_input = obs_processor.process(obs, robot, obs_info=current_obs_info)
+            # import ipdb; ipdb.set_trace()
                 
                 # Generate action chunk
             with th.no_grad():
+                proprio = obs['franka0']['proprio'][None].to(device)
                 action_chunk = policy.generate_action(
                     seg_images=policy_input['extero'],
-                    state=policy_input['proprio'],
+                    state=proprio[..., :-1],
                     # n_actions=4
                 )
                 # import ipdb; ipdb.set_trace()
@@ -947,6 +954,8 @@ def __main__():
             # Get next action from chunk
             # action = action_chunker.get_action()
             action = action_chunk[0, 0]
+            print("Action chunk", action_chunk[0, :4])
+            print("Proprio", proprio)
             # if previous_action is not None:
             #     action = 0.8 * action + 0.2 * previous_action
             # previous_action = action.clone()
