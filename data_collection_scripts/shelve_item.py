@@ -8,8 +8,9 @@ import json
 import h5py
 import pickle
 import torch as th
+th.set_printoptions(precision=3, sci_mode=False)
 import numpy as np
-
+from collections import defaultdict
 import omnigibson as og
 from omnigibson import object_states
 # from omnigibson.object_states import IsGrasped
@@ -27,10 +28,18 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 import subprocess
 
-
-# from safety_benchmark.utils.misc_utils import save_camera_video, create_panda_eef_cylinders
+from safety_benchmark.utils.misc_utils import create_panda_eef_cylinders, save_rgb_camera_video, save_rgb_force_video, save_rgb_health_video, save_rgb_force_contact_video
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper, DamageableDataPlaybackWrapper
 
+def get_visualization_config(task_name, robot_name):
+    if task_name == "shelve_item":
+        return {
+            "target_objects_health_with_links": [f"{robot_name}@eef_link", f"{robot_name}@panda_hand", f"{robot_name}@panda_leftfinger", f"{robot_name}@panda_rightfinger", "box_of_crackers@base_link", "book@base_link", "bottle_of_wine@base_link", "wineglass@base_link", "bottle_of_beer@base_link"],
+            "target_objects_health": [robot_name, "box_of_crackers", "book", "bottle_of_wine", "wineglass", "bottle_of_beer"],
+            "target_objects_forces": [f"{robot_name}@eef_link", f"{robot_name}@panda_hand", f"{robot_name}@panda_leftfinger", f"{robot_name}@panda_rightfinger", "box_of_crackers@base_link", "book@base_link", "bottle_of_wine@base_link", "wineglass@base_link", "bottle_of_beer@base_link"],
+            "force_keys": ["filtered_qs_forces"], # options: ["impact_forces", "filtered_qs_forces"]
+            "target_contact_bodies": ["stand"]
+        }
 
 def save_camera_video(hdf5_file, output_video_path, robot_name, camera_type, camera_name, target_objects, obs_info_list, health, demo_idx=0):
     imgs = hdf5_file[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
@@ -81,22 +90,22 @@ gm.USE_GPU_DYNAMICS=False
 gm.ENABLE_TRANSITION_RULES = False
 
 
-FLOUR_INIT_POS = [6.00, 0.35, 1.3]
+FLOUR_INIT_POS = [6.00, 0.35, 1.35]
 FLOUR_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
-BOTTLE_OF_WINE_INIT_POS = [6.00, 0.2, 1.3]
+BOTTLE_OF_WINE_INIT_POS = [6.00, 0.2, 1.35]
 BOTTLE_OF_WINE_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
-WINEGLASS_INIT_POS = [6.00, 0.12, 1.3]
+WINEGLASS_INIT_POS = [6.00, 0.12, 1.35]
 WINEGLASS_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
-BOTTLE_OF_WHISKEY_INIT_POS = [6.00, 0.0, 1.3]
+BOTTLE_OF_WHISKEY_INIT_POS = [6.00, 0.0, 1.35]
 BOTTLE_OF_WHISKEY_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
-BOTTLE_OF_BEER_INIT_POS = [6.00, 0.0, 1.3]
+BOTTLE_OF_BEER_INIT_POS = [6.00, 0.0, 1.35]
 BOTTLE_OF_BEER_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 
-SHELF_INIT_POS = [6.00, 0.2, 1.3]
+SHELF_INIT_POS = [6.00, 0.2, 1.35]
 SHELF_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
 SHELF_SCALE = [0.4, 0.8, 0.5]
 
@@ -219,6 +228,8 @@ def reset_env(env):
         og.sim.play()
         og.sim.load_state(temp_state)
 
+        for _ in range(50): og.sim.step()
+
         # Make sure all objects are upright
         all_upright = True
         for obj in objects:
@@ -233,19 +244,21 @@ def reset_env(env):
             break
         trial_number += 1
 
-    for _ in range(10): og.sim.step()
+    for _ in range(50): og.sim.step()
 
 def __main__():
     np.random.seed(0)
     th.manual_seed(0)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--collect_hdf5_path', type=str, help='Target hdf5 path', default="resources/teleop_data/shelve_item.hdf5")
-    parser.add_argument('--playback_hdf5_path', type=str, help='Output hdf5 path', default="resources/playback_data/shelve_item_playback.hdf5")
+    parser.add_argument('--collect_hdf5_path', type=str, help='Target hdf5 path', default="resources/teleop_data/shelve_item_test2.hdf5")
+    parser.add_argument('--playback_hdf5_path', type=str, help='Output hdf5 path', default="resources/playback_data/shelve_item_test2-playback.hdf5")
     parser.add_argument('--n_episodes', type=int, help='Number of episodes', default=1)
     parser.add_argument('--teleop', action='store_true', help='Teleoperate the robot')
     parser.add_argument('--playback', action='store_true', help='Playback the data')
     parser.add_argument('--visualize', action='store_true', help='Visualize the data')
+    parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics')
+    parser.add_argument('--task_name', type=str, help='Task name', default="shelve_item")
     args = parser.parse_args()
 
     if args.teleop:
@@ -345,6 +358,11 @@ def __main__():
         )
         action_generator.print_keyboard_teleop_info()
 
+        # To debug if reset_env is working correctly
+        # for _ in range(20):
+        #     reset_env(env)
+        #     breakpoint()
+
         # ======================== Data collection ========================
         n_episodes = args.n_episodes
         last_telemoma_grip_action = 1.0 
@@ -357,6 +375,7 @@ def __main__():
                 action_generator.persistent_gripper_action[action_generator.binary_grippers[0]] = -1.0
             action = th.zeros(robot.action_dim)
             action[-1] = -1.0
+            episode_starts = False
             # Default gripper action is 1.0
             while True:
                 # Not using telemoma for now
@@ -366,13 +385,23 @@ def __main__():
                     action[-1] = -action[-1]
                 last_telemoma_grip_action = telemoma_grip_action
                 action[:-1] = telemoma_action[:-1]
+                if not episode_starts:
+                    episode_starts = (action[:-1].sum() > 0).item()
 
                 _, keypress_str = action_generator.get_teleop_action()
-                print("action: ", action)
+                if keypress_str == "D":
+                    print("Failure reset pressed, do not save the current trajectory.")
+                    env.task._success = False
+                    break
                 if keypress_str == "TAB":
+                    # We save the current trajectory if the task is successful.
+                    env.task._success = True
                     breakpoint()
                     break
-                env.step(action)
+                if episode_starts:
+                    print("action: ", action)
+                    print("telemoma_action: ", telemoma_action)
+                    env.step(action.clone())
         env.save_data()
         print("Data saved")
         og.shutdown()
@@ -451,50 +480,161 @@ def __main__():
         # Playback the dataset
         env.playback_dataset(record_data=True)    
         env.save_data()
-        og.shutdown()
-
 
     if args.visualize:
         f = h5py.File(args.playback_hdf5_path, "r")
-        f_name = "shelve_item_bad"
         scene_file = json.loads(f["data"].attrs["scene_file"])
         robot_name = "franka0"       
         camera_type = "external"
         camera_name = "external_sensor0"
 
-        output_video_dir = "resources/videos"
+        output_video_dir = "resources/videos/shelve_item_test2"
         os.makedirs(output_video_dir, exist_ok=True)
+
+        visualization_config = get_visualization_config("shelve_item", robot_name)
+        target_objects_health_with_links = visualization_config["target_objects_health_with_links"]
+        target_objects_health = visualization_config["target_objects_health"]
+        target_objects_forces = visualization_config["target_objects_forces"]
+        target_contact_bodies = visualization_config["target_contact_bodies"]
+        force_keys = visualization_config["force_keys"]
+
+        final_obj_healths = defaultdict(list)
+        final_env_healths = []
         
-        # Get all demo keys
-        demo_keys = sorted([k for k in f["data"].keys() if k.startswith("demo_")])
-        print(f"Found {len(demo_keys)} demos to visualize")
-        
-        # Save video for each demo
-        for demo_idx, demo_key in enumerate(demo_keys):
-            print(f"Processing {demo_key} ({demo_idx + 1}/{len(demo_keys)})")
-            
+        for idx in range(len(f["data"])):
+            print("Episode: ", idx)
+            demo_idx = int(list(f["data"].keys())[idx].split("_")[-1])
             # Parse info to obtain relevant information for visualization
             obs_info_list = []
-            obs_info_data = f[f"data/{demo_key}/info/obs_info"]
-            for i in range(len(obs_info_data)):            
-                obs_info = json.loads(obs_info_data[i].decode("utf-8"))
+            for i in range(len(f[f"data/demo_{demo_idx}/info/obs_info"])):            
+                # Obtain observation information 
+                obs_info = json.loads(f[f"data/demo_{demo_idx}/info/obs_info"][i].decode("utf-8"))
                 obs_info_list.append(obs_info)
 
-            health = []
-            target_objects_health = []
-            output_video_path = f"{output_video_dir}/{f_name}_demo_{demo_idx}_camera_video"
-            save_camera_video(hdf5_file=f, 
-                        output_video_path=output_video_path,
-                        robot_name=robot_name, 
-                        camera_type=camera_type, 
-                        camera_name=camera_name,
-                        target_objects=target_objects_health,
-                        obs_info_list=obs_info_list,
-                        health=health,
-                        demo_idx=demo_idx)
-        
-        print(f"Saved {len(demo_keys)} videos to {output_video_dir}")
+            # Obtain health information for the target objects per link
+            all_obj_healths = np.array(f[f"data/demo_{demo_idx}/obs/health"])
+            health_list_link_names = f[f"data/demo_{demo_idx}"].attrs["health_list_link_names"]
+            health = dict()
+            for obj_name in target_objects_health_with_links:
+                health[obj_name] = all_obj_healths[:, np.where(health_list_link_names == obj_name)[0][0]]
+                health[obj_name] = health[obj_name][1:]
+            # breakpoint()
 
+            # Obtain health information for the entire target objects 
+            for obj_name in target_objects_health:
+                arrays = [v for k, v in health.items() if k.startswith(f"{obj_name}@")]
+                # Compute element-wise min
+                if arrays:
+                    health[obj_name] = np.minimum.reduce(arrays)
+                else:
+                    health[obj_name] = None
+
+            if args.compute_metrics:
+                print("Episode: ", demo_idx)
+                current_env_health = 0.0
+                for obj_name in target_objects_health:
+                    final_obj_healths[obj_name].append(health[obj_name][-1])
+                    print(f"{obj_name} health: {health[obj_name][-1]}")
+                    current_env_health += health[obj_name][-1]
+                final_env_healths.append(current_env_health / len(target_objects_health))
+                print(f"Current environment health: ", final_env_healths[-1])
+            
+            if args.visualize:
+                # Save video for rgb camera
+                output_video_path = f"{output_video_dir}/demo_{demo_idx}_camera_video"
+                imgs = f[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::rgb"]
+                imgs = imgs[1:]
+                new_imgs = []
+                imgs_seg_instance = f[f"data/demo_{demo_idx}/obs/{camera_type}::{camera_name}::seg_instance"]
+                imgs_seg_instance = imgs_seg_instance[1:]
+
+                for i, img in enumerate(imgs):
+                    img = cv2.cvtColor(img[:, :, :3], cv2.COLOR_RGB2BGR)
+                    img_seg_instance = imgs_seg_instance[i]
+                    obs_info = obs_info_list[i]
+                    for obj_name in target_objects_health:
+                        seg_instance_info = obs_info[camera_type][camera_name]["seg_instance"]
+                        seg_instance_key = int(next((k for k, v in seg_instance_info.items() if v == obj_name), -1))
+
+                        # # If binary visualization, set to red if 0
+                        # if health[obj_name][i] is not None and health[obj_name][i] == 0.0:
+                        #     mask = img_seg_instance == seg_instance_key
+                        #     overlay_color = np.array([0, 0, 255], dtype=np.uint8)  # BGR
+                        #     img[mask] = overlay_color
+
+                        # If continuous visualization, set to different shades of red if < 100
+                        if health[obj_name][i] is not None and health[obj_name][i] < 100:
+                            mask = img_seg_instance == seg_instance_key
+                            alpha = 1 - health[obj_name][i] / 100.0  # 0 = full health, 1 = dead
+                            overlay_color = np.array([0, 0, 255], dtype=np.uint8)  # BGR
+                            img[mask] = ((1 - alpha) * img[mask] + alpha * overlay_color).astype(np.uint8)
+                    
+                    new_imgs.append(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                imgs = np.array(new_imgs)
+                # save_rgb_camera_video(output_video_path=output_video_path, imgs=imgs)
+            
+                # Obtain forces information for the target objects
+                # target_objects_forces = [f"{robot_name}@right_gripper_link", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"]
+                # target_objects_forces = [f"{robot_name}@left_gripper_link", f"{robot_name}@left_gripper_finger_link1", f"{robot_name}@left_gripper_finger_link2"]
+                # target_objects_forces = [f"microwave_hjjxmi_0@base_link", f"microwave_hjjxmi_0@link_0", f"microwave_hjjxmi_0@glass"]
+                # target_objects_forces = [f"microwave_hjjxmi_0@base_link", f"microwave_hjjxmi_0@link_0", "microwave_hjjxmi_0@glass", f"{robot_name}@right_gripper_finger_link1", f"{robot_name}@right_gripper_finger_link2"]
+                # options: ["unfiltered_raw_sim_forces", "filtered_raw_sim_forces", "unfiltered_qs_forces", "filtered_qs_forces"]
+                # force_keys = ["filtered_raw_sim_forces"]
+                data = dict()
+                for obj_name in target_objects_forces:
+                    data[obj_name] = dict()
+                    for force_key in force_keys:
+                        data[obj_name][force_key] = []
+                for i in range(len(f[f"data/demo_{demo_idx}/info/damage_info"])):
+                    damage_info = json.loads(f[f"data/demo_{demo_idx}/info/damage_info"][i].decode("utf-8"))
+                    for obj_name in target_objects_forces:
+                        for force_key in force_keys:
+                            data[obj_name][force_key].append(damage_info[obj_name.split("@")[0]][obj_name.split("@")[1]]["mechanical"][force_key])
+                
+                # print max forces for each object
+                for obj_name in target_objects_forces:
+                    max_force = max(data[obj_name][force_keys[0]])
+                    print(f"{obj_name} max force: {max_force}")
+                # breakpoint()
+                
+                # Save videos for forces plot
+                forces_video_path = os.path.join(output_video_dir, f"demo_{demo_idx}_forces_video.mp4")
+                save_rgb_force_video(output_video_path=forces_video_path, imgs=imgs, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
+
+                # Save video for health plot
+                health_video_path = os.path.join(output_video_dir, f"demo_{demo_idx}_health_video.mp4")
+                save_rgb_health_video(output_video_path=health_video_path, imgs=imgs, target_objects=target_objects_health, health=health)
+
+                # Obtain contact information for the target objects
+                if args.task_name in ["clean_a_trumpet", "make_microwave_popcorn"]:
+                    contact_info = dict()
+                    for obj_name in target_objects_forces:
+                        contact_info[obj_name] = []
+                    for i in range(len(f[f"data/demo_{demo_idx}/info/damage_info"])):
+                        damage_info = json.loads(f[f"data/demo_{demo_idx}/info/damage_info"][i].decode("utf-8"))
+                        for obj_full_name in target_objects_forces:
+                            obj_name = obj_full_name.split("@")[0]
+                            obj_link_name = obj_full_name.split("@")[1]
+                            contact_list = damage_info[obj_name][obj_link_name]["mechanical"]["contacts"]
+                            contact_found = False
+                            for contact in contact_list:
+                                for target_contact_body in target_contact_bodies:
+                                    if target_contact_body in contact[2] or target_contact_body in contact[3]:
+                                        contact_found = True
+                                        break
+                            contact_info[obj_full_name].append(contact_found)
+
+                    # Save video for force and contact plot
+                    force_contact_video_path = os.path.join(output_video_dir, f"demo_{demo_idx}_force_contact_video.mp4")
+                    save_rgb_force_contact_video(output_video_path=force_contact_video_path, data=data, imgs=imgs, contact_info=contact_info, target_objects=target_objects_forces, forces_to_plot=force_keys)
+
+    if args.compute_metrics:
+        for obj_name in target_objects_health:
+            print(f"Average health for {obj_name}: {np.mean(final_obj_healths[obj_name])}")
+        print(f"Average environment health: {np.mean(final_env_healths)}")
+        breakpoint()
+
+    og.shutdown()
 
 if __name__ == "__main__":
     __main__()

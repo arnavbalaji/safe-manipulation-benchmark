@@ -5,7 +5,25 @@ from typing import Dict
 import omnigibson as og
 import numpy as np
 from omnigibson.utils.usd_utils import RigidContactAPI
+import omnigibson.utils.transform_utils as T
 
+def angular_velocity_from_quat(q_prev, q_curr, dt):
+    # q: (x, y, z, w)
+    q_rel = T.quat_multiply(T.quat_inverse(q_prev), q_curr)
+
+    # Ensure shortest path
+    if q_rel[3] < 0:
+        q_rel = -q_rel
+
+    angle = 2 * th.acos(th.clamp(q_rel[3], -1.0, 1.0))
+    sin_half = th.sqrt(1 - q_rel[3] ** 2)
+
+    if sin_half < 1e-6:
+        axis = q_rel[:3]  # small-angle approx
+    else:
+        axis = q_rel[:3] / sin_half
+
+    return axis * angle / dt
 
 class MechanicalDamageEvaluator(DamageEvaluator):
     """
@@ -45,12 +63,11 @@ class MechanicalDamageEvaluator(DamageEvaluator):
         self.window_size = int((1.0 / og.sim.get_sim_step_dt()) / 2.0)
 
         # Running state for impact / sustained computations
-        self.prev_link_positions: dict[str, th.Tensor] = {}
-        init_link_positions = {link_name: link.get_position_orientation()[0] for link_name, link in self.entity.links.items()}
-        self.prev_link_positions.update(init_link_positions)
-        self.prev_link_velocities: dict[str, th.Tensor] = {}
-        init_link_velocities = {link_name: th.zeros(3) for link_name in self.entity.links.keys()}
-        self.prev_link_velocities.update(init_link_velocities)
+        self.prev_link_positions: dict[str, th.Tensor] = {link_name: link.get_position_orientation()[0] for link_name, link in self.entity.links.items()}
+        self.prev_link_quats = {link_name: link.get_position_orientation()[1] for link_name, link in self.entity.links.items()}
+        self.prev_link_linear_velocities: dict[str, th.Tensor] = {link_name: link.get_linear_velocity() for link_name, link in self.entity.links.items()}
+        self.prev_link_angular_velocities: dict[str, th.Tensor] = {link_name: link.get_angular_velocity() for link_name, link in self.entity.links.items()}
+        # init_link_velocities = {link_name: th.zeros(3) for link_name in self.entity.links.keys()}
         self.previous_unique_contact_bodies: dict[str, set[str]] = {}
 
         # For tracking the unique contact bodies for each link
@@ -113,21 +130,45 @@ class MechanicalDamageEvaluator(DamageEvaluator):
 
             try:
                 # Compute impact force (force that leads to acceleration) via finite-differenced acceleration
+                
+                # For computing linear component of impact force
                 position_previous = self.prev_link_positions.get(link_name)
                 position_current, _ = link.get_position_orientation()
                 displacement = position_current - position_previous
-                velocity_previous = self.prev_link_velocities.get(link_name, th.zeros(3))
-                velocity_current = displacement / max(dt, 1e-8) # dx/dt
-                delta_velocity = velocity_current - velocity_previous
-                acceleration = delta_velocity / max(dt, 1e-8) # dv/dt
-                acceleration_unit_vector = acceleration / th.linalg.vector_norm(acceleration).item()
+                linear_velocity_previous = self.prev_link_linear_velocities.get(link_name)
+                # If mannually computing the linear velocity, then use the following approach.
+                linear_velocity_current = displacement / max(dt, 1e-8) # dx/dt
+                # If using the API to get the linear velocity, then use the following approach.
+                # linear_velocity_current = link.get_linear_velocity()
+
+
+                # For computing angular component of impact force
+                quat_previous = self.prev_link_quats.get(link_name)
+                quat_current = link.get_position_orientation()[1]
+                angular_velocity_previous = self.prev_link_angular_velocities.get(link_name)
+                # If mannually computing the angular velocity, then use the following approach.
+                angular_velocity_current = angular_velocity_from_quat(quat_previous, quat_current, og.sim.get_sim_step_dt())
+                # If using the API to get the angular velocity, then use the following approach.
+                # angular_velocity_current = link.get_angular_velocity()
+                
+                # if self.entity.name == "bottle_of_beer" and link_name == "base_link":
+                #     print("velocity_current: ", velocity_current)
+                
+                delta_linear_velocity = linear_velocity_current - linear_velocity_previous
+                delta_angular_velocity = angular_velocity_current - angular_velocity_previous
+                linear_acceleration = delta_linear_velocity / max(dt, 1e-8) # dv/dt
+                angular_acceleration = delta_angular_velocity / max(dt, 1e-8) # dv/dt
+                linear_acceleration_unit_vector = linear_acceleration / th.linalg.vector_norm(linear_acceleration).item()
+                angular_acceleration_unit_vector = angular_acceleration / th.linalg.vector_norm(angular_acceleration).item()
             except Exception as e:
                 print("1 Error: ", e)
                 breakpoint()
 
             # Track for next step
             self.prev_link_positions[link_name] = position_current.clone()
-            self.prev_link_velocities[link_name] = velocity_current.clone()
+            self.prev_link_quats[link_name] = quat_current.clone()
+            self.prev_link_linear_velocities[link_name] = linear_velocity_current.clone()
+            self.prev_link_angular_velocities[link_name] = angular_velocity_current.clone()
 
             # # NOTE: Not using this approach anymore. 
             # # Impact forces is only computed if a contact was added at this time step, so check that
@@ -140,8 +181,18 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             
             # If using only the acceleration as a proxy for impact force.
             # impact_force = 1.0 * acceleration
-            impact_force =  float(getattr(link, "mass", 1.0)) * acceleration
-            impact_force_magnitude = th.linalg.vector_norm(impact_force).item()
+            impact_force_linear_component =  float(getattr(link, "mass", 1.0)) * linear_acceleration
+            impact_force_angular_component =  float(getattr(link, "mass", 1.0)) * angular_acceleration
+            
+            # Taking max of the linear and angular components of the impact force, models impacts well for our case
+            impact_force_linear_component_magnitude = th.linalg.vector_norm(impact_force_linear_component).item()
+            impact_force_angular_component_magnitude = th.linalg.vector_norm(impact_force_angular_component).item()
+            
+            # Note linear velocities and angular velocities (that are used to compute the respective impact forces) 
+            # have different units (m/s and rad/s) where rad is unitless. Furthermore, the angular velocity magnitude is 
+            # typically much larger. So, to make the scale comparable, we divide the angular velocity magnitude by a scalar
+            # chosen empirically.
+            impact_force_magnitude = max(impact_force_linear_component_magnitude, impact_force_angular_component_magnitude/5.0)
             self.impact_forces[link_name].append(impact_force_magnitude)
 
             # # For debugging
@@ -152,7 +203,7 @@ class MechanicalDamageEvaluator(DamageEvaluator):
             # TODO: check if this condition is needed.
             # if acceleration is quite small, then we don't want to adjust the forces obtained from OG.
             # i.e. we don't want to remove the component of forces obtained from OG that are in the direction of acceleration.
-            delta_velocity_norm = th.linalg.vector_norm(delta_velocity).item()
+            delta_velocity_norm = th.linalg.vector_norm(delta_linear_velocity).item()
             if delta_velocity_norm < 1e-8:
                 adjust_sim_forces = False
 
@@ -178,8 +229,8 @@ class MechanicalDamageEvaluator(DamageEvaluator):
                     else:
                         adjusted_qs_force_magnitudes = []
                         for j, impulse_vec in enumerate(impulses):
-                            proj_imp = th.dot(impulse_vec, acceleration_unit_vector).item()
-                            effective_impulse = impulse_vec - proj_imp * acceleration_unit_vector if proj_imp > 0 else impulse_vec
+                            proj_imp = th.dot(impulse_vec, linear_acceleration_unit_vector).item()
+                            effective_impulse = impulse_vec - proj_imp * linear_acceleration_unit_vector if proj_imp > 0 else impulse_vec
                             adjusted_qs_force_magnitudes.append(th.linalg.vector_norm(effective_impulse))                        
                         current_unfiltered_qs_force_magnitude += (float(th.sum(th.stack(adjusted_qs_force_magnitudes))) / max(dt, 1e-8))
 
@@ -298,7 +349,7 @@ class MechanicalDamageEvaluator(DamageEvaluator):
 
                 link_damage_potential = impact_damage_potential + qs_damage_potential
                 self.damage_potentials[link_name] = link_damage_potential
-                link_damage = max(0.0, (link_damage_potential - link_damage_threshold)) * link_damage_scale
+                link_damage = min(100.0, max(0.0, (link_damage_potential - link_damage_threshold)) * link_damage_scale)
                 link_damages[link_name] = link_damage
             
             except Exception as e:
@@ -316,12 +367,10 @@ class MechanicalDamageEvaluator(DamageEvaluator):
 
     def reset_tracking(self):
         """Reset mechanical damage tracking state"""
-        self.prev_link_positions: dict[str, th.Tensor] = {}
-        init_link_positions = {link_name: link.get_position_orientation()[0] for link_name, link in self.entity.links.items()}
-        self.prev_link_positions.update(init_link_positions)
-        self.prev_link_velocities: dict[str, th.Tensor] = {}
-        init_link_velocities = {link_name: th.zeros(3) for link_name in self.entity.links.keys()}
-        self.prev_link_velocities.update(init_link_velocities)
+        self.prev_link_positions: dict[str, th.Tensor] = {link_name: link.get_position_orientation()[0] for link_name, link in self.entity.links.items()}
+        self.prev_link_quats = {link_name: link.get_position_orientation()[1] for link_name, link in self.entity.links.items()}
+        self.prev_link_linear_velocities: dict[str, th.Tensor] = {link_name: link.get_linear_velocity() for link_name, link in self.entity.links.items()}
+        self.prev_link_angular_velocities: dict[str, th.Tensor] = {link_name: link.get_angular_velocity() for link_name, link in self.entity.links.items()}
         self.previous_unique_contact_bodies: dict[str, set[str]] = {}
         for link_name, link in self.entity.links.items():
             init_contacts_list = link.contact_list()
@@ -336,5 +385,7 @@ class MechanicalDamageEvaluator(DamageEvaluator):
 
     def update_link_positions_and_velocities(self):
         self.prev_link_positions = {link_name: link.get_position_orientation()[0] for link_name, link in self.entity.links.items()}
-        self.prev_link_velocities = {link_name: th.zeros(3) for link_name in self.entity.links.keys()}
+        self.prev_link_quats = {link_name: link.get_position_orientation()[1] for link_name, link in self.entity.links.items()}
+        self.prev_link_linear_velocities = {link_name: link.get_linear_velocity() for link_name, link in self.entity.links.items()}
+        self.prev_link_angular_velocities = {link_name: link.get_angular_velocity() for link_name, link in self.entity.links.items()}
     

@@ -7,7 +7,7 @@ default:
 
 DummyTask:
   default:
-    categories: ["coffee_cup", "plate", "bottle_of_beer", "bottle_of_wine", "wineglass", "bag_of_flour", "stand", "box_of_crackers"]
+    categories: ["coffee_cup", "plate", "bottle_of_beer", "bottle_of_wine", "wineglass", "bag_of_flour", "box_of_crackers"]
     names: []
 
 # Optional: per-task overrides keyed by env task type, then activity name.

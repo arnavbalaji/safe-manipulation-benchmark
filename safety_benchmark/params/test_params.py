@@ -146,7 +146,7 @@ PARAMS = {
         "mechanical": {
             "impact_damage_sensitivity": 1.0,
             "qs_damage_sensitivity": 0.5,
-            "damage_threshold": 40.0,
+            "damage_threshold": 50.0,
             "damage_scale": 100.0,
         }
     },
@@ -155,7 +155,7 @@ PARAMS = {
         "mechanical": {
             "impact_damage_sensitivity": 1.0,
             "qs_damage_sensitivity": 0.5,
-            "damage_threshold": 40.0,
+            "damage_threshold": 25.0,
             "damage_scale": 100.0,
         }
     },
@@ -182,7 +182,7 @@ PARAMS = {
         "mechanical": {
             "impact_damage_sensitivity": 0.1,
             "qs_damage_sensitivity": 0.8,
-            "damage_threshold": 80.0,
+            "damage_threshold": 200.0,
             "damage_scale": 1.0,
         }
     },
@@ -191,7 +191,7 @@ PARAMS = {
         "mechanical": {
             "impact_damage_sensitivity": 0.001,
             "qs_damage_sensitivity": 0.001,
-            "damage_threshold": 300.0,
+            "damage_threshold": 500.0,
             "damage_scale": 1.0,
         }
     },

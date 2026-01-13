@@ -36,37 +36,37 @@ import matplotlib.pyplot as plt
 
 # breakpoint()
 
-# ========== debug health of robot =========
-f = h5py.File("/home/arpit/projects/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/attach_a_camera_to_a_tripod/rollout_0021_00351240_playback.hdf5", "r")
-for demo_idx in range(len(f["data"])):
-    print("episode: ", demo_idx)
-    all_obj_healths = np.array(f[f"data/demo_{demo_idx}/obs/health"])
-    health_list_link_names = f[f"data/demo_{demo_idx}"].attrs["health_list_link_names"]
-    health = dict()
-    for obj_name in health_list_link_names:
-        health[obj_name] = all_obj_healths[:, np.where(health_list_link_names == obj_name)[0][0]]
-        health[obj_name] = health[obj_name][1:]
-        # for debugging
-        if np.any(health[obj_name] < 100.0):
-            # breakpoint()
-            print(f"{obj_name} has health less than 100.0")
+# # ========== debug health of robot =========
+# f = h5py.File("/home/arpit/projects/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/attach_a_camera_to_a_tripod/rollout_0021_00351240_playback.hdf5", "r")
+# for demo_idx in range(len(f["data"])):
+#     print("episode: ", demo_idx)
+#     all_obj_healths = np.array(f[f"data/demo_{demo_idx}/obs/health"])
+#     health_list_link_names = f[f"data/demo_{demo_idx}"].attrs["health_list_link_names"]
+#     health = dict()
+#     for obj_name in health_list_link_names:
+#         health[obj_name] = all_obj_healths[:, np.where(health_list_link_names == obj_name)[0][0]]
+#         health[obj_name] = health[obj_name][1:]
+#         # for debugging
+#         if np.any(health[obj_name] < 100.0):
+#             # breakpoint()
+#             print(f"{obj_name} has health less than 100.0")
 
-    target_objects_health = ["robot_r1"]
-    # Obtain health information for the entire target objects 
-    for obj_name in target_objects_health:
-        arrays = [v for k, v in health.items() if k.startswith(f"{obj_name}@")]
-        # Compute element-wise min
-        if arrays:
-            health[obj_name] = np.minimum.reduce(arrays)
-        else:
-            health[obj_name] = None
-    print("robot_r1_health: ", health["robot_r1"][-1])
-    print(" ========================================== ")
-    # breakpoint()
+#     target_objects_health = ["robot_r1"]
+#     # Obtain health information for the entire target objects 
+#     for obj_name in target_objects_health:
+#         arrays = [v for k, v in health.items() if k.startswith(f"{obj_name}@")]
+#         # Compute element-wise min
+#         if arrays:
+#             health[obj_name] = np.minimum.reduce(arrays)
+#         else:
+#             health[obj_name] = None
+#     print("robot_r1_health: ", health["robot_r1"][-1])
+#     print(" ========================================== ")
+#     # breakpoint()
 
-# ===========================================
+# # ===========================================
 
-# Debugging action vs delta right eef position z
+# =========== Debugging action vs delta right eef position z ===========
 # action_list = []
 # delta_right_eef_pos_z_list = []
 # for i in range(len(f["data/demo_0/action"])-1):
@@ -85,5 +85,7 @@ for demo_idx in range(len(f["data"])):
 # plt.xlabel("Time")
 # plt.show()
 # plt.savefig("/home/arpit/Downloads/plot_2.png")
+# =========================================================================
 
+f = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/shelve_item_test2-playback.hdf5", "r")
 breakpoint()

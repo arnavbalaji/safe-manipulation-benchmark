@@ -283,7 +283,7 @@ class DamageableEnvironment(Environment):
     def unlock_health_changes(self):
         self.lock_health = False
 
-    def step(self, action, n_render_iterations=1):
+    def step(self, action, n_render_iterations=1, episode_step_count=0, playback=False, init_skip_steps=0):
         """
         Apply robot's action and return the next state, reward, done and info,
         
@@ -320,25 +320,31 @@ class DamageableEnvironment(Environment):
             breakpoint()
             raise e
         try:
-            obj_damage_info = {}
-            if not self.lock_health:
-                # Update all damageable objects
-                for obj in self.scene.objects:
-                    if hasattr(obj, "track_damage") and obj.track_damage:
-                        obj.update_health()
-                        obj_damage_info[obj.name] = obj.damage_info
-                        
-                info["damage_info"] = obj_damage_info
-                
-                # health_list = []
-                # for obj in self.scene.objects:
-                #     if hasattr(obj, "track_damage") and obj.track_damage:
-                #         for link_name, health in obj.link_healths.items():
-                #             health_list.append(f"{obj.name}@{link_name}")
-                # info["obs_info"]["health_list_link_names"] = health_list
+            # This is a fix for playback only!!
+            # TODO: Check if we can use self.lock_health here.
+            should_update = (not playback) or (episode_step_count > init_skip_steps - 1)
+            
+            if should_update:
+                obj_damage_info = {}
+                if not self.lock_health:
+                    # Update all damageable objects
+                    for obj in self.scene.objects:
+                        if hasattr(obj, "track_damage") and obj.track_damage:
+                            obj.update_health()
+                            obj_damage_info[obj.name] = obj.damage_info
+                            
+                    info["damage_info"] = obj_damage_info
+                    
+                    # health_list = []
+                    # for obj in self.scene.objects:
+                    #     if hasattr(obj, "track_damage") and obj.track_damage:
+                    #         for link_name, health in obj.link_healths.items():
+                    #             health_list.append(f"{obj.name}@{link_name}")
+                    # info["obs_info"]["health_list_link_names"] = health_list
 
-                if self._reward_fn is not None:
-                    reward, terminated = self._reward_fn(self, obs)
+                    if self._reward_fn is not None:
+                        reward, terminated = self._reward_fn(self, obs)
+
         except Exception as e:
             print("3 Error: ", e)
             breakpoint()
@@ -409,6 +415,9 @@ class DamageableEnvironment(Environment):
         obs, info = super().get_obs()
         obs = self._process_obs(obs)
         return obs, info
+
+    def get_damageable_objects(self):
+        return [obj for obj in self.scene.objects if hasattr(obj, "track_damage") and obj.track_damage]
 
 
 class DamageableDataCollectionWrapper(DataCollectionWrapper):
@@ -668,6 +677,13 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         assert f"demo_{episode_id}" in data_grp, f"No valid episode with ID {episode_id} found!"
         traj_grp = data_grp[f"demo_{episode_id}"]
 
+        # Skip the first @init_skip_steps steps to get the initial health values
+        # We do this beacause playback has some artifacts which I havent' understood yet.
+        # Due to these artifacts (object being loaded at a very different place and then teleoported suddenly
+        # leading to high impact forces), the initial health values are not correct.
+        self.init_skip_steps = 4 # orginally 4
+
+        
         # Grab episode data
         # Skip early if found malformed data
         try:
@@ -681,14 +697,14 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             terminated = traj_grp["terminated"]
             truncated = traj_grp["truncated"]
 
-            # The state after reset/spawining of scene (timestep 0) during data collection and the start of teleop (timestep 1) is very different leading to 
-            # high computation of impact forces. So, we skip the first action, state, state_size, reward, terminated, truncated.
-            action = action[1:]
-            state = state[1:]
-            state_size = state_size[1:]
-            reward = reward[1:]
-            terminated = terminated[1:]
-            truncated = truncated[1:]
+            # # The state after reset/spawining of scene (timestep 0) during data collection and the start of teleop (timestep 1) is very different leading to 
+            # # high computation of impact forces. So, we skip the first action, state, state_size, reward, terminated, truncated.
+            # action = action[1:]
+            # state = state[1:]
+            # state_size = state_size[1:]
+            # reward = reward[1:]
+            # terminated = terminated[1:]
+            # truncated = truncated[1:]
         
         except KeyError as e:
             print(f"Got error when trying to load episode {episode_id}:")
@@ -743,24 +759,20 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         if callback is not None:
             result.append(callback(action=action[0]))
 
-        # Update link positions and velocities for all damage evaluators
-        for obj in self.scene.objects:
-            if hasattr(obj, "track_damage") and obj.track_damage:
-                for evaluator in obj.damage_evaluators:
-                    if evaluator.name == "mechanical":
-                        evaluator.update_link_positions_and_velocities()
-
         # If record, record initial observations
         if record_data:
             # We need to step the environment to get the initial observations propagated
             first_time_load_n_iteration = 10
             self.current_obs, _, _, _, init_info = self.env.step(
-                action=action[0], n_render_iterations=self.n_render_iterations + first_time_load_n_iteration
+                action=action[0], n_render_iterations=self.n_render_iterations + first_time_load_n_iteration, playback=True, init_skip_steps=self.init_skip_steps
             )
-            # breakpoint()
-            step_data = {"obs": self._process_obs(obs=self.current_obs, info=init_info)}
-            self.current_traj_history.append(step_data)
+        #     # Skipping adding to hdf5 here cause for some reason the initial state is not correct. The initial obs is added later
+        #     # so this logic is kept intact.
+        #     step_data = {"obs": self._process_obs(obs=self.current_obs, info=init_info)}
+        #     self.current_traj_history.append(step_data)
 
+        print("After reset health: ", self.current_obs["health"])
+        # breakpoint()
         # # Print all object names in the scene (For debugging)
         # if replay_for_annotation:
         #     print(f"================= object names in the scene =================")
@@ -773,16 +785,17 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             if i % 50 == 0:
                 print(f"step {i} completed")
                 robot = self.scene.robots[0]
-                if self.task.activity_name == "attach_a_camera_to_a_tripod":
-                    camera = self.scene.object_registry("name", "digital_camera_87")
-                    tripod = self.scene.object_registry("name", "camera_tripod_86")
-                    print(f"healths: camera {camera.health}, tripod {tripod.health}, robot {robot.health}")
-                elif self.task.activity_name == "make_microwave_popcorn":
-                    microwave = self.scene.object_registry("name", "microwave_hjjxmi_0")
-                    print(f"healths: microwave {microwave.health}, robot {robot.health}")
-                elif self.task.activity_name == "clean_a_trumpet":
-                    scrub = self.scene.object_registry("name", "scrub_brush_86")
-                    print(f"healths: scrub {scrub.health}, robot {robot.health}")
+                if self.task.__class__.__name__ == "BehaviorTask":
+                    if self.task.activity_name == "attach_a_camera_to_a_tripod":
+                        camera = self.scene.object_registry("name", "digital_camera_87")
+                        tripod = self.scene.object_registry("name", "camera_tripod_86")
+                        print(f"healths: camera {camera.health}, tripod {tripod.health}, robot {robot.health}")
+                    elif self.task.activity_name == "make_microwave_popcorn":
+                        microwave = self.scene.object_registry("name", "microwave_hjjxmi_0")
+                        print(f"healths: microwave {microwave.health}, robot {robot.health}")
+                    elif self.task.activity_name == "clean_a_trumpet":
+                        scrub = self.scene.object_registry("name", "scrub_brush_86")
+                        print(f"healths: scrub {scrub.health}, robot {robot.health}")
 
             if replay_for_annotation:
                 if i % break_after_n_steps == 0:
@@ -791,11 +804,25 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                     breakpoint()
         
             # # For debugging
-            # if i > 700:
+            # if i > 100:
             #     break
 
+            if i == self.init_skip_steps:
+                # Update link positions and velocities for all damage evaluators
+                for obj in self.scene.objects:
+                    if hasattr(obj, "track_damage") and obj.track_damage:
+                        for evaluator in obj.damage_evaluators:
+                            if evaluator.name == "mechanical":
+                                evaluator.update_link_positions_and_velocities()
+            
+            if i == self.init_skip_steps + 1:
+                step_data = {"obs": self._process_obs(obs=self.current_obs, info=info)}
+                self.current_traj_history.append(step_data)
+                print("After first computation of health: ", self.current_obs["health"])
+                # breakpoint()
+
             # Execute any transitions that should occur at this current step
-            print("Action", a)
+            # print("Action", a)
             if str(i) in transitions:
                 cur_transitions = transitions[str(i)]
                 scene = og.sim.scenes[0]
@@ -838,9 +865,9 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                         system.set_particles_velocities(
                             lin_vels=th.zeros((system.n_particles, 3)), ang_vels=th.zeros((system.n_particles, 3))
                         )
-            self.current_obs, _, _, _, info = self.env.step(action=a, n_render_iterations=self.n_render_iterations)
+            self.current_obs, _, _, _, info = self.env.step(action=a, n_render_iterations=self.n_render_iterations, episode_step_count=i, playback=True, init_skip_steps=self.init_skip_steps)
             # If recording, record data
-            if record_data:
+            if record_data and i > self.init_skip_steps:
                 step_data = self._parse_step_data(
                     action=a,
                     obs=self.current_obs,
