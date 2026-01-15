@@ -11,7 +11,7 @@ import numpy as np
 import yaml
 
 from safety_benchmark.params.test_params import PARAMS
-from safety_benchmark.utils.misc_utils import json_default
+from safety_benchmark.utils.misc_utils import json_default, setup_live_health_bars, update_live_health_bars
 from safety_benchmark.damageable_mixin import (
     DamageableDatasetObject,
     DamageablePrimitiveObject,
@@ -106,6 +106,14 @@ class DamageableEnvironment(Environment):
         
         # Load configuration for what objects should actually track damage
         self.damage_trackable_objects_config = kwargs.get("damage_trackable_objects_config", _load_damage_trackable_objects_config())
+        
+        # Initialize health visualization attributes BEFORE super().__init__()
+        # (because super().__init__() may call reset() which accesses these)
+        self._health_visualization_enabled = False
+        self._health_fig = None
+        self._health_ax = None
+        self._health_bars_dict = None
+        self._health_tracked_object_names = None
         
         # Initialize the damageable environment
         super().__init__(configs, in_vec_env)
@@ -209,6 +217,10 @@ class DamageableEnvironment(Environment):
                     health_list.append(f"{obj.name}@{link_name}")
         # info["obs_info"]["health_list_link_names"] = health_list    
         self.health_list_link_names = health_list
+
+        # Reset health visualization to 100% if enabled
+        if self._health_visualization_enabled:
+            self.update_health_visualization(obs)
 
         # # Reset damage evaluator initialization flag
         # self.damage_evaluators_initialized = False
@@ -357,6 +369,13 @@ class DamageableEnvironment(Environment):
             breakpoint()
             raise e
         
+        # Update health visualization if enabled
+        if self._health_visualization_enabled:
+            window_active = self.update_health_visualization(obs)
+            if not window_active:
+                # Window was closed, disable visualization
+                self._health_visualization_enabled = False
+        
         return obs, reward, terminated, truncated, info
 
 
@@ -418,6 +437,117 @@ class DamageableEnvironment(Environment):
 
     def get_damageable_objects(self):
         return [obj for obj in self.scene.objects if hasattr(obj, "track_damage") and obj.track_damage]
+    
+    def enable_health_visualization(self):
+        """
+        Enable live health bar visualization window.
+        Automatically tracks all damageable objects based on the damageable_objects.yaml config.
+        
+        Returns:
+            bool: True if visualization was successfully enabled, False otherwise
+        """
+        # Get all damageable objects
+        damageable_objects = self.get_damageable_objects()
+        
+        if len(damageable_objects) == 0:
+            print("Warning: No damageable objects found. Cannot enable health visualization.")
+            return False
+        
+        # Extract object names
+        object_names = [obj.name for obj in damageable_objects]
+        
+        # Close existing visualization if any
+        if self._health_visualization_enabled:
+            self.disable_health_visualization()
+        
+        # Set up health bars
+        try:
+            self._health_fig, self._health_ax, self._health_bars_dict = setup_live_health_bars(object_names)
+            self._health_tracked_object_names = object_names
+            self._health_visualization_enabled = True
+            print(f"Health visualization enabled for {len(object_names)} objects: {object_names}")
+            return True
+        except Exception as e:
+            print(f"Error enabling health visualization: {e}")
+            self._health_visualization_enabled = False
+            return False
+    
+    def disable_health_visualization(self):
+        """
+        Disable and close the health visualization window.
+        """
+        if self._health_fig is not None:
+            try:
+                import matplotlib.pyplot as plt
+                if plt.fignum_exists(self._health_fig.number):
+                    plt.close(self._health_fig)
+            except Exception:
+                pass
+            try:
+                import matplotlib.pyplot as plt
+                plt.ioff()  # Turn off interactive mode
+            except Exception:
+                pass
+        
+        self._health_visualization_enabled = False
+        self._health_fig = None
+        self._health_ax = None
+        self._health_bars_dict = None
+        self._health_tracked_object_names = None
+    
+    def update_health_visualization(self, obs=None):
+        """
+        Update the health visualization with current health values.
+        Called automatically in step() if visualization is enabled.
+        
+        Args:
+            obs (dict, optional): Observation dictionary. If None, will get current observation.
+        
+        Returns:
+            bool: True if window is still active, False if closed
+        """
+        if not self._health_visualization_enabled:
+            return True
+        
+        # Get observation if not provided
+        if obs is None:
+            obs, _ = self.get_observation()
+        
+        # Extract health array
+        health_array = obs.get("health", None)
+        if health_array is None or self.health_list_link_names is None:
+            return True
+        
+        # Convert to numpy if tensor
+        if hasattr(health_array, 'cpu'):
+            health_array = health_array.cpu().numpy()
+        else:
+            health_array = np.array(health_array)
+        
+        # Map health values to object@link names
+        link_healths = {}
+        for idx, link_name in enumerate(self.health_list_link_names):
+            if idx < len(health_array):
+                link_healths[link_name] = health_array[idx]
+        
+        # Aggregate health per object (min across links)
+        current_health_values = {}
+        for obj_name in self._health_tracked_object_names:
+            obj_link_healths = [v for k, v in link_healths.items() if k.startswith(f"{obj_name}@")]
+            if obj_link_healths:
+                current_health_values[obj_name] = min(obj_link_healths)
+            else:
+                current_health_values[obj_name] = 100.0  # Default full health
+        
+        # Update visualization
+        try:
+            return update_live_health_bars(
+                self._health_fig, self._health_ax, self._health_bars_dict,
+                current_health_values, self._health_tracked_object_names
+            )
+        except Exception as e:
+            print(f"Error updating health visualization: {e}")
+            return False
 
 
 class DamageableDataCollectionWrapper(DataCollectionWrapper):
@@ -428,6 +558,30 @@ class DamageableDataCollectionWrapper(DataCollectionWrapper):
     2. Robots are included in health metadata
     3. Proper error handling for uninitialized health
     """
+    
+    def enable_health_visualization(self):
+        """Forward health visualization enable to wrapped environment."""
+        if hasattr(self.env, 'enable_health_visualization'):
+            return self.env.enable_health_visualization()
+        return False
+    
+    def disable_health_visualization(self):
+        """Forward health visualization disable to wrapped environment."""
+        if hasattr(self.env, 'disable_health_visualization'):
+            return self.env.disable_health_visualization()
+    
+    def update_health_visualization(self, obs=None):
+        """Forward health visualization update to wrapped environment."""
+        if hasattr(self.env, 'update_health_visualization'):
+            return self.env.update_health_visualization(obs)
+        return True
+    
+    @property
+    def health_list_link_names(self):
+        """Forward health_list_link_names to wrapped environment."""
+        if hasattr(self.env, 'health_list_link_names'):
+            return self.env.health_list_link_names
+        return None
     
     def process_traj_to_hdf5(self, traj_data, traj_grp_name, nested_keys=("obs",), data_grp=None):
         """

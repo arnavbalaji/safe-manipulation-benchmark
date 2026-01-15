@@ -159,6 +159,15 @@ PARAMS = {
             "damage_scale": 100.0,
         }
     },
+    "water_glass": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 0.5,
+            "damage_threshold": 30.0,
+            "damage_scale": 100.0,
+        }
+    },
     "bottle_of_beer": {
         "damage_evaluators": ["mechanical"],
         "mechanical": {
@@ -193,6 +202,19 @@ PARAMS = {
             "qs_damage_sensitivity": 0.001,
             "damage_threshold": 500.0,
             "damage_scale": 1.0,
+        }
+    },
+    # Pour glass task - laptop with electrical damage from water
+    "laptop": {
+        "damage_evaluators": ["electrical"],
+        "electrical": {
+            "damage_threshold": 50.0,  # Minimum 50 water particles to cause damage
+            "scale": 5.0,  # Damage per particle above threshold
+            "water_system_name": "water",
+            "link_thresholds": {
+                "screen": {"damage_threshold": 50.0, "scale": 10.0},  # Screen more sensitive
+                "keyboard": {"damage_threshold": 50.0, "scale": 8.0},  # Keyboard sensitive
+            }
         }
     },
     # OLD VALUES
