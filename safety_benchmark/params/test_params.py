@@ -84,26 +84,8 @@ PARAMS = {
         #     "proximity_threshold": 1.0,  # 2cm proximity for manual detection
         # }
     },
-    # Just for the pour glass task. Setting the value high
-    "coffee_cup": {
-        "damage_evaluators": ["mechanical"],
-        "mechanical": {
-            "impact_damage_sensitivity": 1.0,
-            "qs_damage_sensitivity": 0.5,
-            "damage_threshold": 150.0,
-            "damage_scale": 1.0,
-        }
-    },
-    "plate": {
-        "damage_evaluators": ["mechanical"],
-        "mechanical": {
-            "impact_damage_sensitivity": 1.0,
-            "qs_damage_sensitivity": 0.5,
-            "damage_threshold": 50.0,
-            "damage_scale": 1.0,
-        }
-    },
-    # BEHAVIOR-1K VALUES
+    
+    # BEHAVIOR-1K Tasks
     "microwave": {
         "damage_evaluators": ["mechanical"],
         "damageable_links": ["base_link", "link_0", "glass"],
@@ -141,7 +123,8 @@ PARAMS = {
             "damage_scale": 100.0,
         }
     },
-    # Shelve task
+    
+    # Task: Shelve item
     "bottle_of_wine": {
         "damage_evaluators": ["mechanical"],
         "mechanical": {
@@ -196,7 +179,8 @@ PARAMS = {
             "damage_scale": 1.0,
         }
     },
-    # Pour glass task - laptop with electrical damage from water
+    
+    # Task: Pour water
     "laptop": {
         "damage_evaluators": ["electrical"],
         "electrical": {
@@ -218,161 +202,27 @@ PARAMS = {
             "damage_scale": 100.0,
         }
     },
-    # OLD VALUES
-    # "bowl": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "impact_threshold": 1.5,
-    #         "impact_scale": 40.0,  # Increased scale for more aggressive damage
-    #         "crushing_threshold": 1000.0,
-    #         "crushing_scale": 0.0,
-    #     }
-    # },
-    # "mug": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "impact_threshold": 4.0,
-    #         "impact_scale": 30.0,  # Increased scale for more aggressive damage
-    #         "crushing_threshold": 4.0,
-    #         "crushing_scale": 30.0,
-    #     }
-    # },
-    # "box_of_crackers": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "impact_threshold": 6.0,
-    #         "impact_scale": 1.0,
-    #         "crushing_threshold": 10.0,
-    #         "crushing_scale": 5.0,
-    #     }
-    # },
-    # "baseball": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [80.0, 50.0, 10.0],
-    #     "mechanical": {
-    #         "impact_threshold": 0.015,
-    #         "impact_scale": 0.1,
-    #         "crushing_threshold": 2.0,
-    #         "crushing_scale": 10.0,
-    #     }
-    # },
-    # "coffee_table": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "impact_threshold": 0.5,
-    #         "impact_scale": 0.1,
-    #         # "material_properties": {
-    #         #     "fragility": 0.2,  # Tables are very durable
-    #         #     "elasticity": 0.1,  # Low bounce (wood doesn't bounce)
-    #         #     "density": 700.0,  # Wood density
-    #         #     "contact_threshold": 0.5,  # Very insensitive to small impacts
-    #         #     "energy_threshold": 0.1,  # High energy threshold for wood
-    #         #     "velocity_threshold": 0.05,  # Min velocity change to consider as impact (m/s)
-    #         # }
-    #     }
-    # },
-    # "apple": {
-    #     "damage_evaluators": ["thermal"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "thermal": {
-    #         "damage_threshold": 60.0,
-    #         "scale": 0.001,
-    #     }
-    # },
-    # "pan": {
-    #     "damage_evaluators": ["thermal"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "thermal": {
-    #         "damage_threshold": 100.0,
-    #         "scale": 0.0001,
-    #     }
-    # },
+    # Just for the pour glass task. Setting the value high
+    "coffee_cup": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 0.5,
+            "damage_threshold": 150.0,
+            "damage_scale": 1.0,
+        }
+    },
 
-    # "drawer": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "impact_threshold": 10.0,
-    #         "impact_scale": 0.1,
-    #         "crushing_threshold": 1.0,
-    #         "crushing_scale": 0.01,
-    #     }
-    # },
-    # "vase": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "strain_threshold": 70.0,
-    #         "damage_scale": 100.0,
-    #         "dynamic_forces_coefficient": 1.0,
-    #         "static_forces_coefficient": 1.0,
-    #     }
-    # },
-    # "swivel_chair": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "strain_threshold": 500.0,
-    #         "damage_scale": 20.0,
-    #         "dynamic_forces_coefficient": 0.01,
-    #         "static_forces_coefficient": 0.01,
-    #     }
-    # },
-    # "floor_lamp": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "strain_threshold": 50.0,
-    #         "damage_scale": 100.0,
-    #         "dynamic_forces_coefficient": 1.0,
-    #         "static_forces_coefficient": 1.0,
-    #     }
-    # },
-    # "beer_bottle": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "strain_threshold": 50.0,
-    #         "damage_scale": 20.0,
-    #         "dynamic_forces_coefficient": 1.0,
-    #         "static_forces_coefficient": 1.0,
-    #     }
-    # },
-    # "coffee_cup": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "strain_threshold": 50.0,
-    #         "damage_scale": 20.0,
-    #         "dynamic_forces_coefficient": 1.0,
-    #         "static_forces_coefficient": 1.0,
-    #     }
-    # },
-    # "soccer_ball": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "strain_threshold": 50.0,
-    #         "damage_scale": 20.0,
-    #         "dynamic_forces_coefficient": 0.01,
-    #         "static_forces_coefficient": 0.5,
-    #     }
-    # },
-    # "paper_cup": {
-    #     "damage_evaluators": ["mechanical"],
-    #     "health_thresholds": [90.0, 60.0, 30.0],
-    #     "mechanical": {
-    #         "strain_threshold": 50.0,
-    #         "damage_scale": 20.0,
-    #         "dynamic_forces_coefficient": 0.01,
-    #         "static_forces_coefficient": 1.0,
-    #     }
-    # },
-
+    # Other tasks
+    "plate": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 0.5,
+            "damage_threshold": 50.0,
+            "damage_scale": 1.0,
+        }
+    }
 }
 
 

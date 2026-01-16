@@ -3,8 +3,11 @@ import cv2
 import torch
 import subprocess
 import numpy as np
+import matplotlib
+matplotlib.use('TkAgg')  # Use interactive backend for live window
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from matplotlib.patches import Rectangle
 
 def json_default(o):
     # numpy scalar
@@ -227,6 +230,117 @@ def save_rgb_health_video(
             )
 
         return [video_im] + list(health_lines.values())
+
+    # ---------------------------
+    # SAVE
+    # ---------------------------
+    ani = animation.FuncAnimation(
+        fig,
+        animate,
+        init_func=init,
+        frames=T,
+        interval=1000 / fps,
+        blit=True,
+    )
+
+    writer = animation.FFMpegWriter(
+        fps=fps,
+        codec="libx264",
+        extra_args=[
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+        ],
+    )
+
+    ani.save(output_video_path, writer=writer)
+    plt.close(fig)
+
+
+def save_rgb_water_contacts_video(
+    output_video_path,
+    imgs,
+    target_objects,
+    water_contacts,
+    fps=30,
+):
+    """
+    Save video with RGB frames and water particle contacts plot.
+    
+    Args:
+        output_video_path: Path to save the video
+        imgs: List/array of RGB images
+        target_objects: List of object names to plot
+        water_contacts: Dict mapping object_name -> list of particle counts
+        fps: Frames per second
+    """
+    T = len(water_contacts[target_objects[0]])
+
+    # ---------------------------
+    # FIGURE: 1 row, 2 columns
+    # ---------------------------
+    fig = plt.figure(figsize=(14, 6))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.2])
+
+    # ---------------------------
+    # LEFT: RGB VIDEO
+    # ---------------------------
+    ax_video = fig.add_subplot(gs[0, 0])
+    ax_video.axis("off")
+    video_im = ax_video.imshow(imgs[0][:, :, :3])
+
+    # ---------------------------
+    # RIGHT: WATER CONTACTS PLOT
+    # ---------------------------
+    ax_water = fig.add_subplot(gs[0, 1])
+    ax_water.set_title("Water Particle Contacts Over Time")
+    ax_water.set_xlabel("Time (s)")
+    ax_water.set_ylabel("Particle Contacts")
+    ax_water.set_xlim(0, T / fps)
+    
+    # Find max contact count for y-axis scaling
+    max_contacts = max(max(water_contacts[obj]) for obj in target_objects if len(water_contacts[obj]) > 0)
+    ax_water.set_ylim(0, max(max_contacts * 1.1, 10))
+    ax_water.grid(True)
+
+    water_lines = {}
+    for obj_name in target_objects:
+        water_lines[obj_name], = ax_water.plot(
+            [],
+            [],
+            lw=2,
+            label=f"{obj_name} Water Contacts",
+        )
+
+    ax_water.legend(loc="upper right", fontsize=9)
+    fig.subplots_adjust(left=0.05, right=0.97, wspace=0.25)
+
+    # Precompute time axis
+    time = [i / fps for i in range(T)]
+
+    # ---------------------------
+    # INIT
+    # ---------------------------
+    def init():
+        video_im.set_data(imgs[0][:, :, :3])
+        for line in water_lines.values():
+            line.set_data([], [])
+        return [video_im] + list(water_lines.values())
+
+    # ---------------------------
+    # ANIMATE
+    # ---------------------------
+    def animate(i):
+        # RGB frame
+        video_im.set_data(imgs[i][:, :, :3])
+
+        # Water contacts plot
+        for obj_name in target_objects:
+            water_lines[obj_name].set_data(
+                time[: i + 1],
+                water_contacts[obj_name][: i + 1],
+            )
+
+        return [video_im] + list(water_lines.values())
 
     # ---------------------------
     # SAVE
@@ -678,112 +792,233 @@ def create_panda_eef_cylinders(
     return vis_geoms
 
 
-def save_rgb_water_contacts_video(
-    output_video_path,
-    imgs,
-    target_objects,
-    water_contacts,
-    fps=30,
-):
+def setup_live_health_bars(target_objects_health):
     """
-    Save video with RGB frames and water particle contacts plot.
+    Set up a live matplotlib window with health bars (HUD-style) for real-time health monitoring.
     
     Args:
-        output_video_path: Path to save the video
-        imgs: List/array of RGB images
-        target_objects: List of object names to plot
-        water_contacts: Dict mapping object_name -> list of particle counts
-        fps: Frames per second
+        target_objects_health: List of object names to track
+        
+    Returns:
+        tuple: (figure, axes, health_bars_dict)
+        health_bars_dict: Dict mapping object names to dict containing:
+            - 'background_bar': Rectangle patch for bar background
+            - 'shadow_bar': Rectangle patch for shadow effect
+            - 'foreground_bar': Rectangle patch for health bar
+            - 'label_text': Text object for object name
+            - 'value_text': Text object for health value
     """
-    T = len(water_contacts[target_objects[0]])
-
-    # ---------------------------
-    # FIGURE: 1 row, 2 columns
-    # ---------------------------
-    fig = plt.figure(figsize=(14, 6))
-    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.2])
-
-    # ---------------------------
-    # LEFT: RGB VIDEO
-    # ---------------------------
-    ax_video = fig.add_subplot(gs[0, 0])
-    ax_video.axis("off")
-    video_im = ax_video.imshow(imgs[0][:, :, :3])
-
-    # ---------------------------
-    # RIGHT: WATER CONTACTS PLOT
-    # ---------------------------
-    ax_water = fig.add_subplot(gs[0, 1])
-    ax_water.set_title("Water Particle Contacts Over Time")
-    ax_water.set_xlabel("Time (s)")
-    ax_water.set_ylabel("Particle Contacts")
-    ax_water.set_xlim(0, T / fps)
+    plt.ion()  # Enable interactive mode
     
-    # Find max contact count for y-axis scaling
-    max_contacts = max(max(water_contacts[obj]) for obj in target_objects if len(water_contacts[obj]) > 0)
-    ax_water.set_ylim(0, max(max_contacts * 1.1, 10))
-    ax_water.grid(True)
-
-    water_lines = {}
-    for obj_name in target_objects:
-        water_lines[obj_name], = ax_water.plot(
-            [],
-            [],
-            lw=2,
-            label=f"{obj_name} Water Contacts",
+    # Calculate window size based on number of objects
+    n_objects = len(target_objects_health)
+    bar_height = 40.0  # Increased height for better visibility
+    bar_spacing = 18.0  # Increased spacing between bars
+    header_height = 60.0  # More space for title
+    padding = 25.0  # More padding around edges
+    window_width = 600.0  # Wider window for better spacing
+    window_height = header_height + n_objects * (bar_height + bar_spacing) + padding * 2
+    
+    fig, ax = plt.subplots(figsize=(window_width/100, window_height/100))
+    fig.canvas.manager.set_window_title("Health Monitor")
+    
+    # Set dark background with subtle gradient effect
+    fig.patch.set_facecolor('#1A1A1A')
+    ax.set_facecolor('#1A1A1A')
+    
+    # Remove axes for HUD look
+    ax.axis('off')
+    ax.set_xlim(0, window_width)
+    ax.set_ylim(0, window_height)
+    
+    # Add title with subtle underline effect
+    title_text = ax.text(
+        window_width / 2, window_height - 35,
+        'Health Monitor',
+        fontsize=18, color='#FFFFFF', weight='bold',
+        verticalalignment='center', horizontalalignment='center',
+        family='sans-serif'
+    )
+    # Subtle underline
+    title_underline = Rectangle(
+        (window_width / 2 - 80, window_height - 50), 160, 2,
+        facecolor='#4CAF50', edgecolor='none', linewidth=0,
+        zorder=1, alpha=0.6
+    )
+    ax.add_patch(title_underline)
+    
+    # Health bar configuration - improved spacing to prevent overlap
+    label_width = 160.0  # Wider fixed width for labels
+    bar_width = 280.0  # Wider health bar
+    gap_after_label = 20.0  # Clear gap between label and bar
+    gap_after_bar = 20.0  # Clear gap between bar and value
+    bar_x_start = label_width + gap_after_label  # X position where bars start
+    label_x = padding  # X position for object name labels
+    value_x = bar_x_start + bar_width + gap_after_bar  # X position for health value
+    
+    health_bars_dict = {}
+    
+    # Create health bars for each object
+    for idx, obj_name in enumerate(target_objects_health):
+        # Y position for this bar (from top, accounting for header)
+        y_pos = window_height - header_height - (idx + 1) * (bar_height + bar_spacing) - padding / 2
+        
+        # Background bar container (darker, with border and rounded look via inset)
+        bg_bar = Rectangle(
+            (bar_x_start, y_pos), bar_width, bar_height,
+            facecolor='#0D0D0D', edgecolor='#2A2A2A', linewidth=2.5,
+            zorder=1
         )
+        ax.add_patch(bg_bar)
+        
+        # Outer glow effect (subtle highlight on top edge)
+        glow_bar = Rectangle(
+            (bar_x_start, y_pos + bar_height - 3), bar_width, 3,
+            facecolor='#333333', edgecolor='none', linewidth=0, alpha=0.4,
+            zorder=2
+        )
+        ax.add_patch(glow_bar)
+        
+        # Inner shadow effect (subtle darker border inside)
+        shadow_bar = Rectangle(
+            (bar_x_start + 2, y_pos + 2), bar_width - 4, bar_height - 4,
+            facecolor='none', edgecolor='#000000', linewidth=1, alpha=0.5,
+            zorder=2
+        )
+        ax.add_patch(shadow_bar)
+        
+        # Foreground bar (will be updated with health color and width)
+        fg_bar = Rectangle(
+            (bar_x_start + 3, y_pos + 3), 0, bar_height - 6,  # Start with 0 width, inset for border
+            facecolor='#4CAF50', edgecolor='none', linewidth=0,
+            zorder=3, alpha=0.95
+        )
+        ax.add_patch(fg_bar)
+        
+        # Object name label (truncate if too long, with better positioning)
+        display_name = obj_name if len(obj_name) <= 20 else obj_name[:17] + '...'
+        label_text = ax.text(
+            label_x, y_pos + bar_height / 2,
+            display_name,
+            fontsize=12, color='#E8E8E8', weight='normal',
+            verticalalignment='center', horizontalalignment='left',
+            family='monospace'  # Monospace for consistent width
+        )
+        
+        # Health value label with better formatting and positioning
+        value_text = ax.text(
+            value_x, y_pos + bar_height / 2,
+            '100.0',
+            fontsize=12, color='#FFFFFF', weight='bold',
+            verticalalignment='center', horizontalalignment='left',
+            family='sans-serif'
+        )
+        
+        health_bars_dict[obj_name] = {
+            'background_bar': bg_bar,
+            'glow_bar': glow_bar,
+            'shadow_bar': shadow_bar,
+            'foreground_bar': fg_bar,
+            'label_text': label_text,
+            'value_text': value_text,
+            'bar_x_start': bar_x_start + 3,  # Account for inset
+            'bar_width': bar_width - 6,  # Account for inset borders
+            'y_pos': y_pos + 3,  # Account for inset
+            'bar_height': bar_height - 6  # Account for inset
+        }
+        
+        # Initialize bar to 100% health (green, full width)
+        fg_bar.set_width(bar_width - 6)
+        fg_bar.set_facecolor('#4CAF50')  # Match the update function color
+    
+    plt.tight_layout()
+    plt.show(block=False)
+    
+    return fig, ax, health_bars_dict
 
-    ax_water.legend(loc="upper right", fontsize=9)
-    fig.subplots_adjust(left=0.05, right=0.97, wspace=0.25)
 
-    # Precompute time axis
-    time = [i / fps for i in range(T)]
-
-    # ---------------------------
-    # INIT
-    # ---------------------------
-    def init():
-        video_im.set_data(imgs[0][:, :, :3])
-        for line in water_lines.values():
-            line.set_data([], [])
-        return [video_im] + list(water_lines.values())
-
-    # ---------------------------
-    # ANIMATE
-    # ---------------------------
-    def animate(i):
-        # RGB frame
-        video_im.set_data(imgs[i][:, :, :3])
-
-        # Water contacts plot
-        for obj_name in target_objects:
-            water_lines[obj_name].set_data(
-                time[: i + 1],
-                water_contacts[obj_name][: i + 1],
-            )
-
-        return [video_im] + list(water_lines.values())
-
-    # ---------------------------
-    # SAVE
-    # ---------------------------
-    ani = animation.FuncAnimation(
-        fig,
-        animate,
-        init_func=init,
-        frames=T,
-        interval=1000 / fps,
-        blit=True,
-    )
-
-    writer = animation.FFMpegWriter(
-        fps=fps,
-        codec="libx264",
-        extra_args=[
-            "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-        ],
-    )
-
-    ani.save(output_video_path, writer=writer)
-    plt.close(fig)
+def update_live_health_bars(fig, ax, health_bars_dict, current_health_values, target_objects_health):
+    """
+    Update the live health bars with current health values.
+    
+    Args:
+        fig: Matplotlib figure
+        ax: Matplotlib axes
+        health_bars_dict: Dict mapping object names to bar components (from setup_live_health_bars)
+        current_health_values: Dict mapping object names to current health value (float, 0-100)
+        target_objects_health: List of object names to track
+        
+    Returns:
+        bool: True if window is still active, False if closed
+    """
+    # Check if window is still open
+    if not plt.fignum_exists(fig.number):
+        return False
+    
+    # Update each health bar
+    for obj_name in target_objects_health:
+        if obj_name not in health_bars_dict:
+            continue
+        
+        # Get current health value (default to 100 if not available)
+        health = current_health_values.get(obj_name, 100.0)
+        health = max(0.0, min(100.0, health))  # Clamp to [0, 100]
+        
+        bar_info = health_bars_dict[obj_name]
+        fg_bar = bar_info['foreground_bar']
+        value_text = bar_info['value_text']
+        bar_width = bar_info['bar_width']
+        
+        # Calculate bar width as percentage
+        health_width = (health / 100.0) * bar_width
+        
+        # Determine color based on health (more vibrant, game-like colors)
+        if health == 0:
+            # No health - transparent/empty
+            fg_bar.set_facecolor('none')
+            fg_bar.set_width(0)
+            value_color = '#666666'  # Darker gray for 0 health
+        elif health >= 80:
+            # Green: 80-100 (bright vibrant green with slight gradient effect)
+            fg_bar.set_facecolor('#4CAF50')  # Material Design green
+            fg_bar.set_width(health_width)
+            value_color = '#E8F5E9'  # Light green tint for text
+        elif health >= 40:
+            # Yellow/Orange: 40-79 (warning color)
+            # Interpolate between yellow and orange for more visual feedback
+            if health >= 60:
+                # More yellow
+                fg_bar.set_facecolor('#FFC107')  # Amber
+                value_color = '#FFF9C4'  # Light yellow tint
+            else:
+                # More orange
+                fg_bar.set_facecolor('#FF9800')  # Orange
+                value_color = '#FFE0B2'  # Light orange tint
+            fg_bar.set_width(health_width)
+        else:
+            # Red: 1-39 (danger color)
+            # Darker red for lower health
+            if health >= 20:
+                fg_bar.set_facecolor('#F44336')  # Red
+                value_color = '#FFCDD2'  # Light red tint
+            else:
+                fg_bar.set_facecolor('#D32F2F')  # Darker red
+                value_color = '#EF9A9A'  # Lighter red for visibility
+            fg_bar.set_width(health_width)
+        
+        # Update health value text with color and better formatting
+        value_text.set_text(f'{health:.1f}')
+        value_text.set_color(value_color)
+        
+        # Update label color based on health for better visual feedback
+        label_text = bar_info['label_text']
+        if health == 0:
+            label_text.set_color('#888888')  # Gray for dead objects
+        else:
+            label_text.set_color('#E8E8E8')  # Normal light gray
+    
+    # Redraw efficiently
+    fig.canvas.draw_idle()
+    fig.canvas.flush_events()
+    
+    return True
