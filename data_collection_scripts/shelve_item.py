@@ -192,9 +192,6 @@ def check_object_upright(obj):
 
 def reset_env(env):
     env.reset()
-    # load state
-    with open("resources/saved_states/shelf_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
-    og.sim.load_state(state_flat_array, serialized=True)
 
     # TODO: Add object pose and scale randomization
     flour = env.scene.object_registry("name", "book")
@@ -205,6 +202,11 @@ def reset_env(env):
     trial_number = 0
     while True:
         print("trial number: ", trial_number)
+
+        # load state
+        with open("resources/saved_states/shelve_item_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
+        og.sim.load_state(state_flat_array, serialized=True)
+
         for obj in objects:
             pos, orn = obj.get_position_orientation()
             pos_magnitude = [-0.05, 0.05] 
@@ -326,7 +328,7 @@ def __main__():
         )
         for _ in range(10): og.sim.step()
 
-        # trying
+        # Setting up eef visualization for easier teleop
         eef_vis = create_panda_eef_cylinders(robot, env.scene)
         robot.links["eef_link"].prim.GetAttribute("visibility").Set("inherited")
         # breakpoint()
@@ -358,7 +360,7 @@ def __main__():
         )
         action_generator.print_keyboard_teleop_info()
 
-        # To debug if reset_env is working correctly
+        # # To debug if reset_env is working correctly
         # for _ in range(20):
         #     reset_env(env)
         #     breakpoint()
@@ -378,7 +380,6 @@ def __main__():
             episode_starts = False
             # Default gripper action is 1.0
             while True:
-                # Not using telemoma for now
                 telemoma_action = teleop_sys.get_action(teleop_sys.get_obs())
                 telemoma_grip_action = telemoma_action[-1]
                 if telemoma_grip_action != last_telemoma_grip_action:

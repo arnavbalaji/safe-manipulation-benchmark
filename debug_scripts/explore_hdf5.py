@@ -6,6 +6,7 @@ np.set_printoptions(precision=4, suppress=True)
 import os
 import matplotlib.pyplot as plt
 
+# ========================================= For Gr00T =========================================
 # data_path = "/home/arpit/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim/sim_behavior_r1_pro.task-0000_turning_on_radio/data/chunk-000/episode_00000000.parquet"
 # df = pd.read_parquet(data_path, engine="pyarrow")
 
@@ -35,6 +36,7 @@ import matplotlib.pyplot as plt
 #     print(damage_info["tiago0"]["gripper_right_left_finger_link"]["mechanical"]["contacts"])
 
 # breakpoint()
+# ========================================= For Gr00T =========================================
 
 # # ========== debug health of robot =========
 # f = h5py.File("/home/arpit/projects/Isaac-GR00T/gr00t/eval/sim/BEHAVIOR/rollouts/attach_a_camera_to_a_tripod/rollout_0021_00351240_playback.hdf5", "r")
@@ -87,5 +89,6 @@ import matplotlib.pyplot as plt
 # plt.savefig("/home/arpit/Downloads/plot_2.png")
 # =========================================================================
 
-f = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/shelve_item_test2-playback.hdf5", "r")
-breakpoint()
+# f = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/shelve_item_test-playback.hdf5", "r")
+# f2 = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/pour_glass_temp2_playback.hdf5", "r")
+# breakpoint()

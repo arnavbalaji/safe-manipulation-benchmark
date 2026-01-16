@@ -98,6 +98,18 @@ class DamageableMixin:
                     self.damage_info[link_name]["mechanical"]["contacts"] = evaluator.contacts_by_link[link_name][-1]
                     self.damage_info[link_name]["mechanical"]["damage"] = damage
 
+                # Update the electrical damage information (water particle contacts)
+                if evaluator.name == "electrical":
+                    if "electrical" not in self.damage_info[link_name]:
+                        self.damage_info[link_name]["electrical"] = {}
+                    # Get contact summary for particle counts
+                    contact_summary = evaluator.get_contact_summary()
+                    link_details = contact_summary.get("link_details", {})
+                    particle_count = link_details.get(link_name, {}).get("particle_count", 0)
+                    self.damage_info[link_name]["electrical"]["particle_count"] = particle_count
+                    self.damage_info[link_name]["electrical"]["damage"] = damage
+
+
 
 '''Damageable Object subclasses'''
 class DamageableDatasetObject(DamageableMixin, DatasetObject):

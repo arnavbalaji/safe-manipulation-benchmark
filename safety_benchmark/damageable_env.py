@@ -687,6 +687,18 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         # Grab episode data
         # Skip early if found malformed data
         try:
+            # If obs["health"] and info["damage_info"] is populated, then fetch them
+            # NOTE: This is super important for pour water task because the water particles during playback are not
+            # acting as expected (water particles seem to fly around sometimes). But, during data collection, it is working as expected. So, we obtain the correct
+            # health and damage info from the data collection hdf5 file and use them during playback.
+            datacollection_health = None
+            datacollection_damage_info = None
+            if "obs" in traj_grp and "info" in traj_grp:
+                datacollection_health = th.from_numpy(traj_grp["obs"]["health"][()])
+                damage_infos = traj_grp["info"]["damage_info"][()]
+                datacollection_damage_info = []
+                for i in range(len(damage_infos)): datacollection_damage_info.append(json.loads(damage_infos[i]))
+
             transitions = json.loads(traj_grp.attrs["transitions"])
             traj_grp = h5py_group_to_torch(traj_grp)
             init_metadata = traj_grp["init_metadata"]
@@ -696,6 +708,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             reward = traj_grp["reward"]
             terminated = traj_grp["terminated"]
             truncated = traj_grp["truncated"]
+
 
             # # The state after reset/spawining of scene (timestep 0) during data collection and the start of teleop (timestep 1) is very different leading to 
             # # high computation of impact forces. So, we skip the first action, state, state_size, reward, terminated, truncated.
@@ -779,6 +792,12 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         #     all_objs = og.sim.scenes[0].objects
         #     print([o.name for o in all_objs])
 
+        # if water system exists, set it to not visible
+        if "water" in self.scene.systems:
+            water_system = self.scene.get_system("water")
+            for prototype in water_system.particle_prototypes: prototype.visible = False
+            for instancer in water_system.particle_instancers.values(): instancer.visible = False
+
         for i, (a, s, ss, r, te, tr) in enumerate(
             zip(action, state[1:], state_size[1:], reward, terminated, truncated)
         ):
@@ -804,8 +823,8 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                     breakpoint()
         
             # # For debugging
-            # if i > 100:
-            #     break
+            # if i < 250:
+            #     continue
 
             if i == self.init_skip_steps:
                 # Update link positions and velocities for all damage evaluators
@@ -817,6 +836,9 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             
             if i == self.init_skip_steps + 1:
                 step_data = {"obs": self._process_obs(obs=self.current_obs, info=info)}
+                # Overwrite the health and damage info with the datacollection values
+                if datacollection_health is not None:
+                    step_data["obs"]["health"] = datacollection_health[i]
                 self.current_traj_history.append(step_data)
                 print("After first computation of health: ", self.current_obs["health"])
                 # breakpoint()
@@ -866,6 +888,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                             lin_vels=th.zeros((system.n_particles, 3)), ang_vels=th.zeros((system.n_particles, 3))
                         )
             self.current_obs, _, _, _, info = self.env.step(action=a, n_render_iterations=self.n_render_iterations, episode_step_count=i, playback=True, init_skip_steps=self.init_skip_steps)
+            # breakpoint()
             # If recording, record data
             if record_data and i > self.init_skip_steps:
                 step_data = self._parse_step_data(
@@ -875,6 +898,8 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
                     terminated=te,
                     truncated=tr,
                     info=info,
+                    datacollection_health=datacollection_health[i] if datacollection_health is not None else None,
+                    datacollection_damage_info=datacollection_damage_info[i] if datacollection_damage_info is not None else None,
                 )
                 if self.flush_every_n_steps > 0:
                     if i == 0:
@@ -897,7 +922,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
 
         return result
 
-    def _parse_step_data(self, action, obs, reward, terminated, truncated, info):
+    def _parse_step_data(self, action, obs, reward, terminated, truncated, info, datacollection_health=None, datacollection_damage_info=None):
         # Store action, obs, reward, terminated, truncated, info
         step_data = dict()
         step_data["obs"] = self._process_obs(obs=obs, info=info)
@@ -906,6 +931,12 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         step_data["terminated"] = terminated
         step_data["truncated"] = truncated
         step_data["info"] = info
+
+        # Overwrite the health and damage info with the datacollection values
+        if datacollection_health is not None:
+            step_data["obs"]["health"] = datacollection_health
+        if datacollection_damage_info is not None:
+            step_data["info"]["damage_info"] = datacollection_damage_info
         return step_data
 
     def process_traj_to_hdf5(self, traj_data, traj_grp_name, nested_keys=("obs",), data_grp=None):

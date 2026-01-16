@@ -676,3 +676,114 @@ def create_panda_eef_cylinders(
         vis_geoms[arm] = arm_geoms
 
     return vis_geoms
+
+
+def save_rgb_water_contacts_video(
+    output_video_path,
+    imgs,
+    target_objects,
+    water_contacts,
+    fps=30,
+):
+    """
+    Save video with RGB frames and water particle contacts plot.
+    
+    Args:
+        output_video_path: Path to save the video
+        imgs: List/array of RGB images
+        target_objects: List of object names to plot
+        water_contacts: Dict mapping object_name -> list of particle counts
+        fps: Frames per second
+    """
+    T = len(water_contacts[target_objects[0]])
+
+    # ---------------------------
+    # FIGURE: 1 row, 2 columns
+    # ---------------------------
+    fig = plt.figure(figsize=(14, 6))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.2])
+
+    # ---------------------------
+    # LEFT: RGB VIDEO
+    # ---------------------------
+    ax_video = fig.add_subplot(gs[0, 0])
+    ax_video.axis("off")
+    video_im = ax_video.imshow(imgs[0][:, :, :3])
+
+    # ---------------------------
+    # RIGHT: WATER CONTACTS PLOT
+    # ---------------------------
+    ax_water = fig.add_subplot(gs[0, 1])
+    ax_water.set_title("Water Particle Contacts Over Time")
+    ax_water.set_xlabel("Time (s)")
+    ax_water.set_ylabel("Particle Contacts")
+    ax_water.set_xlim(0, T / fps)
+    
+    # Find max contact count for y-axis scaling
+    max_contacts = max(max(water_contacts[obj]) for obj in target_objects if len(water_contacts[obj]) > 0)
+    ax_water.set_ylim(0, max(max_contacts * 1.1, 10))
+    ax_water.grid(True)
+
+    water_lines = {}
+    for obj_name in target_objects:
+        water_lines[obj_name], = ax_water.plot(
+            [],
+            [],
+            lw=2,
+            label=f"{obj_name} Water Contacts",
+        )
+
+    ax_water.legend(loc="upper right", fontsize=9)
+    fig.subplots_adjust(left=0.05, right=0.97, wspace=0.25)
+
+    # Precompute time axis
+    time = [i / fps for i in range(T)]
+
+    # ---------------------------
+    # INIT
+    # ---------------------------
+    def init():
+        video_im.set_data(imgs[0][:, :, :3])
+        for line in water_lines.values():
+            line.set_data([], [])
+        return [video_im] + list(water_lines.values())
+
+    # ---------------------------
+    # ANIMATE
+    # ---------------------------
+    def animate(i):
+        # RGB frame
+        video_im.set_data(imgs[i][:, :, :3])
+
+        # Water contacts plot
+        for obj_name in target_objects:
+            water_lines[obj_name].set_data(
+                time[: i + 1],
+                water_contacts[obj_name][: i + 1],
+            )
+
+        return [video_im] + list(water_lines.values())
+
+    # ---------------------------
+    # SAVE
+    # ---------------------------
+    ani = animation.FuncAnimation(
+        fig,
+        animate,
+        init_func=init,
+        frames=T,
+        interval=1000 / fps,
+        blit=True,
+    )
+
+    writer = animation.FFMpegWriter(
+        fps=fps,
+        codec="libx264",
+        extra_args=[
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+        ],
+    )
+
+    ani.save(output_video_path, writer=writer)
+    plt.close(fig)

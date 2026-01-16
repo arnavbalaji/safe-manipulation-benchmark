@@ -84,12 +84,13 @@ PARAMS = {
         #     "proximity_threshold": 1.0,  # 2cm proximity for manual detection
         # }
     },
+    # Just for the pour glass task. Setting the value high
     "coffee_cup": {
         "damage_evaluators": ["mechanical"],
         "mechanical": {
             "impact_damage_sensitivity": 1.0,
             "qs_damage_sensitivity": 0.5,
-            "damage_threshold": 50.0,
+            "damage_threshold": 150.0,
             "damage_scale": 1.0,
         }
     },
@@ -193,6 +194,28 @@ PARAMS = {
             "qs_damage_sensitivity": 0.001,
             "damage_threshold": 500.0,
             "damage_scale": 1.0,
+        }
+    },
+    # Pour glass task - laptop with electrical damage from water
+    "laptop": {
+        "damage_evaluators": ["electrical"],
+        "electrical": {
+            "damage_threshold": 20.0,  # Minimum 50 water particles to cause damage
+            "scale": 5.0,  # Damage per particle above threshold
+            "water_system_name": "water",
+            "link_thresholds": {
+                "screen": {"damage_threshold": 50.0, "scale": 10.0},  # Screen more sensitive
+                "keyboard": {"damage_threshold": 50.0, "scale": 8.0},  # Keyboard sensitive
+            }
+        }
+    },
+    "water_glass": {
+        "damage_evaluators": ["mechanical"],
+        "mechanical": {
+            "impact_damage_sensitivity": 1.0,
+            "qs_damage_sensitivity": 0.5,
+            "damage_threshold": 50.0,
+            "damage_scale": 100.0,
         }
     },
     # OLD VALUES
