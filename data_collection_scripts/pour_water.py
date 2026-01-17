@@ -30,7 +30,8 @@ import cv2
 import subprocess
 
 
-from safety_benchmark.utils.misc_utils import create_panda_eef_cylinders, save_rgb_health_video, save_rgb_water_contacts_video
+from safety_benchmark.utils.misc_utils import setup_viewport_layout
+
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper, DamageableDataPlaybackWrapper
 from collections import defaultdict
 import math
@@ -361,8 +362,8 @@ def reset_env(env):
     coffee_cup = env.scene.object_registry("name", "coffee_cup_1")
 
     # Since the saved state has different laptop and coffee cup positions, setting it here
-    laptop.set_position_orientation(position=th.tensor([6.3, 0.4, 1.1]))
-    coffee_cup.set_position_orientation(position=th.tensor([6.3, 0.6, 1.3]))
+    laptop.set_position_orientation(position=th.tensor([6.3, 0.5, 1.1]))
+    coffee_cup.set_position_orientation(position=th.tensor([6.3, 0.7, 1.3]))
     
     # Save original positions from the freshly loaded state (before any sim steps)
     laptop_orig_pos, laptop_orig_orn = None, None
@@ -610,12 +611,8 @@ def __main__():
     parser.add_argument('--teleop', action='store_true', help='Teleoperate the robot')
     parser.add_argument('--playback', action='store_true', help='Playback the data')
     parser.add_argument('--visualize', action='store_true', help='Visualize the data')
-    parser.add_argument('--seg', action='store_true', help='Run one teleop episode and save RGB + segmentation side-by-side video')
-    parser.add_argument('--seg_output', type=str, default='resources/videos/pour_water_seg.mp4', help='Output path for segmentation video')
-    parser.add_argument('--health_graph', action='store_true', help='Show live health graph window during teleop (use with --teleop)')
-    parser.add_argument('--health_video', action='store_true', help='Run one teleop episode and save health/force visualization videos')
-    parser.add_argument('--health_video_output_dir', type=str, default='resources/videos/pour_water_health', help='Output directory for health videos')
     parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics for the data')
+    parser.add_argument('--live_feedback', action='store_true', help='Show live health graph window during teleop (use with --teleop)')
     args = parser.parse_args()
 
     if args.teleop:
@@ -719,6 +716,8 @@ def __main__():
         )
         for _ in range(10): og.sim.step()
 
+        setup_viewport_layout()
+
         # # trying
         # eef_vis = create_panda_eef_cylinders(robot, env.scene)
         # robot.links["eef_link"].prim.GetAttribute("visibility").Set("inherited")
@@ -741,7 +740,7 @@ def __main__():
         teleop_config.arm_right_controller = arm_teleop_method
         teleop_config.base_controller = base_teleop_method
         teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
-        teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.05}
+        teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.03}
         teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
         teleop_sys.start()
         
@@ -752,72 +751,46 @@ def __main__():
             description="Reset the robot",
             callback_fn=lambda: env.reset(),
         )
-        
-        # Initialize gripper to CLOSED state (-1.0) instead of default open (1.0)
-        # This ensures gripper stays closed until user presses T to toggle
-        for gripper_name in action_generator.binary_grippers:
-            action_generator.gripper_direction[gripper_name] = -1.0
-            action_generator.persistent_gripper_action[gripper_name] = -1.0
-        
         action_generator.print_keyboard_teleop_info()
 
-        # ======================== Health graph setup (if enabled) ========================
-        enable_health_graph = args.health_graph
-        target_objects_health = ["laptop", "coffee_cup_1", "water_glass"]
-        # Track water contacts per link (object@link format)
-        target_objects_water_contacts = ["laptop@link_0", "laptop@base_link"]
-        
-        # Set up live health graph window if enabled
-        health_fig = None
-        health_ax = None
-        health_lines = None
-        time_data = None
-        health_data = defaultdict(list)  # object_name -> list of health values
-        water_contacts_data = defaultdict(list)  # object@link_name -> list of particle counts
+        # ======================== Health visualization setup (if enabled) ========================
+        enable_health_graph = args.live_feedback
+        target_objects_water_contacts = ["laptop"]
         tracked_objects = {}
-        health_link_names = None
-        
-        # Water contacts graph variables
-        water_fig = None
-        water_ax = None
-        water_lines = None
-        water_time_data = None
+        water_contacts_data = defaultdict(list)  # object_name -> list of total particle counts
         
         if enable_health_graph:
-            print("Health graph enabled - opening live health monitor window...")
-            health_fig, health_ax, health_lines, time_data = setup_live_health_graph(
-                target_objects_health=target_objects_health,
-                fps=30
-            )
+            # Enable health visualization using the general environment method
+            env.enable_health_visualization()
             
-            # Set up water contacts graph
-            print("Setting up live water contacts monitor window...")
-            water_fig, water_ax, water_lines, water_time_data = setup_live_water_contacts_graph(
-                target_objects_water_contacts=target_objects_water_contacts,
-                fps=30
-            )
-            
-            # Get references to objects we want to track electrical damage for
-            # Parse unique object names from target_objects_water_contacts
-            unique_obj_names = set(name.split("@")[0] for name in target_objects_water_contacts)
-            for obj_name in unique_obj_names:
+            # Get references to objects we want to track electrical damage for (for water contacts)
+            for obj_name in target_objects_water_contacts:
                 obj = env.scene.object_registry("name", obj_name)
                 if obj is not None:
                     tracked_objects[obj_name] = obj
                     print(f"Found object '{obj_name}' for water contact tracking")
                 else:
                     print(f"Warning: Object '{obj_name}' not found in scene")
-            
-            # Build mapping from health index to object@link name
-            health_link_names = env.health_list_link_names  # List of "object@link" strings
+        # ====================================================================================
+
+        # Initialize gripper to CLOSED state (-1.0) instead of default open (1.0)
+        # This ensures gripper stays closed until user presses T to toggle
+        for gripper_name in action_generator.binary_grippers:
+            action_generator.gripper_direction[gripper_name] = -1.0
+            action_generator.persistent_gripper_action[gripper_name] = -1.0
+        
 
         # ======================== Data collection ========================
         n_episodes = args.n_episodes
         completed_episodes = 0
         while completed_episodes < n_episodes:
             print(f"Episode {completed_episodes} starts (target: {n_episodes})")
+            
+            # Reset health tracking data
+            if enable_health_graph:
+                water_contacts_data.clear()
+            
             reset_env(env)
-
             coffee_cup = env.scene.object_registry("name", "coffee_cup_1")
             water_system = env.scene.get_system("water")
             
@@ -860,38 +833,6 @@ def __main__():
             print("Ready for teleoperation. Press TAB to end episode, BACKSPACE/DELETE to discard and reset.")
             breakpoint()
             
-            # Reset health tracking data for new episode
-            if enable_health_graph:
-                health_data.clear()
-                water_contacts_data.clear()
-                if time_data is not None:
-                    time_data.clear()
-                if water_time_data is not None:
-                    water_time_data.clear()
-                # Re-get health_link_names after reset (it's updated in env.reset())
-                # Access through the wrapped environment if needed
-                if hasattr(env, 'health_list_link_names'):
-                    health_link_names = env.health_list_link_names
-                elif hasattr(env, 'env') and hasattr(env.env, 'health_list_link_names'):
-                    health_link_names = env.env.health_list_link_names
-                # Reset health graph display
-                if health_lines is not None:
-                    for obj_name in target_objects_health:
-                        health_lines[obj_name].set_data([], [])
-                    if health_ax is not None:
-                        health_ax.set_xlim(0, 1.0)
-                    if health_fig is not None:
-                        health_fig.canvas.draw()
-                # Reset water contacts graph display
-                if water_lines is not None:
-                    for obj_link_name in target_objects_water_contacts:
-                        water_lines[obj_link_name].set_data([], [])
-                    if water_ax is not None:
-                        water_ax.set_xlim(0, 1.0)
-                        water_ax.set_ylim(0, 100)
-                    if water_fig is not None:
-                        water_fig.canvas.draw()
-            
             discard_episode = False
             while True:
                 # if step_count % 200 == 0:
@@ -905,103 +846,56 @@ def __main__():
                 if not episode_starts:
                     episode_starts = (action[:-1].sum() > 0).item()
 
-                ret = action_generator.get_teleop_action()
-                if isinstance(ret, tuple) and len(ret) == 2:
-                    _, keypress_str = ret
-                else:
-                    keypress_str = None
+                _, keypress_str = action_generator.get_teleop_action()
                 
                 # TAB: end episode and save
                 if keypress_str and keypress_str.upper() == "TAB":
                     print("TAB pressed - ending episode")
-                    env.task._success = True
                     breakpoint()
-                    inp = input("Did you want to continue? (y/n)")
+                    inp = input("Do you want to save the data? (y/n)")
                     if inp == "y":
-                        continue
+                        print("Saving as task success being True")
+                        env.task._success = True
+                        break
                     else:
+                        print("Saving but as task success being False")
+                        env.task._success = False
                         break
                 
                 # BACKSPACE/DELETE: discard current trajectory and reset
                 if keypress_str and keypress_str.upper() in ("BACKSPACE", "DEL", "DELETE"):
                     print("BACKSPACE/DELETE pressed - discarding current trajectory and resetting...")
+                    breakpoint()
                     # Clear the current trajectory data without saving
                     steps_to_remove = len(env.current_traj_history)
                     env.current_traj_history = []
                     env.step_count -= steps_to_remove
                     print(f"Discarded {steps_to_remove} steps from current trajectory")
                     discard_episode = True
-                    # Reset health tracking data
-                    if enable_health_graph:
-                        health_data.clear()
-                        water_contacts_data.clear()
-                        if time_data is not None:
-                            time_data.clear()
-                        if water_time_data is not None:
-                            water_time_data.clear()
-                        # Reset health graph display
-                        if health_lines is not None:
-                            for obj_name in target_objects_health:
-                                health_lines[obj_name].set_data([], [])
-                            if health_ax is not None:
-                                health_ax.set_xlim(0, 1.0)
-                            if health_fig is not None:
-                                health_fig.canvas.draw()
-                        # Reset water contacts graph display
-                        if water_lines is not None:
-                            for obj_link_name in target_objects_water_contacts:
-                                water_lines[obj_link_name].set_data([], [])
-                            if water_ax is not None:
-                                water_ax.set_xlim(0, 1.0)
-                                water_ax.set_ylim(0, 100)
-                            if water_fig is not None:
-                                water_fig.canvas.draw()
+                    # # Reset health tracking data
+                    # if enable_health_graph:
+                    #     water_contacts_data.clear()
+                    #     # Health visualization will be reset on next env.reset()
                     break
                 
-                obs, reward, terminated, truncated, info = env.step(action.clone())
+                if episode_starts:
+                    print("action: ", action)
+                    print("telemoma_action: ", telemoma_action)
+                    obs, reward, terminated, truncated, info = env.step(action.clone())
                 
-                # Track health and update graph if enabled
+                # Health visualization updates automatically in env.step() if enabled
+                # Track water particle contacts via electrical damage evaluators (if needed)
                 if enable_health_graph:
-                    # Track health per link
-                    health_array = obs.get("health", None)
-                    if health_array is not None and health_link_names is not None:
-                        health_array = health_array.cpu().numpy() if isinstance(health_array, th.Tensor) else np.array(health_array)
-                        # Map health values to object@link names
-                        link_healths = {}
-                        for idx, link_name in enumerate(health_link_names):
-                            if idx < len(health_array):
-                                link_healths[link_name] = health_array[idx]
-                        
-                        # Aggregate health per object (min across links)
-                        for obj_name in target_objects_health:
-                            obj_link_healths = [v for k, v in link_healths.items() if k.startswith(f"{obj_name}@")]
-                            if obj_link_healths:
-                                health_data[obj_name].append(min(obj_link_healths))
-                            else:
-                                health_data[obj_name].append(100.0)  # Default full health
-                        
-                        # Update live health graph (only if we have data)
-                        if any(len(health_data[obj]) > 0 for obj in target_objects_health):
-                            graph_active = update_live_health_graph(
-                                health_fig, health_ax, health_lines, time_data,
-                                health_data, target_objects_health, fps=30
-                            )
-                            if not graph_active:
-                                print("Health monitor window was closed.")
-                    
-                    # Track water particle contacts per link via electrical damage evaluators
-                    contacts = get_water_contacts_per_link(tracked_objects, target_objects_water_contacts)
-                    for obj_link_name, particle_count in contacts.items():
-                        water_contacts_data[obj_link_name].append(particle_count)
-                    
-                    # Update live water contacts graph
-                    if water_fig is not None and any(len(water_contacts_data[obj_link]) > 0 for obj_link in target_objects_water_contacts):
-                        water_graph_active = update_live_water_contacts_graph(
-                            water_fig, water_ax, water_lines, water_time_data,
-                            water_contacts_data, target_objects_water_contacts, fps=30
-                        )
-                        if not water_graph_active:
-                            print("Water contacts monitor window was closed.")
+                    for obj_name, obj in tracked_objects.items():
+                        total_contacts = 0
+                        # Find electrical damage evaluator for this object
+                        for evaluator in getattr(obj, 'damage_evaluators', []):
+                            if evaluator.name == "electrical":
+                                # Get contact summary from the evaluator
+                                contact_summary = evaluator.get_contact_summary()
+                                total_contacts = contact_summary.get("total_contact", 0)
+                                break
+                        water_contacts_data[obj_name].append(total_contacts)
 
                 # Check success condition
                 particles_in_coffee_cup = coffee_cup.states[object_states.ContainedParticles].get_value(system=water_system).n_in_volume
@@ -1009,11 +903,18 @@ def __main__():
                     print("Coffee cup is filled with water. Success!")
                     env.task._success = True
                     breakpoint()
-                    inp = input("Did you want to continue? (y/n)")
+                    inp = input("Do you want to save the data? (y/n)")
                     if inp == "y":
-                        continue
-                    else:
+                        print("Saving as task success being True")
                         break
+                    else:
+                        print("Discarding current trajectory and resetting...")
+                        # Clear the current trajectory data without saving
+                        steps_to_remove = len(env.current_traj_history)
+                        env.current_traj_history = []
+                        env.step_count -= steps_to_remove
+                        print(f"Discarded {steps_to_remove} steps from current trajectory")
+                        discard_episode = True
 
             
             # Only count completed episodes (not discarded ones)
@@ -1026,14 +927,9 @@ def __main__():
         env.save_data()
         print("Data saved")
         
-        # Close live health graph window if it was opened
-        if enable_health_graph and health_fig is not None:
-            try:
-                if plt.fignum_exists(health_fig.number):
-                    plt.close(health_fig)
-            except Exception:
-                pass
-            plt.ioff()  # Turn off interactive mode
+        # Close live health visualization if it was enabled
+        if enable_health_graph:
+            env.disable_health_visualization()
         
     if args.playback:
         robot_name = "franka0"

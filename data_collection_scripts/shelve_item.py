@@ -28,7 +28,15 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 import subprocess
 
-from safety_benchmark.utils.misc_utils import create_panda_eef_cylinders, save_rgb_camera_video, save_rgb_force_video, save_rgb_health_video, save_rgb_force_contact_video
+from safety_benchmark.utils.misc_utils import (
+    create_panda_eef_cylinders,
+    get_external_sensor_paths,
+    save_rgb_camera_video,
+    save_rgb_force_video,
+    save_rgb_health_video,
+    save_rgb_force_contact_video,
+    setup_viewport_layout,
+)
 from safety_benchmark.damageable_env import DamageableEnvironment, DamageableDataCollectionWrapper, DamageableDataPlaybackWrapper
 
 def get_visualization_config(task_name, robot_name):
@@ -92,22 +100,30 @@ gm.ENABLE_TRANSITION_RULES = False
 
 FLOUR_INIT_POS = [6.00, 0.35, 1.35]
 FLOUR_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+FLOUR_SCALE = [1.0, 1.0, 0.9]
 
 BOTTLE_OF_WINE_INIT_POS = [6.00, 0.2, 1.35]
 BOTTLE_OF_WINE_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+BOTTLE_OF_WINE_SCALE = [1.0, 1.0, 1.0]
 
 WINEGLASS_INIT_POS = [6.00, 0.12, 1.35]
 WINEGLASS_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+WINEGLASS_SCALE = [1.0, 1.0, 1.0]
 
-BOTTLE_OF_WHISKEY_INIT_POS = [6.00, 0.0, 1.35]
-BOTTLE_OF_WHISKEY_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
-
-BOTTLE_OF_BEER_INIT_POS = [6.00, 0.0, 1.35]
+BOTTLE_OF_BEER_INIT_POS = [6.00, 0.08, 1.35]
 BOTTLE_OF_BEER_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+BOTTLE_OF_BEER_SCALE = [1.0, 1.0, 1.0]
 
 SHELF_INIT_POS = [6.00, 0.2, 1.35]
 SHELF_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
-SHELF_SCALE = [0.4, 0.8, 0.5]
+SHELF_SCALE = [0.3, 0.7, 0.5]
+
+OBJECT_SCALES = {
+    "book": FLOUR_SCALE,
+    "bottle_of_wine": BOTTLE_OF_WINE_SCALE,
+    "wineglass": WINEGLASS_SCALE,
+    "bottle_of_beer": BOTTLE_OF_BEER_SCALE,
+}
 
 # Task objects are located in BEHAVIOR-1k/datasets/objects/*
 TASK_OBJECTS = {
@@ -126,7 +142,7 @@ TASK_OBJECTS = {
         "model": "rlejxx",
         "position": FLOUR_INIT_POS,
         "orientation": FLOUR_INIT_ORI,
-        "scale": [1.0, 1.0, 1.0],
+        "scale": FLOUR_SCALE,
     },
     "bottle_of_wine": {
         "type": "DatasetObject",
@@ -163,7 +179,7 @@ TASK_OBJECTS = {
         "model": "dqfsgv",
         "position": BOTTLE_OF_BEER_INIT_POS,
         "orientation": BOTTLE_OF_BEER_INIT_ORI,
-        "scale": [1.0, 1.0, 1.0],
+        "scale": BOTTLE_OF_BEER_SCALE,
     },
     "stand": {
         "type": "DatasetObject",
@@ -193,15 +209,19 @@ def check_object_upright(obj):
 def reset_env(env):
     env.reset()
 
-    # TODO: Add object pose and scale randomization
     flour = env.scene.object_registry("name", "book")
     wineglass = env.scene.object_registry("name", "wineglass")
     winebottle = env.scene.object_registry("name", "bottle_of_wine")
     beerbottle = env.scene.object_registry("name", "bottle_of_beer")
+    stand = env.scene.object_registry("name", "stand")
+
+    # Since the saved state has different laptop and coffee cup positions, setting it here
+    beerbottle.set_position_orientation(position=th.tensor(BOTTLE_OF_BEER_INIT_POS))
+
     objects = [flour, wineglass, winebottle, beerbottle]
     trial_number = 0
     while True:
-        print("trial number: ", trial_number)
+        print("Reset trial number: ", trial_number)
 
         # load state
         with open("resources/saved_states/shelve_item_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
@@ -225,8 +245,19 @@ def reset_env(env):
             x_scale_magnitude = np.random.uniform(0.9, 1.1)
             y_scale_magnitude = np.random.uniform(0.9, 1.1)
             z_scale_magnitude = np.random.uniform(0.9, 1.1)
-            new_scale = [obj.scale[0] * x_scale_magnitude, obj.scale[1] * y_scale_magnitude, obj.scale[2] * z_scale_magnitude]
+            # obtain obj original scales
+            original_scale = OBJECT_SCALES[obj.name]
+            new_scale = [original_scale[0] * x_scale_magnitude, original_scale[1] * y_scale_magnitude, original_scale[2] * z_scale_magnitude]
             obj.scale = th.tensor(new_scale)
+
+            # scale stand a bit randomly as well
+            y_scale_magnitude = np.random.uniform(0.9, 1.0)
+            new_scale = [SHELF_SCALE[0], SHELF_SCALE[1] * y_scale_magnitude, SHELF_SCALE[2]]
+            stand.scale = th.tensor(new_scale)
+
+        # scale the bar
+        bar = env.scene.object_registry("name", "bar_udatjt_0")
+        bar.scale = th.tensor([0.85, 0.95, 1.0])
         og.sim.play()
         og.sim.load_state(temp_state)
 
@@ -248,9 +279,51 @@ def reset_env(env):
 
     for _ in range(50): og.sim.step()
 
+def setup_external_sensors():
+    robot_name = "franka0"
+    robot_type = "FrankaPanda"
+    image_height = 256
+    image_width = 256
+    # Set external cameras for videos
+    EXTERNAL_CAMERA_CONFIGS = {
+        # Side camera (fixed to base_link frame)
+        "external_sensor_0": {
+            "position": [7.3920, -0.6436, 1.7519],
+            "orientation": [0.5273, 0.2970, 0.3907, 0.6936],
+            "horizontal_aperture": 15.0,
+            "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor0",
+        },
+        # Left Shoulder (fixed to base_link frame)
+        "external_sensor_1": {
+            # wrt base frame
+            "position": [7.1264, 1.1205, 2.0117],
+            "orientation": [0.2131, 0.4377, 0.7853, 0.3824],
+            "horizontal_aperture": 15.0,
+            "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor1",
+        },
+    }
+    external_sensors_config = []
+    for name, camera_cfg in EXTERNAL_CAMERA_CONFIGS.items():
+        i = name.split("_")[-1]
+        position = camera_cfg["position"]
+        orientation = camera_cfg["orientation"]
+        external_sensors_config.append({
+            "sensor_type": "VisionSensor",
+            "name": f"external_sensor{i}",
+            "relative_prim_path": camera_cfg["relative_prim_path"],
+            "modalities": ["rgb", "seg_instance"],
+            "sensor_kwargs": {
+                "image_height": image_height,
+                "image_width": image_width,
+                "horizontal_aperture": camera_cfg["horizontal_aperture"],
+            },
+            "position": th.tensor(position, dtype=th.float32),
+            "orientation": th.tensor(orientation, dtype=th.float32),
+            "pose_frame": "world",
+        })
+    return external_sensors_config
+
 def __main__():
-    np.random.seed(0)
-    th.manual_seed(0)
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--collect_hdf5_path', type=str, help='Target hdf5 path', default="resources/teleop_data/shelve_item_test2.hdf5")
@@ -261,7 +334,12 @@ def __main__():
     parser.add_argument('--visualize', action='store_true', help='Visualize the data')
     parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics')
     parser.add_argument('--task_name', type=str, help='Task name', default="shelve_item")
+    parser.add_argument('--live_feedback', action='store_true', help='Show live health graph window during teleop (use with --teleop)')
+    parser.add_argument('--seed', type=int, help='Seed', required=True)
     args = parser.parse_args()
+
+    np.random.seed(args.seed)
+    th.manual_seed(args.seed)
 
     if args.teleop:
         # TODO: Set this
@@ -286,7 +364,7 @@ def __main__():
             "position": [6.8, 0.2, 1.0],  # Match Tiago base position
             "orientation": [0.0, 0.0, 1.0, 0.0],
             "grasping_mode": "assisted",
-            "obs_modalities": ["rgb", "depth"],
+            # "obs_modalities": ["rgb", "depth"],
             "action_normalize": False,
             "self_collisions": True,
             # Franka has single arm (arm_0, gripper_0) instead of left/right
@@ -312,6 +390,8 @@ def __main__():
         # Add objects here
         cfg["objects"] = [TASK_OBJECTS[obj] for obj in TASK_OBJECTS]
 
+        # cfg["env"]["external_sensors"] = setup_external_sensors()
+
         env = DamageableEnvironment(configs=cfg)        
         env = DamageableDataCollectionWrapper(
             env=env,
@@ -327,6 +407,9 @@ def __main__():
             orientation=th.tensor([0.4850, 0.1528, 0.2586, 0.8213]),
         )
         for _ in range(10): og.sim.step()
+
+        # To set the viewport layout
+        setup_viewport_layout()
 
         # Setting up eef visualization for easier teleop
         eef_vis = create_panda_eef_cylinders(robot, env.scene)
@@ -360,6 +443,24 @@ def __main__():
         )
         action_generator.print_keyboard_teleop_info()
 
+        # ======================== Health visualization setup (if enabled) ========================
+        enable_health_graph = args.live_feedback
+        tracked_objects = {}
+        
+        if enable_health_graph:
+            # Enable health visualization using the general environment method
+            env.enable_health_visualization()
+            
+            # Get references to objects we want to track electrical damage for (for water contacts)
+            for obj_name in ["box_of_crackers", "bag_of_flour", "bottle_of_wine", "wineglass", "bottle_of_beer"]:
+                obj = env.scene.object_registry("name", obj_name)
+                if obj is not None:
+                    tracked_objects[obj_name] = obj
+                    print(f"Found object '{obj_name}' for health tracking")
+                else:
+                    print(f"Warning: Object '{obj_name}' not found in scene")
+        # ====================================================================================
+
         # # To debug if reset_env is working correctly
         # for _ in range(20):
         #     reset_env(env)
@@ -368,17 +469,29 @@ def __main__():
         # ======================== Data collection ========================
         n_episodes = args.n_episodes
         last_telemoma_grip_action = 1.0 
-        for i in range(n_episodes):
-            print(f"Episode {i} starts")
+        completed_episodes = 0
+        while completed_episodes < n_episodes:
+            print(f"Episode {completed_episodes} starts (target: {n_episodes})")
+                        
             reset_env(env)
-            breakpoint()
+            action_generator.current_keypress = None
+
             # If the robot is grasping, set the persistent gripper action to -1.0
             if robot.is_grasping().value == IsGraspingState.TRUE:
                 action_generator.persistent_gripper_action[action_generator.binary_grippers[0]] = -1.0
             action = th.zeros(robot.action_dim)
             action[-1] = -1.0
             episode_starts = False
+
+            stand = env.scene.object_registry("name", "stand")
+            box_of_crackers = env.scene.object_registry("name", "box_of_crackers")
+            
+            print("Ready for teleoperation. Press TAB to end episode, BACKSPACE/DELETE to discard and reset.")
+            breakpoint()
             # Default gripper action is 1.0
+            discard_episode = False
+            episode_step_count = 0
+            init_skip_steps = 3
             while True:
                 telemoma_action = teleop_sys.get_action(teleop_sys.get_obs())
                 telemoma_grip_action = telemoma_action[-1]
@@ -390,21 +503,87 @@ def __main__():
                     episode_starts = (action[:-1].sum() > 0).item()
 
                 _, keypress_str = action_generator.get_teleop_action()
-                if keypress_str == "D":
-                    print("Failure reset pressed, do not save the current trajectory.")
-                    env.task._success = False
-                    break
-                if keypress_str == "TAB":
-                    # We save the current trajectory if the task is successful.
-                    env.task._success = True
+                
+                # TAB: end episode and save
+                if keypress_str and keypress_str.upper() == "TAB":
+                    print("TAB pressed - ending episode")
                     breakpoint()
+                    inp = input("Do you want to save the data? (y/n)")
+                    if inp == "y":
+                        print("Saving as task success being True")
+                        env.task._success = True
+                        break
+                    else:
+                        print("BACKSPACE/DELETE pressed - discarding current trajectory and resetting...")
+                        breakpoint()
+                        # Clear the current trajectory data without saving
+                        steps_to_remove = len(env.current_traj_history)
+                        env.current_traj_history = []
+                        env.step_count -= steps_to_remove
+                        print(f"Discarded {steps_to_remove} steps from current trajectory")
+                        discard_episode = True
+                        break
+                
+                # BACKSPACE/DELETE: discard current trajectory and reset
+                if keypress_str and keypress_str.upper() in ("BACKSPACE", "DEL", "DELETE"):
+                    print("BACKSPACE/DELETE pressed - discarding current trajectory and resetting...")
+                    breakpoint()
+                    # Clear the current trajectory data without saving
+                    steps_to_remove = len(env.current_traj_history)
+                    env.current_traj_history = []
+                    env.step_count -= steps_to_remove
+                    print(f"Discarded {steps_to_remove} steps from current trajectory")
+                    discard_episode = True
                     break
+
+                if episode_step_count == init_skip_steps:
+                    # Update link positions and velocities for all damage evaluators
+                    for obj in env.scene.objects:
+                        if hasattr(obj, "track_damage") and obj.track_damage:
+                            for evaluator in obj.damage_evaluators:
+                                if evaluator.name == "mechanical":
+                                    evaluator.update_link_positions_and_velocities()
+                
                 if episode_starts:
-                    print("action: ", action)
-                    print("telemoma_action: ", telemoma_action)
-                    env.step(action.clone())
+                    # print("action: ", action)
+                    # print("telemoma_action: ", telemoma_action)
+                    env.step(action.clone(), episode_step_count=episode_step_count, init_skip_steps=init_skip_steps)
+                    episode_step_count += 1
+                
+                # Checking success
+                # box_inside_stand = box_of_crackers.states[object_states.Inside].get_value(other=stand)
+                # if box_inside_stand and robot.is_grasping(candidate_obj=box_of_crackers).value == IsGraspingState.FALSE:
+                #     print("Cereal box is placed inside the stand. Success!")
+                #     env.task._success = True
+                #     breakpoint()
+                #     inp = input("Do you want to save the data? (y/n)")
+                #     if inp == "y":
+                #         print("Saving as task success being True")
+                #         break
+                #     else:
+                #         print("Discarding current trajectory and resetting...")
+                #         # Clear the current trajectory data without saving
+                #         steps_to_remove = len(env.current_traj_history)
+                #         env.current_traj_history = []
+                #         env.step_count -= steps_to_remove
+                #         print(f"Discarded {steps_to_remove} steps from current trajectory")
+                #         discard_episode = True
+
+            # Only count completed episodes (not discarded ones)
+            if not discard_episode:
+                completed_episodes += 1
+                print(f"Episode completed ({completed_episodes}/{n_episodes})")
+            else:
+                print(f"Episode discarded, redoing...")
+                                
+
         env.save_data()
         print("Data saved")
+
+        # Close live health visualization if it was enabled
+        if enable_health_graph:
+            env.disable_health_visualization()
+
         og.shutdown()
 
     if args.playback:

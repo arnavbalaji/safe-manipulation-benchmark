@@ -332,9 +332,9 @@ class DamageableEnvironment(Environment):
             breakpoint()
             raise e
         try:
-            # This is a fix for playback only!!
             # TODO: Check if we can use self.lock_health here.
-            should_update = (not playback) or (episode_step_count > init_skip_steps - 1)
+            # should_update = (not playback) or (episode_step_count > init_skip_steps - 1)
+            should_update = episode_step_count > init_skip_steps - 1
             
             if should_update:
                 obj_damage_info = {}
@@ -375,6 +375,7 @@ class DamageableEnvironment(Environment):
             if not window_active:
                 # Window was closed, disable visualization
                 self._health_visualization_enabled = False
+
         
         return obs, reward, terminated, truncated, info
 
@@ -538,6 +539,16 @@ class DamageableEnvironment(Environment):
                 current_health_values[obj_name] = min(obj_link_healths)
             else:
                 current_health_values[obj_name] = 100.0  # Default full health
+
+        # Update the color of the obejct in the GUI as well
+        for obj_name in self._health_tracked_object_names:
+            obj = self.scene.object_registry("name", obj_name)
+            intensity = 10000 * (100.0 - current_health_values[obj_name]) / 100.0
+            # print("obj_name: ", obj_name, "intensity: ", intensity)
+            obj.set_highlight_properties(color=[255.0, 0.0, 0.0], intensity=intensity)
+            obj.highlighted = True
+            # if intensity > 100:
+            #     breakpoint()
         
         # Update visualization
         try:

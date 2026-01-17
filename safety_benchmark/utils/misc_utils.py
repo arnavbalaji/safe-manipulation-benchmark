@@ -8,6 +8,7 @@ matplotlib.use('TkAgg')  # Use interactive backend for live window
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.patches import Rectangle
+from typing import Dict, Iterable, Mapping, Optional, Sequence
 
 def json_default(o):
     # numpy scalar
@@ -444,52 +445,116 @@ def save_rgb_force_contact_video(
             + list(contact_lines.values())
         )
 
-    # ---------------------------
-    # ANIMATION STEP
-    # ---------------------------
-    def animate(i):
-        # --- RGB video update ---
-        video_im.set_data(imgs[i][:, :, :3])
 
-        # --- Force ---
-        for obj_name in target_objects:
-            for force_key in forces_to_plot:
-                force_lines[f"{obj_name}_{force_key}"].set_data(range(i + 1), data[obj_name][force_key][:i + 1])
+def _load_og_ui_modules():
+    """
+    Lazy-import OmniGibson UI dependencies to avoid import-time overhead
+    for callers that do not need viewport utilities.
+    """
+    import omnigibson as og
+    import omnigibson.lazy as lazy
+    from omnigibson.utils.ui_utils import dock_window
 
-        # --- Contact ---
-        for obj_name in target_objects:
-            contact_lines[f"{obj_name}"].set_data(range(i + 1), contact_info[obj_name][:i + 1])
+    return og, lazy, dock_window
 
-        return (
-            [video_im]
-            + list(force_lines.values())
-            + list(contact_lines.values())
-        )
 
-    # ---------------------------
-    # SAVE ANIMATION
-    # ---------------------------
-    ani = animation.FuncAnimation(
-        fig,
-        animate,
-        init_func=init,
-        frames=T,
-        interval=1000 / fps,
-        blit=True
+def get_external_sensor_paths(external_sensors: Optional[Mapping], sensor_names: Sequence[str]) -> Dict[str, str]:
+    """
+    Extract prim paths for a set of external sensors.
+
+    Args:
+        external_sensors: Mapping or iterable of sensor objects. Sensors must expose
+            a `name` attribute and `prim_path`.
+        sensor_names: Names to look up (e.g., ["external_sensor0", "external_sensor1"]).
+
+    Returns:
+        Dict mapping sensor name to prim path for those found.
+    """
+    if external_sensors is None:
+        return {}
+
+    paths: Dict[str, str] = {}
+
+    def _find_sensor(target: str):
+        if isinstance(external_sensors, Mapping):
+            return external_sensors.get(target)
+        if isinstance(external_sensors, Iterable):
+            for sensor in external_sensors:
+                if getattr(sensor, "name", None) == target:
+                    return sensor
+        return None
+
+    for name in sensor_names:
+        sensor = _find_sensor(name)
+        prim_path = getattr(sensor, "prim_path", None) if sensor is not None else None
+        if prim_path:
+            paths[name] = prim_path
+
+    return paths
+
+
+def create_docked_viewport(
+    parent_window: str,
+    dock_position,
+    ratio: float,
+    camera_path: Optional[str],
+    resolution: Optional[Sequence[int]] = None,
+):
+    """
+    Create a viewport, dock it, and bind it to a camera.
+
+    Args:
+        parent_window: Workspace window to dock into (e.g., "DockSpace").
+        dock_position: Position from lazy.omni.ui.DockPosition.
+        ratio: Relative size ratio used by dock_window.
+        camera_path: Prim path of the camera to bind. If None, binding is skipped.
+        resolution: Optional (H, W) texture resolution for the viewport.
+
+    Returns:
+        The created viewport window object.
+    """
+    og, lazy, dock_window = _load_og_ui_modules()
+
+    viewport = lazy.omni.kit.viewport.utility.create_viewport_window()
+    og.sim.render()
+
+    dock_window(
+        space=lazy.omni.ui.Workspace.get_window(parent_window),
+        name=viewport.name,
+        location=dock_position,
+        ratio=ratio,
     )
+    og.sim.render()
 
-    writer = animation.FFMpegWriter(
-        fps=fps,
-        codec='libx264',
-        extra_args=[
-            '-pix_fmt', 'yuv420p',
-            '-movflags', '+faststart'
-        ]
-    )
+    if camera_path:
+        viewport.viewport_api.set_active_camera(camera_path)
+    if resolution is not None:
+        viewport.viewport_api.set_texture_resolution(tuple(resolution))
+    og.sim.render()
 
-    ani.save(output_video_path, writer=writer)
-    plt.close(fig)
+    return viewport
 
+
+def setup_viewport_layout(
+):
+
+    og, lazy, _ = _load_og_ui_modules()
+    import omni.ui as ui
+    from omni.kit.viewport.window import ViewportWindow
+    viewports = [w for w in ui.Workspace.get_windows() if isinstance(w, ViewportWindow)]
+    for w in ui.Workspace.get_windows():
+        if isinstance(w, ViewportWindow):
+            w.visible = True
+        else:
+            w.visible = False
+
+    vp1 = ui.Workspace.get_window("Viewport 1")
+    vp1.visible = False
+    vp = ui.Workspace.get_window("Viewport")
+    vp.height = 890
+    vp.width = 1430
+    for _ in range(10): og.sim.render()
+    # breakpoint()
 
 def setup_robot_visualizers(robot, scene):
     """

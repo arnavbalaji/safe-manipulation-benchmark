@@ -1,0 +1,21 @@
+Goal: Place the cereal box on the lower rack of the shelf
+
+Notes:
+- A window displays the health of the objects you manipulate. This health 
+reflects the amount of damage incurred. Damage is bad, so aim to minimize 
+damage whenever possible.
+
+- Please avoid unnecessary or random robot motions. 
+Execute the task using deliberate, efficient movements, as you would 
+naturally do yourself.
+
+
+
+Spacemouse tips:
+- Use small and smooth motions of spacemouse, avoid big and sudden movements.
+
+- Rotating the robot gripper can get a bit tricky, so avoid that if possible.
+
+- At times, the SpaceMouse may cause sudden or abrupt robot motions. 
+If this happens, slow down, try small adjustments or alternative motions, 
+and continue once the movement feels smooth again.

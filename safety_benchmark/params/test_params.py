@@ -13,6 +13,7 @@ PARAMS = {
         }
     },
     # Robot's category in OG is "agent"
+    # TODO: Add Panda
     "agent": {
         "damage_evaluators": ["mechanical"],
         "damageabletiago_damageable_links": ["base_link",
@@ -51,11 +52,12 @@ PARAMS = {
                             "right_gripper_finger_link2",
                             "right_realsense_link"
                         ],
+        # "damaeablefranka_damageable_links": ["base_link",
         "mechanical": {
             "impact_damage_sensitivity": 0.01,
             "qs_damage_sensitivity": 1.0,
-            "damage_threshold": 30.0,
-            "damage_scale": 0.1,
+            "damage_threshold": 70.0,
+            "damage_scale": 0.2,
             "link_config_overrides": {
                 "gripper": {
                     "impact_damage_sensitivity": 0.01,
@@ -139,7 +141,7 @@ PARAMS = {
         "mechanical": {
             "impact_damage_sensitivity": 1.0,
             "qs_damage_sensitivity": 0.5,
-            "damage_threshold": 25.0,
+            "damage_threshold": 15.0,
             "damage_scale": 100.0,
         }
     },
@@ -148,7 +150,7 @@ PARAMS = {
         "mechanical": {
             "impact_damage_sensitivity": 1.0,
             "qs_damage_sensitivity": 0.5,
-            "damage_threshold": 40.0,
+            "damage_threshold": 30.0,
             "damage_scale": 100.0,
         }
     },
