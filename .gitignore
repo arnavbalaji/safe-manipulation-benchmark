@@ -13,9 +13,7 @@ rl/videos
 
 # custom folders
 outputs/
-resources/playback_data/
-resources/videos/
-resources/teleop_data/
+resources/
 
 # custom files
 *.code-workspace

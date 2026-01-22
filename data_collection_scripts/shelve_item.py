@@ -6,6 +6,7 @@ import yaml
 import imageio
 import json
 import h5py
+import random
 import pickle
 import torch as th
 th.set_printoptions(precision=3, sci_mode=False)
@@ -335,11 +336,11 @@ def __main__():
     parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics')
     parser.add_argument('--task_name', type=str, help='Task name', default="shelve_item")
     parser.add_argument('--live_feedback', action='store_true', help='Show live health graph window during teleop (use with --teleop)')
-    parser.add_argument('--seed', type=int, help='Seed', required=True)
     args = parser.parse_args()
 
-    np.random.seed(args.seed)
-    th.manual_seed(args.seed)
+    seed = random.randint(0, 1000000)
+    np.random.seed(seed)
+    th.manual_seed(seed)
 
     if args.teleop:
         # TODO: Set this
@@ -661,14 +662,14 @@ def __main__():
         env.playback_dataset(record_data=True)    
         env.save_data()
 
-    if args.visualize:
+    if args.visualize or args.compute_metrics:
         f = h5py.File(args.playback_hdf5_path, "r")
         scene_file = json.loads(f["data"].attrs["scene_file"])
         robot_name = "franka0"       
         camera_type = "external"
         camera_name = "external_sensor0"
 
-        output_video_dir = "resources/videos/shelve_item_test2"
+        output_video_dir = f"resources/videos/{args.playback_hdf5_path.split('/')[-1].split('.')[0]}"
         os.makedirs(output_video_dir, exist_ok=True)
 
         visualization_config = get_visualization_config("shelve_item", robot_name)
@@ -812,7 +813,6 @@ def __main__():
         for obj_name in target_objects_health:
             print(f"Average health for {obj_name}: {np.mean(final_obj_healths[obj_name])}")
         print(f"Average environment health: {np.mean(final_env_healths)}")
-        breakpoint()
 
     og.shutdown()
 

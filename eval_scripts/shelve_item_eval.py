@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, "/home/juxu/Research/safe-manipulation/rl-flow-matching")
+sys.path.insert(0, "/home/arpit/test_projects/rl-flow-matching")
 
 from ast import Pass
 import os
@@ -42,8 +42,8 @@ gm.ENABLE_TRANSITION_RULES = False
 def get_visualization_config(task_name, robot_name):
     if task_name == "shelve_item":
         return {
-            "target_objects_health_with_links": [f"{robot_name}@eef_link", f"{robot_name}@panda_hand", f"{robot_name}@panda_leftfinger", f"{robot_name}@panda_rightfinger", "box_of_crackers@base_link", "stand@base_link", "book@base_link", "bottle_of_wine@base_link", "wineglass@base_link", "bottle_of_beer@base_link"],
-            "target_objects_health": [robot_name, "box_of_crackers", "stand", "book", "bottle_of_wine", "wineglass", "bottle_of_beer"],
+            "target_objects_health_with_links": [f"{robot_name}@eef_link", f"{robot_name}@panda_hand", f"{robot_name}@panda_leftfinger", f"{robot_name}@panda_rightfinger", "box_of_crackers@base_link", "book@base_link", "bottle_of_wine@base_link", "wineglass@base_link", "bottle_of_beer@base_link"],
+            "target_objects_health": [robot_name, "box_of_crackers", "book", "bottle_of_wine", "wineglass", "bottle_of_beer"],
             "target_objects_forces": ["box_of_crackers@base_link", "book@base_link", "bottle_of_wine@base_link", "wineglass@base_link", "bottle_of_beer@base_link"],
             "force_keys": ["impact_forces"],
             "target_contact_bodies": ["stand"]
@@ -657,7 +657,7 @@ def check_object_upright(obj):
 def reset_env(env):
     obs, info = env.reset()
     # load state
-    with open("resources/saved_states/shelf_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
+    with open("resources/saved_states/shelve_item_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
     og.sim.load_state(state_flat_array, serialized=True)
 
     # TODO: Add object pose and scale randomization
@@ -769,9 +769,9 @@ def __main__():
     parser.add_argument('--vocab_hdf5', type=str, 
                         default="resources/playback_data/20260108-shelf-place-playback.hdf5",
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
-    parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=False)
+    parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=True)
     parser.add_argument('--save_videos', action='store_true', help='Save an RGB video for each episode', default=False)
-    parser.add_argument('--video_dir', type=str, default='resources/videos/sheve_item', help='Directory to save episode videos')
+    parser.add_argument('--video_dir', type=str, default='resources/videos/shelve_item/eval', help='Directory to save episode videos')
     parser.add_argument('--video_camera_type', type=str, default='external', help='Observation camera_type to record (e.g., external or franka0)')
     parser.add_argument('--video_camera_name', type=str, default='external_sensor0', help='Observation camera_name to record (e.g., external_sensor0)')
     parser.add_argument('--video_fps', type=int, default=30, help='FPS for saved videos')
@@ -783,7 +783,7 @@ def __main__():
 
     #### Load dataset for the normalization statistics ####
     dataset = B1KDataset(
-        data_path="resources/playback_data/20260108-shelf-place-playback.hdf5",
+        data_path=args.vocab_hdf5,
         frame_stack=2,
         action_chunk_size=8,
         seg_img_size=(128, 128),
@@ -980,7 +980,9 @@ def __main__():
 
         health = defaultdict(list)
         env_health = list()
-        update_health(obs, health_list_link_names, target_objects_health_with_links, target_objects_health, health)
+        
+        # Don't update health for the first init_skip_steps
+        # update_health(obs, health_list_link_names, target_objects_health_with_links, target_objects_health, health)
         
         if args.load_state:
             for _ in range(50):
@@ -991,8 +993,18 @@ def __main__():
         
         # Get initial obs_info for global class ID remapping
         current_obs_info = info.get("obs_info", None)
-        
+        init_skip_steps = 3
         for step in range(args.max_steps):
+            
+            # Update link positions and velocities for all damage evaluators
+            if step == init_skip_steps:
+                # Update link positions and velocities for all damage evaluators
+                for obj in env.scene.objects:
+                    if hasattr(obj, "track_damage") and obj.track_damage:
+                        for evaluator in obj.damage_evaluators:
+                            if evaluator.name == "mechanical":
+                                evaluator.update_link_positions_and_velocities()
+            
             # Query policy for new action chunk if needed
             # if action_chunker.needs_replan():
                 # Process observation with global class ID remapping
@@ -1009,7 +1021,6 @@ def __main__():
                 # import ipdb; ipdb.set_trace()
                 # action_chunk = action_chunk.mean(dim=1)
 
-                
                 # Update chunker with new actions
                 # action_chunker.update_chunk(action_chunk[0])  # Remove batch dim
             
@@ -1030,36 +1041,34 @@ def __main__():
             # print("Step", step, "Action", action)
             
             # Step environment
-            obs, reward, terminated, truncated, info = env.step(action)
-            update_health(obs, health_list_link_names, target_objects_health_with_links, target_objects_health, health)
-            info_list.append(info)
+            obs, reward, terminated, truncated, info = env.step(action, episode_step_count=step, init_skip_steps=3)
 
-            # If want to save video during episode run itself
-            if save_video_at_run_time:
-                video_recorder.record_frame(obs)
-            # If want to save the video at the end of the episode
-            else:
-                frame = get_frame_from_obs(obs, args.video_camera_type, args.video_camera_name)
-                imgs.append(frame)
-                # import matplotlib.pyplot as plt
-                # plt.imshow(frame)
-                # plt.show()
-            
             # Update obs_info for next iteration's global class ID remapping
             current_obs_info = info.get("obs_info", current_obs_info)
-            
+
             episode_reward += reward
-            # if "damage_info" in info:
-            #     # Sum up damage across objects
-            #     for obj_name, damage_data in info["damage_info"].items():
-            #         if isinstance(damage_data, dict) and "total_damage" in damage_data:
-            #             episode_damage += damage_data["total_damage"]
-            # Compute env health
-            current_env_health = 0.0
-            for obj_name in target_objects_health:
-                current_env_health += health[obj_name][-1]
-            env_health.append(current_env_health / len(target_objects_health))
-            # print(f"Current environment health: ", env_health[-1])
+
+            if step > init_skip_steps - 1:
+                update_health(obs, health_list_link_names, target_objects_health_with_links, target_objects_health, health)
+                info_list.append(info)
+
+                # If want to save video during episode run itself
+                if save_video_at_run_time:
+                    video_recorder.record_frame(obs)
+                # If want to save the video at the end of the episode
+                else:
+                    frame = get_frame_from_obs(obs, args.video_camera_type, args.video_camera_name)
+                    imgs.append(frame)
+                    # import matplotlib.pyplot as plt
+                    # plt.imshow(frame)
+                    # plt.show()
+            
+                # Compute env health
+                current_env_health = 0.0
+                for obj_name in target_objects_health:
+                    current_env_health += health[obj_name][-1]
+                env_health.append(current_env_health / len(target_objects_health))
+                # print(f"Current environment health: ", env_health[-1])
             
             # Check termination
             if terminated or truncated:
@@ -1077,7 +1086,7 @@ def __main__():
         if save_video_at_run_time:
             video_recorder.close_episode()
         else:
-            save_rgb_camera_video(os.path.join(args.video_dir, f"episode_{episode:03d}_{args.video_camera_name}"), imgs, args.video_fps)
+            save_rgb_camera_video(os.path.join(args.video_dir, f"{episode:03d}_{args.video_camera_name}"), imgs, args.video_fps)
 
         for k in health.keys(): health[k] = health[k][1:]
         
@@ -1143,9 +1152,9 @@ def __main__():
     for obj_name in target_objects_health:
         json_dict["average_obj_healths"][obj_name] = float(np.mean(all_eps_health_dict[obj_name]))
     json_dict["average_env_health"] = float(np.mean(all_eps_health_dict["env_health"]))
-    os.makedirs("resources/eval_results", exist_ok=True)
-    breakpoint()
-    with open("resources/eval_results/shelve_item.json", "w") as f:
+    os.makedirs("resources/eval_results/shelve_item/", exist_ok=True)
+    # breakpoint()
+    with open(f"resources/eval_results/shelve_item/{args.video_dir.split('/')[-1]}.json", "w") as f:
         json.dump(json_dict, f)
     # Save collected data
     if args.save_data:

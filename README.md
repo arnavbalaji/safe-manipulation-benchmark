@@ -30,3 +30,16 @@ https://huggingface.co/datasets/behavior-1k/2025-challenge-demos/tree/main
 python eval_scripts/behavior_eval.py --task_name make_microwave_popcorn --rollout_name rollout_0000_00402500 --playback
 
 
+# Other commands:
+
+### Data collection and evals
+#### without live feedback
+python data_collection_scripts/shelve_item.py --teleop --n_episodes 15 --collect_hdf5_path resources/teleop_data/trial_6.hdf5 
+#### with live feedback
+python data_collection_scripts/shelve_item.py --teleop --n_episodes 15 --collect_hdf5_path resources/teleop_data/trial_6.hdf5 --live_feedback 
+#### just compute metrics
+python data_collection_scripts/shelve_item.py --compute_metrics --playback_hdf5_path resources/playback_data/shelve_item/no_live_feedback.hdf5
+#### eval
+python eval_scripts/shelve_item_eval.py --checkpoint /home/arpit/test_projects/rl-flow-matching/checkpoints/shelve_item_no_live_feedback/step_10500.pth --vocab_hdf5 resources/playback_data/shelve_item/no_live_feedback.hdf5 --save_videos --video_dir resources/videos/shelve_item/eval_no_live_feedback
+
+
