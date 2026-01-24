@@ -12,7 +12,9 @@ import pickle
 import cv2
 import torch as th
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 import numpy as np
+np.set_printoptions(precision=3, suppress=True)
 from typing import Dict, List, Optional
 from collections import deque
 from dataclasses import dataclass
@@ -72,7 +74,7 @@ class ObsProcessorConfig:
     def __post_init__(self):
         if self.seg_obs_keys is None:
             self.seg_obs_keys = [
-                f"{self.robot_name}::{self.robot_name}:eef_link:Camera:0::seg_instance",
+                # f"{self.robot_name}::{self.robot_name}:eef_link:Camera:0::seg_instance",
                 "external::external_sensor0::seg_instance",
                 "external::external_sensor1::seg_instance",
             ]
@@ -93,7 +95,8 @@ class ObservationProcessor:
     def __init__(self, config: ObsProcessorConfig = None, device: str = "cuda", objects_of_interest: List[str] = None):
         self.config = config or ObsProcessorConfig()
         self.device = device
-        self.objects_of_interest = ["box_of_crackers", "book", "bottle_of_wine", "bottle_of_beer", "stand"] 
+        # self.objects_of_interest = ["box_of_crackers", "book", "bottle_of_wine", "bottle_of_beer", "wineglass", "stand"] 
+        self.objects_of_interest = ["box_of_crackers", "book", "bottle_of_wine", "bottle_of_beer", "wineglass"] 
         # Frame buffer for temporal stacking
         self.seg_buffers: Dict[str, deque] = {
             key: deque(maxlen=self.config.frame_stack) 
@@ -349,7 +352,7 @@ class ObservationProcessor:
         """
         # Extract, resize, and optionally remap segmentation images
         frank_seg, external_seg_0, external_seg_1 = self._extract_segmentation(obs, obs_info)
-        self.seg_buffers['franka0::franka0:eef_link:Camera:0::seg_instance'].append(frank_seg)
+        # self.seg_buffers['franka0::franka0:eef_link:Camera:0::seg_instance'].append(frank_seg)
         self.seg_buffers['external::external_sensor0::seg_instance'].append(external_seg_0)
         self.seg_buffers['external::external_sensor1::seg_instance'].append(external_seg_1)
         
@@ -710,13 +713,42 @@ def reset_env(env):
 
     return obs, info
 
-def load_policy(checkpoint_path: str, device: str = "cuda", action_min: th.Tensor = None, action_max: th.Tensor = None) -> CFMPolicy:
+def get_policy_config_for_input_type(policy_input_type: str):
+    """Get num_seg_views and state_dim based on policy_input_type."""
+    num_seg_views = 2 if policy_input_type == "seg" else 0
+    state_dim_map = {
+        "seg": 23,
+        "joint_pos_eef_pose": 21,
+        "joint_pos_eef_pose_gripper": 23,
+        "joint_pos_eef_pose_grasp": 22,  # [:21] + 23rd index
+    }
+    state_dim = state_dim_map.get(policy_input_type, 23)
+    return num_seg_views, state_dim
+
+
+def extract_proprio_for_input_type(proprio: th.Tensor, policy_input_type: str) -> th.Tensor:
+    """Extract proprio indices based on policy_input_type."""
+    if policy_input_type == "joint_pos_eef_pose":
+        return proprio[..., :21]
+    elif policy_input_type == "joint_pos_eef_pose_gripper":
+        return proprio[..., :23]
+    elif policy_input_type == "joint_pos_eef_pose_grasp":
+        # [:21] + 23rd index (grasp state)
+        return th.cat([proprio[..., :21], proprio[..., 23:24]], dim=-1)
+    else:  # "seg" or default
+        return proprio[..., :23]
+
+
+def load_policy(checkpoint_path: str, device: str = "cuda", action_min: th.Tensor = None, action_max: th.Tensor = None, policy_input_type: str = "seg") -> CFMPolicy:
     """
     Load a trained CFMPolicy from checkpoint.
     
     Args:
         checkpoint_path: Path to the .pth checkpoint file
         device: Device to load the model on
+        action_min: Action min for normalization
+        action_max: Action max for normalization
+        policy_input_type: Input type (seg, joint_pos_eef_pose, etc.)
     
     Returns:
         Loaded policy in eval mode
@@ -724,11 +756,20 @@ def load_policy(checkpoint_path: str, device: str = "cuda", action_min: th.Tenso
     # Load checkpoint
     checkpoint = th.load(checkpoint_path, map_location=device)
     
+    # Get config based on policy_input_type
+    num_seg_views, state_dim = get_policy_config_for_input_type(policy_input_type)
+    
     # Create policy with config (use default or load from checkpoint)
     if "config" in checkpoint:
         config = checkpoint["config"]
     else:
-        config = PolicyConfig(action_min=action_min, action_max=action_max)
+        config = PolicyConfig(
+            policy_input_type=policy_input_type,
+            num_seg_views=num_seg_views,
+            state_dim=state_dim,
+            action_min=action_min, 
+            action_max=action_max,
+        )
     
     policy = CFMPolicy(config)
     
@@ -760,7 +801,7 @@ def __main__():
                         default="resources/evals/shelve_item_raw.hdf5",
                         help='Path to save raw HDF5 file')
     parser.add_argument('--load_state', action='store_true', help='Load a saved state')
-    parser.add_argument('--n_episodes', type=int, default=5, help='Number of episodes to run')
+    parser.add_argument('--n_episodes', type=int, default=10, help='Number of episodes to run')
     parser.add_argument('--max_steps', type=int, default=400, help='Max steps per episode')
     parser.add_argument('--device', type=str, default='cuda', help='Device for policy')
     parser.add_argument('--execute_horizon', type=int, default=1, 
@@ -770,6 +811,8 @@ def __main__():
                         default="resources/playback_data/20260108-shelf-place-playback.hdf5",
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
     parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=True)
+    parser.add_argument('--policy_input_type', type=str, default="seg",
+                        help="Input type: seg, joint_pos_eef_pose, joint_pos_eef_pose_gripper, joint_pos_eef_pose_grasp")
     parser.add_argument('--save_videos', action='store_true', help='Save an RGB video for each episode', default=False)
     parser.add_argument('--video_dir', type=str, default='resources/videos/shelve_item/eval', help='Directory to save episode videos')
     parser.add_argument('--video_camera_type', type=str, default='external', help='Observation camera_type to record (e.g., external or franka0)')
@@ -799,7 +842,8 @@ def __main__():
     # Load policy
     device = args.device if th.cuda.is_available() else "cpu"
     print(f"Loading policy from {args.checkpoint}...")
-    policy = load_policy(args.checkpoint, device=device, action_min=action_min, action_max=action_max)
+    print(f"Policy input type: {args.policy_input_type}")
+    policy = load_policy(args.checkpoint, device=device, action_min=action_min, action_max=action_max, policy_input_type=args.policy_input_type)
     policy.print_parameter_summary()
     
     # Create observation processor with class vocabulary from training HDF5
@@ -1009,13 +1053,18 @@ def __main__():
             # if action_chunker.needs_replan():
                 # Process observation with global class ID remapping
             policy_input = obs_processor.process(obs, robot, obs_info=current_obs_info)
+            # plt.imshow(policy_input["extero"]["external::external_sensor0::seg_instance"][0][0].cpu())
+            # plt.show()
+            # breakpoint()
                 
             # Generate action chunk
             with th.no_grad():
                 proprio = obs['franka0']['proprio'][None].to(device)
+                # Extract proprio indices based on policy_input_type
+                proprio_processed = extract_proprio_for_input_type(proprio, args.policy_input_type)
                 action_chunk = policy.generate_action(
                     seg_images=policy_input['extero'],
-                    state=proprio[..., :-1],
+                    state=proprio_processed,
                     # n_actions=4
                 )
                 # import ipdb; ipdb.set_trace()
