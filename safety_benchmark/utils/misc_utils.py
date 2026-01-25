@@ -257,6 +257,134 @@ def save_rgb_health_video(
     plt.close(fig)
 
 
+def save_rgb_temperature_video(
+    output_video_path,
+    imgs,
+    target_objects,
+    temperature,
+    fps=30,
+):
+    """
+    Save video with RGB frames and temperature history plot.
+    
+    Args:
+        output_video_path: Path to save the video
+        imgs: List/array of RGB images
+        target_objects: List of object names to plot
+        temperature: Dict mapping object_name -> list of temperature values
+        fps: Frames per second
+    """
+    T = len(temperature[target_objects[0]])
+
+    # ---------------------------
+    # FIGURE: 1 row, 2 columns
+    # ---------------------------
+    fig = plt.figure(figsize=(14, 6))
+    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1.2])
+
+    # ---------------------------
+    # LEFT: RGB VIDEO
+    # ---------------------------
+    ax_video = fig.add_subplot(gs[0, 0])
+    ax_video.axis("off")
+    video_im = ax_video.imshow(imgs[0][:, :, :3])
+
+    # ---------------------------
+    # RIGHT: TEMPERATURE PLOT
+    # ---------------------------
+    ax_temp = fig.add_subplot(gs[0, 1])
+    ax_temp.set_title("Temperature Over Time")
+    ax_temp.set_xlabel("Time (s)")
+    ax_temp.set_ylabel("Temperature (°C)")
+    ax_temp.set_xlim(0, T / fps)
+    
+    # Find temperature range for y-axis scaling (handle NaN values)
+    temp_values = []
+    for obj_name in target_objects:
+        if obj_name in temperature:
+            temp_array = np.array(temperature[obj_name])
+            temp_values.extend(temp_array[~np.isnan(temp_array)])
+    
+    if temp_values:
+        min_temp = min(temp_values)
+        max_temp = max(temp_values)
+        temp_range = max_temp - min_temp
+        ax_temp.set_ylim(min_temp - 0.1 * temp_range, max_temp + 0.1 * temp_range)
+    else:
+        ax_temp.set_ylim(0, 100)  # Default range
+    
+    ax_temp.grid(True)
+
+    temp_lines = {}
+    for obj_name in target_objects:
+        if obj_name in temperature:
+            temp_lines[obj_name], = ax_temp.plot(
+                [],
+                [],
+                lw=2,
+                label=f"{obj_name} Temperature",
+            )
+
+    ax_temp.legend(loc="upper right", fontsize=9)
+    fig.subplots_adjust(left=0.05, right=0.97, wspace=0.25)
+
+    # Precompute time axis
+    time = [i / fps for i in range(T)]
+
+    # ---------------------------
+    # INIT
+    # ---------------------------
+    def init():
+        video_im.set_data(imgs[0][:, :, :3])
+        for line in temp_lines.values():
+            line.set_data([], [])
+        return [video_im] + list(temp_lines.values())
+
+    # ---------------------------
+    # ANIMATE
+    # ---------------------------
+    def animate(i):
+        # RGB frame
+        video_im.set_data(imgs[i][:, :, :3])
+
+        # Temperature plot
+        for obj_name in target_objects:
+            if obj_name in temp_lines and obj_name in temperature:
+                temp_array = np.array(temperature[obj_name])
+                # Handle NaN values by only plotting valid data up to current frame
+                valid_mask = ~np.isnan(temp_array[:i+1])
+                if np.any(valid_mask):
+                    valid_time = np.array(time[:i+1])[valid_mask]
+                    valid_temp = temp_array[:i+1][valid_mask]
+                    temp_lines[obj_name].set_data(valid_time, valid_temp)
+
+        return [video_im] + list(temp_lines.values())
+
+    # ---------------------------
+    # SAVE
+    # ---------------------------
+    ani = animation.FuncAnimation(
+        fig,
+        animate,
+        init_func=init,
+        frames=T,
+        interval=1000 / fps,
+        blit=True,
+    )
+
+    writer = animation.FFMpegWriter(
+        fps=fps,
+        codec="libx264",
+        extra_args=[
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+        ],
+    )
+
+    ani.save(output_video_path, writer=writer)
+    plt.close(fig)
+
+
 def save_rgb_water_contacts_video(
     output_video_path,
     imgs,
