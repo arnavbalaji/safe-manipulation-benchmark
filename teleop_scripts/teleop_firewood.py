@@ -299,10 +299,26 @@ def __main__():
     # Keyboard Teleop
     action_generator = KeyboardRobotController(robot=robot)
     
+    # Function to save simulation state to pkl file
+    def save_state_to_pkl():
+        """Save current simulation state to pkl file"""
+        os.makedirs("resources/saved_states", exist_ok=True)
+        save_path = "resources/saved_states/firewood_init_state.pkl"
+        og.sim.update_handles()  # Update handles before dumping state
+        state = og.sim.dump_state(serialized=True)
+        with open(save_path, "wb") as f:
+            pickle.dump(state, f)
+        print(f"Simulation state saved to: {save_path}")
+    
     action_generator.register_custom_keymapping(
         key=lazy.carb.input.KeyboardInput.R,
         description="Reset the robot",
         callback_fn=lambda: env.reset(),
+    )
+    action_generator.register_custom_keymapping(
+        key=lazy.carb.input.KeyboardInput.S,
+        description="Save simulation state to pkl file",
+        callback_fn=save_state_to_pkl,
     )
     action_generator.print_keyboard_teleop_info()
 

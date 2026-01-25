@@ -13,6 +13,8 @@ from collections import defaultdict
 import omnigibson as og
 from omnigibson.macros import gm
 import omnigibson.lazy as lazy
+from telemoma.configs.base_config import teleop_config
+from omnigibson.utils.teleop_utils import TeleopSystem
 from omnigibson.utils.ui_utils import KeyboardRobotController
 from omnigibson.controllers.controller_base import IsGraspingState
 from omnigibson import object_states
@@ -38,15 +40,15 @@ TASK_OBJECTS = {
         "name": "fireplace",
         "category": "wood_fireplace",
         "model": "gpnsij",
-        "position": [-1.5, -2.0, 0.5],
+        "position": [-1.3, -2.0, 0.5],
         "orientation": [0, 0, 0, 1],
-        "scale": [1.0, 0.75, 0.75],
+        "scale": [1.0, 0.85, 0.9],
         "fixed_base": True,
         "abilities": {
             "heatSource": {
                 "temperature": 100.0,
-                "heating_rate": 0.1,
-                "distance_threshold": 0.12,
+                "heating_rate": 1.0,
+                "distance_threshold": 0.4,
                 "requires_toggled_on": False,
             }
         },
@@ -59,7 +61,7 @@ TASK_OBJECTS = {
         "name": "log_center",
         "category": "log",
         "model": "pepele",
-        "position": [-1.65, -2.0, 0.15],
+        "position": [-1.45, -2.0, 0.15],
         "orientation": [0, 0, 0, 1],
         "scale": [0.8, 0.6, 0.6],
         "abilities": {
@@ -85,7 +87,7 @@ TASK_OBJECTS = {
         "name": "log_left",
         "category": "log",
         "model": "pepele",
-        "position": [-1.65, -2.15, 0.17],
+        "position": [-1.45, -2.15, 0.17],
         "orientation": [0, 0, 0, 1],
         "scale": [0.8, 0.6, 0.6],
         "abilities": {
@@ -144,15 +146,24 @@ def _ensure_firewood_states(env):
     - Robot has Temperature state (for thermal health tracking)
     - Fireplace has HeatSourceOrSink state (for heating the robot)
     """
-    # Ensure robot damage evaluators are initialized (adds Temperature state)
+    # Ensure robot has Temperature state before initializing damage evaluators
     if env.robots:
         robot = env.robots[0]
         if hasattr(robot, "track_damage") and robot.track_damage:
+            # Ensure robot has params set
             if not hasattr(robot, "params") or not robot.params:
                 from safety_benchmark.params.test_params import PARAMS
                 if "agent" in PARAMS:
                     robot.set_params(PARAMS["agent"])
             
+            # Add Temperature state to robot if it doesn't exist (required for thermal damage evaluator)
+            if object_states.Temperature not in robot.states:
+                temperature_state = object_states.Temperature(obj=robot)
+                robot.add_state(temperature_state)
+                if hasattr(robot, "_initialized") and robot._initialized:
+                    temperature_state.initialize()
+            
+            # Now initialize damage evaluators (thermal evaluator will check for Temperature state)
             if not hasattr(robot, "damage_evaluators") or len(robot.damage_evaluators) == 0:
                 if hasattr(robot, "_initialize_damage_evaluators"):
                     robot._initialize_damage_evaluators()
@@ -168,17 +179,33 @@ def _ensure_firewood_states(env):
         if "heatSource" not in fireplace._abilities:
             fireplace._abilities["heatSource"] = heat_source_cfg
         
+        # Get config values
+        config_temperature = heat_source_cfg.get("temperature", 100.0)
+        config_heating_rate = heat_source_cfg.get("heating_rate", 2.0)
+        config_distance_threshold = heat_source_cfg.get("distance_threshold", 0.2)
+        config_requires_toggled_on = heat_source_cfg.get("requires_toggled_on", False)
+        
         if object_states.HeatSourceOrSink not in fireplace.states:
+            # Create new state with config values
             heat_source_state = object_states.HeatSourceOrSink(
                 obj=fireplace,
-                temperature=heat_source_cfg.get("temperature", 100.0),
-                heating_rate=heat_source_cfg.get("heating_rate", 0.1),
-                distance_threshold=heat_source_cfg.get("distance_threshold", 0.15),
-                requires_toggled_on=heat_source_cfg.get("requires_toggled_on", False),
+                temperature=config_temperature,
+                heating_rate=config_heating_rate,
+                distance_threshold=config_distance_threshold,
+                requires_toggled_on=config_requires_toggled_on,
             )
             fireplace.add_state(heat_source_state)
             if fireplace._initialized:
                 heat_source_state.initialize()
+            print(f"Created HeatSourceOrSink state with: temp={config_temperature}, rate={config_heating_rate}, threshold={config_distance_threshold}")
+        else:
+            # State already exists - update its parameters to match config
+            heat_source_state = fireplace.states[object_states.HeatSourceOrSink]
+            heat_source_state._temperature = config_temperature
+            heat_source_state._heating_rate = config_heating_rate
+            heat_source_state.distance_threshold = config_distance_threshold
+            heat_source_state.requires_toggled_on = config_requires_toggled_on
+            print(f"Updated existing HeatSourceOrSink state to: temp={config_temperature}, rate={config_heating_rate}, threshold={config_distance_threshold}")
         
         if object_states.Temperature in fireplace.states:
             fireplace.states[object_states.Temperature].set_value(100.0)
@@ -195,10 +222,15 @@ def _reset_firewood_transforms(env):
     Re-apply canonical poses / scales from TASK_OBJECTS after a state load.
     This keeps objects aligned even if the saved pkl was generated with
     different scales (e.g., after increasing log x-scale).
+    
+    Only adjusts fireplace and logs (log_center, log_left), NOT target_object or robot.
     """
-    for name in ["fireplace", "log_center", "log_left", "target_object"]:
+    # Only adjust fireplace and logs, not target_object or robot
+    objects_to_adjust = ["fireplace", "log_center", "log_left"]
+    for name in objects_to_adjust:
         obj = env.scene.object_registry("name", name)
         if obj is None:
+            print(f"Warning: {name} not found in scene, skipping transform reset")
             continue
         if name not in TASK_OBJECTS:
             print(f"Warning: {name} not found in TASK_OBJECTS, skipping transform reset")
@@ -210,6 +242,7 @@ def _reset_firewood_transforms(env):
             continue
         try:
             obj.set_position_orientation(cfg["position"], cfg["orientation"])
+            print(f"Adjusted {name} position to {cfg['position']} from config")
         except Exception as e:
             print(f"Warning: Failed to set position/orientation for {name}: {e}")
             continue
@@ -217,6 +250,7 @@ def _reset_firewood_transforms(env):
         if "scale" in cfg:
             try:
                 obj.set_scale(cfg["scale"])
+                print(f"Adjusted {name} scale to {cfg['scale']} from config")
             except Exception:
                 pass  # Some objects may not expose set_scale; ignore silently
 
@@ -236,7 +270,7 @@ def reset_env(env):
     env.step(zero_action)  # This triggers _initialize_damage_evaluators which adds Temperature state
     
     # Load state from pkl file
-    state_path = "safe-manipulation-benchmark/resources/saved_states/firewood_init_state.pkl"
+    state_path = "resources/saved_states/firewood_init_state.pkl"
     try:
         with open(state_path, "rb") as f:
             state_flat_array = pickle.load(f)
@@ -348,7 +382,7 @@ def reset_env(env):
         gripper_idx = robot.gripper_action_idx[robot.default_arm]
         
         # Apply random delta noise to arm for 10 steps while keeping gripper closed
-        noise_scale = 0.05  # Small noise to avoid dropping the log
+        noise_scale = 0.02  # Small noise to avoid dropping the log
         for _ in range(5):
             # Sample random delta noise for arm action
             arm_noise = th.randn(len(arm_idx)) * noise_scale
@@ -537,7 +571,21 @@ def __main__():
         for _ in range(10):
             og.sim.step()
 
-        # Keyboard Teleop
+        # Telemoma: Teleoperate robot
+        arm_teleop_method = "spacemouse"
+        base_teleop_method = "spacemouse"
+        # Franka uses arm_0 instead of arm_left/arm_right
+        teleop_config.arm_0_controller = arm_teleop_method
+        # Tiago config (also set for compatibility):
+        teleop_config.arm_left_controller = arm_teleop_method
+        teleop_config.arm_right_controller = arm_teleop_method
+        teleop_config.base_controller = base_teleop_method
+        teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
+        teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.01}
+        teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
+        teleop_sys.start()
+
+        # Keyboard Teleop (for reset and episode control)
         action_generator = KeyboardRobotController(robot=robot)
         action_generator.register_custom_keymapping(
             key=lazy.carb.input.KeyboardInput.R,
@@ -566,6 +614,7 @@ def __main__():
 
         # ======================== Data collection ========================
         n_episodes = args.n_episodes
+        last_telemoma_grip_action = 1.0
         completed_episodes = 0
         while completed_episodes < n_episodes:
             print(f"Episode {completed_episodes} starts (target: {n_episodes})")
@@ -599,10 +648,8 @@ def __main__():
             # If the robot is grasping, set the persistent gripper action to -1.0
             if robot.is_grasping().value == IsGraspingState.TRUE:
                 action_generator.persistent_gripper_action[action_generator.binary_grippers[0]] = -1.0
-            else:
-                # Default to closed if not grasping
-                action_generator.persistent_gripper_action[action_generator.binary_grippers[0]] = -1.0
-                action_generator.gripper_direction[action_generator.binary_grippers[0]] = -1.0
+            action = th.zeros(robot.action_dim)
+            action[-1] = -1.0
             episode_starts = False
 
             print("Ready for teleoperation. Press TAB to end episode, BACKSPACE/DELETE to discard and reset.")
@@ -611,16 +658,29 @@ def __main__():
             discard_episode = False
             episode_step_count = 0
             init_skip_steps = 3
+            frame_count = 0
             while True:
-                ret = action_generator.get_teleop_action()
-                if isinstance(ret, tuple) and len(ret) == 2:
-                    action, keypress_str = ret
+                telemoma_action = teleop_sys.get_action(teleop_sys.get_obs())
+                telemoma_grip_action = telemoma_action[-1]
+                if telemoma_grip_action != last_telemoma_grip_action:
+                    action[-1] = -action[-1]
+                last_telemoma_grip_action = telemoma_grip_action
+                # Convert to tensor if numpy array
+                if hasattr(telemoma_action, 'numpy') or isinstance(telemoma_action, np.ndarray):
+                    telemoma_action_tensor = th.from_numpy(telemoma_action) if isinstance(telemoma_action, np.ndarray) else telemoma_action
                 else:
-                    action = ret
-                    keypress_str = None
+                    telemoma_action_tensor = th.tensor(telemoma_action)
+                action[:-1] = telemoma_action_tensor[:-1]
+                
+                # Debug: print spacemouse action every 30 frames
+                frame_count += 1
+                if frame_count % 30 == 0:
+                    print(f"Spacemouse action: {telemoma_action}, episode_starts: {episode_starts}")
                 
                 if not episode_starts:
-                    episode_starts = (action[:-1].sum() > 0).item() if len(action) > 1 else False
+                    episode_starts = (th.abs(action[:-1]).sum() > 0.01).item()
+                
+                _, keypress_str = action_generator.get_teleop_action()
                 
                 # TAB: end episode and save
                 if keypress_str and keypress_str.upper() == "TAB":
@@ -663,12 +723,12 @@ def __main__():
                                     evaluator.update_link_positions_and_velocities()
                 
                 if episode_starts:
-                    # print("action: ", action)
-                    # print("telemoma_action: ", telemoma_action)
                     env.step(action.clone(), episode_step_count=episode_step_count, init_skip_steps=init_skip_steps)
                     episode_step_count += 1
                 else:
-                    # Step simulation even when episode hasn't started to allow keyboard input to be processed
+                    # Apply action to robot and step simulation even when episode hasn't started
+                    # This allows teleop before officially starting the episode (no data recorded)
+                    robot.apply_action(action.clone())
                     og.sim.step()
                 
                 # Checking success: target_object log within xy tolerance of fireplace and gripper open
@@ -681,7 +741,68 @@ def __main__():
                         target_pos, _ = target_object.get_position_orientation()
                         fireplace_pos, _ = fireplace.get_position_orientation()
                         
-                        # Calculate xy distance only (ignore z)
+                        # ===== HEATSOURCE DEBUG INFO =====
+                        # Get the actual HeatSourceOrSink state from fireplace
+                        heat_source_state = fireplace.states.get(object_states.HeatSourceOrSink)
+                        if heat_source_state is not None:
+                            # Get actual values from the heat source state
+                            actual_distance_threshold = heat_source_state.distance_threshold
+                            actual_heating_rate = heat_source_state.heating_rate
+                            actual_temperature = heat_source_state.temperature
+                            
+                            # Calculate distance the same way the heat source does:
+                            # Position is either the AABB center of the default link or the meta link position
+                            # Use try/except since the link may not be set up
+                            try:
+                                heat_source_link = heat_source_state.link
+                                if heat_source_link == heat_source_state._default_link:
+                                    heat_source_pos = heat_source_link.aabb_center
+                                else:
+                                    heat_source_pos = heat_source_link.get_position_orientation()[0]
+                            except (AssertionError, AttributeError):
+                                # Fallback: use fireplace's AABB center (same as what requires_inside=False would use)
+                                if object_states.AABB in fireplace.states:
+                                    aabb_lower, aabb_upper = fireplace.states[object_states.AABB].get_value()
+                                    heat_source_pos = (aabb_upper + aabb_lower) / 2.0
+                                else:
+                                    # Last resort: use fireplace position
+                                    heat_source_pos = fireplace_pos
+                            
+                            # Distance from robot's end-effector to heat source position
+                            eef_link = robot.links.get("eef_link")
+                            if eef_link is not None:
+                                eef_pos, _ = eef_link.get_position_orientation()
+                                eef_to_heatsource_dist = th.norm(eef_pos - heat_source_pos).item()
+                            else:
+                                # Fallback: use robot base position
+                                robot_pos, _ = robot.get_position_orientation()
+                                eef_to_heatsource_dist = th.norm(robot_pos - heat_source_pos).item()
+                            
+                            # Check if robot is in the affected objects
+                            is_affected = robot in heat_source_state._affected_objects if heat_source_state._affected_objects else False
+                            
+                            # Check if heat source is active
+                            is_active = heat_source_state.get_value()
+                            
+                            # Print detailed heatsource info
+                            print(f"Step {episode_step_count}: "
+                                  f"dist_threshold={actual_distance_threshold:.3f}m | "
+                                  f"heating_rate={actual_heating_rate:.3f} | "
+                                  f"eef->heatsource={eef_to_heatsource_dist:.3f}m | "
+                                  f"affected={is_affected} | "
+                                  f"active={is_active}")
+                        else:
+                            # Fallback: use simple distance calculation with eef
+                            eef_link = robot.links.get("eef_link")
+                            if eef_link is not None:
+                                eef_pos, _ = eef_link.get_position_orientation()
+                                distance_3d = th.norm(eef_pos - fireplace_pos).item()
+                            else:
+                                robot_pos, _ = robot.get_position_orientation()
+                                distance_3d = th.norm(robot_pos - fireplace_pos).item()
+                            print(f"Step {episode_step_count}: No HeatSourceOrSink state found! EEF->Fireplace (3D): {distance_3d:.3f}m")
+                        
+                        # Calculate xy distance for success checking (ignore z)
                         distance_xy = th.norm((target_pos[:2] - fireplace_pos[:2])).item()
                         
                         # Tolerance: log should be close to fireplace horizontally

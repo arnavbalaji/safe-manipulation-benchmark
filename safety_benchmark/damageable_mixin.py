@@ -109,6 +109,22 @@ class DamageableMixin:
                     self.damage_info[link_name]["electrical"]["particle_count"] = particle_count
                     self.damage_info[link_name]["electrical"]["damage"] = damage
 
+                # Update the thermal damage information (temperature-based damage)
+                if evaluator.name == "thermal":
+                    if "thermal" not in self.damage_info[link_name]:
+                        self.damage_info[link_name]["thermal"] = {}
+                    # Get current temperature from the evaluator
+                    temperature = evaluator.get_temperature() if hasattr(evaluator, "get_temperature") else None
+                    if temperature is None and hasattr(evaluator, "current_temperature"):
+                        temperature = evaluator.current_temperature
+                    self.damage_info[link_name]["thermal"]["temperature"] = temperature
+                    self.damage_info[link_name]["thermal"]["damage"] = damage
+                    # Store thresholds for reference
+                    if hasattr(evaluator, "heating_threshold"):
+                        self.damage_info[link_name]["thermal"]["heating_threshold"] = evaluator.heating_threshold
+                    if hasattr(evaluator, "cooling_threshold"):
+                        self.damage_info[link_name]["thermal"]["cooling_threshold"] = evaluator.cooling_threshold
+
 
 
 '''Damageable Object subclasses'''

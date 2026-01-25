@@ -15,7 +15,7 @@ PARAMS = {
     # Robot's category in OG is "agent"
     # TODO: Add Panda
     "agent": {
-        "damage_evaluators": ["mechanical"],
+        "damage_evaluators": ["mechanical", "thermal"],
         "damageabletiago_damageable_links": ["base_link",
                             "arm_right_1_link",
                             "arm_right_2_link",
@@ -78,6 +78,11 @@ PARAMS = {
                     "damage_scale": 0.2,
                 }
             }
+        },
+        "thermal": {
+            "heating_threshold": 50.0,  # Temperature above which robot takes damage (degrees C)
+            "cooling_threshold": -20.0,  # Temperature below which robot takes damage (degrees C)
+            "scale": 0.2,  # Damage scale factor
         },
         # "electrical": {
         #     "damage_threshold": 0.0,  # Minimum particles to cause damage
