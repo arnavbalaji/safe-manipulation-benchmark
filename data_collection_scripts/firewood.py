@@ -40,15 +40,15 @@ TASK_OBJECTS = {
         "name": "fireplace",
         "category": "wood_fireplace",
         "model": "gpnsij",
-        "position": [-1.3, -2.0, 0.5],
+        "position": [-1.5, -2.0, 0.5],
         "orientation": [0, 0, 0, 1],
-        "scale": [1.0, 0.85, 0.9],
+        "scale": [1.0, 0.85, 0.85],
         "fixed_base": True,
         "abilities": {
             "heatSource": {
                 "temperature": 100.0,
-                "heating_rate": 1.0,
-                "distance_threshold": 0.4,
+                "heating_rate": 0.1,
+                "distance_threshold": 0.12,
                 "requires_toggled_on": False,
             }
         },
@@ -61,7 +61,7 @@ TASK_OBJECTS = {
         "name": "log_center",
         "category": "log",
         "model": "pepele",
-        "position": [-1.45, -2.0, 0.15],
+        "position": [-1.65, -2.0, 0.15],
         "orientation": [0, 0, 0, 1],
         "scale": [0.8, 0.6, 0.6],
         "abilities": {
@@ -87,7 +87,7 @@ TASK_OBJECTS = {
         "name": "log_left",
         "category": "log",
         "model": "pepele",
-        "position": [-1.45, -2.15, 0.17],
+        "position": [-1.65, -2.15, 0.17],
         "orientation": [0, 0, 0, 1],
         "scale": [0.8, 0.6, 0.6],
         "abilities": {
@@ -146,24 +146,15 @@ def _ensure_firewood_states(env):
     - Robot has Temperature state (for thermal health tracking)
     - Fireplace has HeatSourceOrSink state (for heating the robot)
     """
-    # Ensure robot has Temperature state before initializing damage evaluators
+    # Ensure robot damage evaluators are initialized (adds Temperature state)
     if env.robots:
         robot = env.robots[0]
         if hasattr(robot, "track_damage") and robot.track_damage:
-            # Ensure robot has params set
             if not hasattr(robot, "params") or not robot.params:
                 from safety_benchmark.params.test_params import PARAMS
                 if "agent" in PARAMS:
                     robot.set_params(PARAMS["agent"])
             
-            # Add Temperature state to robot if it doesn't exist (required for thermal damage evaluator)
-            if object_states.Temperature not in robot.states:
-                temperature_state = object_states.Temperature(obj=robot)
-                robot.add_state(temperature_state)
-                if hasattr(robot, "_initialized") and robot._initialized:
-                    temperature_state.initialize()
-            
-            # Now initialize damage evaluators (thermal evaluator will check for Temperature state)
             if not hasattr(robot, "damage_evaluators") or len(robot.damage_evaluators) == 0:
                 if hasattr(robot, "_initialize_damage_evaluators"):
                     robot._initialize_damage_evaluators()
@@ -179,33 +170,17 @@ def _ensure_firewood_states(env):
         if "heatSource" not in fireplace._abilities:
             fireplace._abilities["heatSource"] = heat_source_cfg
         
-        # Get config values
-        config_temperature = heat_source_cfg.get("temperature", 100.0)
-        config_heating_rate = heat_source_cfg.get("heating_rate", 2.0)
-        config_distance_threshold = heat_source_cfg.get("distance_threshold", 0.2)
-        config_requires_toggled_on = heat_source_cfg.get("requires_toggled_on", False)
-        
         if object_states.HeatSourceOrSink not in fireplace.states:
-            # Create new state with config values
             heat_source_state = object_states.HeatSourceOrSink(
                 obj=fireplace,
-                temperature=config_temperature,
-                heating_rate=config_heating_rate,
-                distance_threshold=config_distance_threshold,
-                requires_toggled_on=config_requires_toggled_on,
+                temperature=heat_source_cfg.get("temperature", 100.0),
+                heating_rate=heat_source_cfg.get("heating_rate", 0.1),
+                distance_threshold=heat_source_cfg.get("distance_threshold", 0.15),
+                requires_toggled_on=heat_source_cfg.get("requires_toggled_on", False),
             )
             fireplace.add_state(heat_source_state)
             if fireplace._initialized:
                 heat_source_state.initialize()
-            print(f"Created HeatSourceOrSink state with: temp={config_temperature}, rate={config_heating_rate}, threshold={config_distance_threshold}")
-        else:
-            # State already exists - update its parameters to match config
-            heat_source_state = fireplace.states[object_states.HeatSourceOrSink]
-            heat_source_state._temperature = config_temperature
-            heat_source_state._heating_rate = config_heating_rate
-            heat_source_state.distance_threshold = config_distance_threshold
-            heat_source_state.requires_toggled_on = config_requires_toggled_on
-            print(f"Updated existing HeatSourceOrSink state to: temp={config_temperature}, rate={config_heating_rate}, threshold={config_distance_threshold}")
         
         if object_states.Temperature in fireplace.states:
             fireplace.states[object_states.Temperature].set_value(100.0)
@@ -222,15 +197,10 @@ def _reset_firewood_transforms(env):
     Re-apply canonical poses / scales from TASK_OBJECTS after a state load.
     This keeps objects aligned even if the saved pkl was generated with
     different scales (e.g., after increasing log x-scale).
-    
-    Only adjusts fireplace and logs (log_center, log_left), NOT target_object or robot.
     """
-    # Only adjust fireplace and logs, not target_object or robot
-    objects_to_adjust = ["fireplace", "log_center", "log_left"]
-    for name in objects_to_adjust:
+    for name in ["fireplace", "log_center", "log_left", "target_object"]:
         obj = env.scene.object_registry("name", name)
         if obj is None:
-            print(f"Warning: {name} not found in scene, skipping transform reset")
             continue
         if name not in TASK_OBJECTS:
             print(f"Warning: {name} not found in TASK_OBJECTS, skipping transform reset")
@@ -242,7 +212,6 @@ def _reset_firewood_transforms(env):
             continue
         try:
             obj.set_position_orientation(cfg["position"], cfg["orientation"])
-            print(f"Adjusted {name} position to {cfg['position']} from config")
         except Exception as e:
             print(f"Warning: Failed to set position/orientation for {name}: {e}")
             continue
@@ -250,16 +219,25 @@ def _reset_firewood_transforms(env):
         if "scale" in cfg:
             try:
                 obj.set_scale(cfg["scale"])
-                print(f"Adjusted {name} scale to {cfg['scale']} from config")
             except Exception:
                 pass  # Some objects may not expose set_scale; ignore silently
 
 
-def reset_env(env):
+def reset_env(env, clear_trajectory=False):
     """
     Reset environment and load from saved state pkl file.
     Similar to pour_glass.py reset_env function.
+    
+    Args:
+        clear_trajectory (bool): If True, clear trajectory history before reset to prevent saving.
+                                 Use True when discarding episodes, False when episode completed successfully.
     """
+    # Only clear trajectory if explicitly requested (e.g., when discarding episodes)
+    # If False, let env.reset() flush the trajectory normally (for successful episodes)
+    if clear_trajectory and len(env.current_traj_history) > 0:
+        env.current_traj_history = []
+        env.step_count = 0
+    
     env.reset()
     
     # CRITICAL: Initialize damage evaluators (which adds Temperature state to robot) BEFORE loading state
@@ -268,9 +246,12 @@ def reset_env(env):
     robot = env.robots[0]
     zero_action = th.zeros(robot.action_dim)
     env.step(zero_action)  # This triggers _initialize_damage_evaluators which adds Temperature state
+    # Clear this initialization step from trajectory history so it doesn't get saved
+    if len(env.current_traj_history) > 1:  # Keep the initial state from reset, remove the step
+        env.current_traj_history = env.current_traj_history[:1]
     
     # Load state from pkl file
-    state_path = "resources/saved_states/firewood_init_state.pkl"
+    state_path = "safe-manipulation-benchmark/resources/saved_states/firewood_init_state.pkl"
     try:
         with open(state_path, "rb") as f:
             state_flat_array = pickle.load(f)
@@ -325,18 +306,22 @@ def reset_env(env):
         robot.set_joint_positions(robot_joint_positions)
         robot.set_joint_velocities(th.zeros(robot.n_dof))
         robot.keep_still()
-        env.step(keep_gripper_action)
+        # Apply gripper action directly, then use og.sim.step() to avoid recording
+        robot.apply_action(keep_gripper_action)
+        og.sim.step()
         # Force restore after step to prevent any drift
         robot.set_joint_positions(robot_joint_positions)
         robot.set_joint_velocities(th.zeros(robot.n_dof))
         robot.keep_still()
     
-    # Let simulation settle with env.step() for proper physics
+    # Let simulation settle with og.sim.step() for proper physics (don't record these steps)
     for _ in range(30):
         robot.set_joint_positions(robot_joint_positions)
         robot.set_joint_velocities(th.zeros(robot.n_dof))
         robot.keep_still()
-        env.step(keep_gripper_action)
+        # Apply gripper action directly, then use og.sim.step() to avoid recording
+        robot.apply_action(keep_gripper_action)
+        og.sim.step()
         robot.set_joint_positions(robot_joint_positions)
         robot.set_joint_velocities(th.zeros(robot.n_dof))
         robot.keep_still()
@@ -351,6 +336,11 @@ def reset_env(env):
     arm_controller = robot.controllers.get(f"arm_{robot.default_arm}")
     if arm_controller is not None:
         arm_controller.reset()
+    
+    # Reset the gripper controller's internal state to ensure it starts closed
+    gripper_controller = robot.controllers.get(f"gripper_{robot.default_arm}")
+    if gripper_controller is not None:
+        gripper_controller.reset()
     
     # Final sync after position restoration - critical for IK controller
     robot.keep_still()
@@ -373,6 +363,33 @@ def reset_env(env):
     # Make sure fire / heat states are active after load
     _ensure_firewood_states(env)
     
+    # CRITICAL: Ensure gripper is closed at the start - apply closed gripper action for many steps
+    # This must happen AFTER controller reset to override any persistent state
+    # Use og.sim.step() instead of env.step() to avoid recording these initialization steps
+    close_gripper_action = th.zeros(robot.action_dim)
+    close_gripper_action[robot.gripper_action_idx[robot.default_arm]] = -1.0
+    for _ in range(20):  # Increased from 10 to 20 to ensure gripper fully closes
+        robot.apply_action(close_gripper_action)
+        og.sim.step()
+        robot.keep_still()
+    
+    # Also directly set gripper joints to closed position if possible
+    # Get gripper joint indices and set them to closed (typically 0.0 for Franka)
+    try:
+        gripper_joint_indices = robot.gripper_joint_indices[robot.default_arm]
+        if len(gripper_joint_indices) > 0:
+            # Set gripper joints to closed position (0.0 for Franka)
+            current_joint_positions = robot.get_joint_positions()
+            for gripper_joint_idx in gripper_joint_indices:
+                current_joint_positions[gripper_joint_idx] = 0.0
+            robot.set_joint_positions(current_joint_positions)
+            robot.keep_still()
+            for _ in range(5):
+                og.sim.step()
+            print("Gripper joints directly set to closed position")
+    except (AttributeError, KeyError, IndexError) as e:
+        print(f"Could not directly set gripper joints (this is okay): {e}")
+    
     # Randomize robot pose (and log if holding it) by applying random delta noise
     target_object = env.scene.object_registry("name", "target_object")
     if target_object is not None and robot.is_grasping(candidate_obj=target_object).value == IsGraspingState.TRUE:
@@ -382,7 +399,8 @@ def reset_env(env):
         gripper_idx = robot.gripper_action_idx[robot.default_arm]
         
         # Apply random delta noise to arm for 10 steps while keeping gripper closed
-        noise_scale = 0.02  # Small noise to avoid dropping the log
+        # Use og.sim.step() instead of env.step() to avoid recording pose randomization steps
+        noise_scale = 0.01  # Small noise to avoid dropping the log
         for _ in range(5):
             # Sample random delta noise for arm action
             arm_noise = th.randn(len(arm_idx)) * noise_scale
@@ -391,7 +409,8 @@ def reset_env(env):
             random_action[arm_idx] = arm_noise
             random_action[gripper_idx] = -1.0  # Keep gripper closed
             
-            env.step(random_action)
+            robot.apply_action(random_action)
+            og.sim.step()
         
         # Let simulation settle after randomization
         robot.keep_still()
@@ -399,7 +418,8 @@ def reset_env(env):
             # Keep gripper closed while settling
             settle_action = th.zeros(robot.action_dim)
             settle_action[gripper_idx] = -1.0
-            env.step(settle_action)
+            robot.apply_action(settle_action)
+            og.sim.step()
             robot.keep_still()
         
         print("Pose randomization complete")
@@ -576,7 +596,7 @@ def __main__():
         base_teleop_method = "spacemouse"
         # Franka uses arm_0 instead of arm_left/arm_right
         teleop_config.arm_0_controller = arm_teleop_method
-        # Tiago config (also set for compatibility):
+        # Tiago config (commented out):
         teleop_config.arm_left_controller = arm_teleop_method
         teleop_config.arm_right_controller = arm_teleop_method
         teleop_config.base_controller = base_teleop_method
@@ -585,7 +605,7 @@ def __main__():
         teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
         teleop_sys.start()
 
-        # Keyboard Teleop (for reset and episode control)
+        # Keyboard Teleop
         action_generator = KeyboardRobotController(robot=robot)
         action_generator.register_custom_keymapping(
             key=lazy.carb.input.KeyboardInput.R,
@@ -614,7 +634,7 @@ def __main__():
 
         # ======================== Data collection ========================
         n_episodes = args.n_episodes
-        last_telemoma_grip_action = 1.0
+        last_telemoma_grip_action = 1.0 
         completed_episodes = 0
         while completed_episodes < n_episodes:
             print(f"Episode {completed_episodes} starts (target: {n_episodes})")
@@ -623,7 +643,7 @@ def __main__():
             reset_attempts = 0
             max_reset_attempts = 10
             while True:
-                reset_env(env)
+                reset_env(env, clear_trajectory=False)
                 reset_attempts += 1
                 
                 # Check robot health
@@ -645,41 +665,62 @@ def __main__():
             
             action_generator.current_keypress = None
 
+            # CRITICAL: Reset gripper controller state at the start of each episode
+            # This prevents gripper state from persisting across episodes
+            gripper_controller = robot.controllers.get(f"gripper_{robot.default_arm}")
+            if gripper_controller is not None:
+                gripper_controller.reset()
+            
+            # Ensure gripper is closed at the start of each episode
+            # Apply closed gripper action for many steps to ensure it's actually closed
+            # Use og.sim.step() instead of env.step() to avoid recording these steps before episode_starts
+            close_gripper_action = th.zeros(robot.action_dim)
+            close_gripper_action[robot.gripper_action_idx[robot.default_arm]] = -1.0
+            for _ in range(15):  # Increased from 5 to 15 to ensure gripper fully closes
+                robot.apply_action(close_gripper_action)
+            og.sim.step()
+            robot.keep_still()
+            
+            # Also directly set gripper joints to closed position
+            try:
+                gripper_joint_indices = robot.gripper_joint_indices[robot.default_arm]
+                if len(gripper_joint_indices) > 0:
+                    current_joint_positions = robot.get_joint_positions()
+                    for gripper_joint_idx in gripper_joint_indices:
+                        current_joint_positions[gripper_joint_idx] = 0.0
+                    robot.set_joint_positions(current_joint_positions)
+                    robot.keep_still()
+                    for _ in range(5):
+                        og.sim.step()
+            except (AttributeError, KeyError, IndexError):
+                pass  # If we can't set directly, the action-based closing should work
+
             # If the robot is grasping, set the persistent gripper action to -1.0
             if robot.is_grasping().value == IsGraspingState.TRUE:
                 action_generator.persistent_gripper_action[action_generator.binary_grippers[0]] = -1.0
+            else:
+                # Default to closed if not grasping
+                action_generator.persistent_gripper_action[action_generator.binary_grippers[0]] = -1.0
+                action_generator.gripper_direction[action_generator.binary_grippers[0]] = -1.0
             action = th.zeros(robot.action_dim)
             action[-1] = -1.0
             episode_starts = False
-
+            
             print("Ready for teleoperation. Press TAB to end episode, BACKSPACE/DELETE to discard and reset.")
-            breakpoint()
             # Default gripper action is 1.0
             discard_episode = False
             episode_step_count = 0
             init_skip_steps = 3
-            frame_count = 0
             while True:
                 telemoma_action = teleop_sys.get_action(teleop_sys.get_obs())
                 telemoma_grip_action = telemoma_action[-1]
                 if telemoma_grip_action != last_telemoma_grip_action:
                     action[-1] = -action[-1]
                 last_telemoma_grip_action = telemoma_grip_action
-                # Convert to tensor if numpy array
-                if hasattr(telemoma_action, 'numpy') or isinstance(telemoma_action, np.ndarray):
-                    telemoma_action_tensor = th.from_numpy(telemoma_action) if isinstance(telemoma_action, np.ndarray) else telemoma_action
-                else:
-                    telemoma_action_tensor = th.tensor(telemoma_action)
-                action[:-1] = telemoma_action_tensor[:-1]
-                
-                # Debug: print spacemouse action every 30 frames
-                frame_count += 1
-                if frame_count % 30 == 0:
-                    print(f"Spacemouse action: {telemoma_action}, episode_starts: {episode_starts}")
-                
+                action[:-1] = telemoma_action[:-1]
                 if not episode_starts:
-                    episode_starts = (th.abs(action[:-1]).sum() > 0.01).item()
-                
+                    episode_starts = (action[:-1].sum() > 0).item()
+
                 _, keypress_str = action_generator.get_teleop_action()
                 
                 # TAB: end episode and save
@@ -690,17 +731,17 @@ def __main__():
                     if inp == "y":
                         print("Saving as task success being True")
                         env.task._success = True
-                        break
                     else:
-                        print("BACKSPACE/DELETE pressed - discarding current trajectory and resetting...")
+                        print("Discarding current trajectory and resetting...")
                         breakpoint()
                         # Clear the current trajectory data without saving
                         steps_to_remove = len(env.current_traj_history)
                         env.current_traj_history = []
                         env.step_count -= steps_to_remove
                         print(f"Discarded {steps_to_remove} steps from current trajectory")
-                        discard_episode = True
-                        break
+                    break
+                    discard_episode = True
+                    break
                 
                 # BACKSPACE/DELETE: discard current trajectory and reset
                 if keypress_str and keypress_str.upper() in ("BACKSPACE", "DEL", "DELETE"):
@@ -713,7 +754,7 @@ def __main__():
                     print(f"Discarded {steps_to_remove} steps from current trajectory")
                     discard_episode = True
                     break
-
+                
                 if episode_step_count == init_skip_steps:
                     # Update link positions and velocities for all damage evaluators
                     for obj in env.scene.objects:
@@ -726,9 +767,7 @@ def __main__():
                     env.step(action.clone(), episode_step_count=episode_step_count, init_skip_steps=init_skip_steps)
                     episode_step_count += 1
                 else:
-                    # Apply action to robot and step simulation even when episode hasn't started
-                    # This allows teleop before officially starting the episode (no data recorded)
-                    robot.apply_action(action.clone())
+                    # Step simulation even when episode hasn't started to allow keyboard input to be processed
                     og.sim.step()
                 
                 # Checking success: target_object log within xy tolerance of fireplace and gripper open
@@ -741,68 +780,7 @@ def __main__():
                         target_pos, _ = target_object.get_position_orientation()
                         fireplace_pos, _ = fireplace.get_position_orientation()
                         
-                        # ===== HEATSOURCE DEBUG INFO =====
-                        # Get the actual HeatSourceOrSink state from fireplace
-                        heat_source_state = fireplace.states.get(object_states.HeatSourceOrSink)
-                        if heat_source_state is not None:
-                            # Get actual values from the heat source state
-                            actual_distance_threshold = heat_source_state.distance_threshold
-                            actual_heating_rate = heat_source_state.heating_rate
-                            actual_temperature = heat_source_state.temperature
-                            
-                            # Calculate distance the same way the heat source does:
-                            # Position is either the AABB center of the default link or the meta link position
-                            # Use try/except since the link may not be set up
-                            try:
-                                heat_source_link = heat_source_state.link
-                                if heat_source_link == heat_source_state._default_link:
-                                    heat_source_pos = heat_source_link.aabb_center
-                                else:
-                                    heat_source_pos = heat_source_link.get_position_orientation()[0]
-                            except (AssertionError, AttributeError):
-                                # Fallback: use fireplace's AABB center (same as what requires_inside=False would use)
-                                if object_states.AABB in fireplace.states:
-                                    aabb_lower, aabb_upper = fireplace.states[object_states.AABB].get_value()
-                                    heat_source_pos = (aabb_upper + aabb_lower) / 2.0
-                                else:
-                                    # Last resort: use fireplace position
-                                    heat_source_pos = fireplace_pos
-                            
-                            # Distance from robot's end-effector to heat source position
-                            eef_link = robot.links.get("eef_link")
-                            if eef_link is not None:
-                                eef_pos, _ = eef_link.get_position_orientation()
-                                eef_to_heatsource_dist = th.norm(eef_pos - heat_source_pos).item()
-                            else:
-                                # Fallback: use robot base position
-                                robot_pos, _ = robot.get_position_orientation()
-                                eef_to_heatsource_dist = th.norm(robot_pos - heat_source_pos).item()
-                            
-                            # Check if robot is in the affected objects
-                            is_affected = robot in heat_source_state._affected_objects if heat_source_state._affected_objects else False
-                            
-                            # Check if heat source is active
-                            is_active = heat_source_state.get_value()
-                            
-                            # Print detailed heatsource info
-                            print(f"Step {episode_step_count}: "
-                                  f"dist_threshold={actual_distance_threshold:.3f}m | "
-                                  f"heating_rate={actual_heating_rate:.3f} | "
-                                  f"eef->heatsource={eef_to_heatsource_dist:.3f}m | "
-                                  f"affected={is_affected} | "
-                                  f"active={is_active}")
-                        else:
-                            # Fallback: use simple distance calculation with eef
-                            eef_link = robot.links.get("eef_link")
-                            if eef_link is not None:
-                                eef_pos, _ = eef_link.get_position_orientation()
-                                distance_3d = th.norm(eef_pos - fireplace_pos).item()
-                            else:
-                                robot_pos, _ = robot.get_position_orientation()
-                                distance_3d = th.norm(robot_pos - fireplace_pos).item()
-                            print(f"Step {episode_step_count}: No HeatSourceOrSink state found! EEF->Fireplace (3D): {distance_3d:.3f}m")
-                        
-                        # Calculate xy distance for success checking (ignore z)
+                        # Calculate xy distance only (ignore z)
                         distance_xy = th.norm((target_pos[:2] - fireplace_pos[:2])).item()
                         
                         # Tolerance: log should be close to fireplace horizontally
@@ -817,7 +795,6 @@ def __main__():
                             print(f"  Distance (xy): {distance_xy:.3f} (tolerance: {tolerance_xy})")
                             print("=" * 80)
                             env.task._success = True
-                            breakpoint()
                             inp = input("Do you want to save the data? (y/n)")
                             if inp == "y":
                                 print("Saving as task success being True")
@@ -831,13 +808,17 @@ def __main__():
                                 print(f"Discarded {steps_to_remove} steps from current trajectory")
                                 discard_episode = True
                                 break
-
+            
             # Only count completed episodes (not discarded ones)
             if not discard_episode:
                 completed_episodes += 1
                 print(f"Episode completed ({completed_episodes}/{n_episodes})")
+                # Reset for next episode - don't clear trajectory, let it be saved
+                reset_env(env, clear_trajectory=False)
             else:
                 print(f"Episode discarded, redoing...")
+                # Reset and clear trajectory to prevent saving discarded episode
+                reset_env(env, clear_trajectory=True)
                 # Use continue to restart the same episode (don't increment completed_episodes)
                 continue
 
@@ -953,6 +934,266 @@ def __main__():
             def _setup_playback_object_states(self):
                 """Set up firewood-specific states after state is loaded"""
                 _ensure_firewood_states(self.env)
+            
+            def _remove_mechanical_from_robot(self):
+                """Remove mechanical damage evaluator from robot and update params"""
+                # TEMPORARILY DISABLED FOR DEBUGGING - MECHANICAL DAMAGE IS RE-ENABLED
+                pass
+                # if self.env.robots:
+                #     robot = self.env.robots[0]
+                #     # Remove mechanical from robot's params to prevent re-initialization
+                #     if hasattr(robot, "params") and robot.params:
+                #         if "damage_evaluators" in robot.params:
+                #             robot.params["damage_evaluators"] = [
+                #                 e for e in robot.params["damage_evaluators"] 
+                #                 if e != "mechanical"
+                #             ]
+                #     # Remove existing mechanical damage evaluators
+                #     if hasattr(robot, "damage_evaluators"):
+                #         robot.damage_evaluators = [
+                #             e for e in robot.damage_evaluators 
+                #             if e.name != "mechanical"
+                #         ]
+            
+            def playback_episode(self, episode_id, record_data=True, video_writers=None, callback=None, replay_for_annotation=False, break_after_n_steps=100):
+                """Override to prevent using datacollection_health - use computed health instead"""
+                # Call parent method but we need to prevent it from using datacollection_health
+                # The parent loads datacollection_health and uses it in two places:
+                # 1. Direct assignment at init_skip_steps + 1 (line 1041-1042)
+                # 2. Passed to _parse_step_data (line 1102) - our override already handles this
+                # 
+                # We'll monkey-patch the parent's method to set datacollection_health=None after loading
+                # Actually, simpler: override the entire method and copy parent's code but set datacollection_health=None
+                # But that's a lot of code. Let's try a different approach:
+                # Override to call parent, but intercept and fix the direct assignment by overriding
+                # the part that does the direct assignment.
+                
+                # Actually, the simplest fix: call parent's playback_episode but we need to prevent
+                # the direct assignment. We can't easily do that without copying the method.
+                # 
+                # Best solution: Override playback_episode to call parent, but then we need to
+                # fix the data that was written with the wrong health. But that's complex.
+                #
+                # Let's just override the method and copy the parent's code, making minimal changes:
+                # 1. Set datacollection_health = None after loading
+                # 2. Remove the direct assignment at init_skip_steps + 1
+                
+                # For now, let's call parent and rely on _parse_step_data override to fix most cases
+                # The direct assignment only affects one step, so it might be acceptable
+                # But the user says the average is 19.84, so it's clearly affecting many steps
+                
+                # Let's override the method completely
+                import h5py
+                import json
+                from omnigibson.utils.python_utils import h5py_group_to_torch, create_object_from_init_info
+                import omnigibson as og
+                from omnigibson.controllers.controller_base import ControlType
+                from omnigibson.systems.macro_particle_system import MacroPhysicalParticleSystem
+                import torch as th
+                
+                data_grp = self.input_hdf5["data"]
+                assert f"demo_{episode_id}" in data_grp, f"No valid episode with ID {episode_id} found!"
+                traj_grp = data_grp[f"demo_{episode_id}"]
+                
+                self.init_skip_steps = 4
+                
+                # Load episode data but set datacollection_health=None to force using computed health
+                try:
+                    datacollection_health = None  # Force None - use computed health instead
+                    datacollection_damage_info = None
+                    if "obs" in traj_grp and "info" in traj_grp:
+                        # Don't load health - we'll use computed health
+                        damage_infos = traj_grp["info"]["damage_info"][()]
+                        datacollection_damage_info = []
+                        for i in range(len(damage_infos)): 
+                            datacollection_damage_info.append(json.loads(damage_infos[i]))
+                    
+                    transitions = json.loads(traj_grp.attrs["transitions"])
+                    traj_grp = h5py_group_to_torch(traj_grp)
+                    init_metadata = traj_grp["init_metadata"]
+                    action = traj_grp["action"]
+                    state = traj_grp["state"]
+                    state_size = traj_grp["state_size"]
+                    reward = traj_grp["reward"]
+                    terminated = traj_grp["terminated"]
+                    truncated = traj_grp["truncated"]
+                except KeyError as e:
+                    print(f"Got error when trying to load episode {episode_id}:")
+                    print(f"Error: {str(e)}")
+                    return
+                
+                result = []
+                
+                self.reset()
+                self.scene.restore(self.scene_file, update_initial_file=True)
+                
+                if hasattr(self.env, "initialize_damageable_objects"):
+                    self.env.initialize_damageable_objects()
+                if hasattr(self.env, "set_damageable_object_params"):
+                    self.env.set_damageable_object_params()
+                
+                with og.sim.stopped():
+                    for attr, vals in init_metadata.items():
+                        assert len(vals) == self.scene.n_objects
+                    for i, obj in enumerate(self.scene.objects):
+                        for attr, vals in init_metadata.items():
+                            val = vals[i]
+                            setattr(obj, attr, val.item() if val.ndim == 0 else val)
+                
+                if not self.include_robot_control:
+                    for robot in self.robots:
+                        robot.control_enabled = False
+                        for controller in robot.controllers.values():
+                            for i, dof in enumerate(controller.dof_idx):
+                                dof_joint = robot.joints[robot.dof_names_ordered[dof]]
+                                dof_joint.set_control_type(
+                                    control_type=ControlType.EFFORT,
+                                    kp=None,
+                                    kd=None,
+                                )
+                
+                print(f"================= starting playback for demo {episode_id} ===================")
+                
+                if not og.sim.is_playing():
+                    og.sim.play()
+                
+                saved_state_size = int(state_size[0])
+                self._load_state_with_size_fallback(state[0], saved_state_size)
+                for _ in range(10): og.sim.step()
+                if callback is not None:
+                    result.append(callback(action=action[0]))
+                
+                if record_data:
+                    first_time_load_n_iteration = 10
+                    self.current_obs, _, _, _, init_info = self.env.step(
+                        action=action[0], n_render_iterations=self.n_render_iterations + first_time_load_n_iteration, playback=True, init_skip_steps=self.init_skip_steps
+                    )
+                
+                print("After reset health: ", self.current_obs["health"])
+                
+                if "water" in self.scene.systems:
+                    water_system = self.scene.get_system("water")
+                    for prototype in water_system.particle_prototypes: prototype.visible = False
+                    for instancer in water_system.particle_instancers.values(): instancer.visible = False
+                
+                for i, (a, s, ss, r, te, tr) in enumerate(
+                    zip(action, state[1:], state_size[1:], reward, terminated, truncated)
+                ):
+                    if i % 50 == 0:
+                        print(f"step {i} completed")
+                    
+                    if i == self.init_skip_steps:
+                        for obj in self.scene.objects:
+                            if hasattr(obj, "track_damage") and obj.track_damage:
+                                for evaluator in obj.damage_evaluators:
+                                    if evaluator.name == "mechanical":
+                                        evaluator.update_link_positions_and_velocities()
+                    
+                    if i == self.init_skip_steps + 1:
+                        # Use computed health instead of datacollection_health
+                        # Use init_info since we haven't called env.step() in this iteration yet
+                        step_data = {"obs": self._process_obs(obs=self.current_obs, info=init_info)}
+                        # Don't overwrite with datacollection_health - use computed health
+                        self.current_traj_history.append(step_data)
+                        print("After first computation of health: ", self.current_obs["health"])
+                    
+                    if str(i) in transitions:
+                        cur_transitions = transitions[str(i)]
+                        scene = og.sim.scenes[0]
+                        for add_sys_name in cur_transitions["systems"]["add"]:
+                            scene.get_system(add_sys_name, force_init=True)
+                        for remove_sys_name in cur_transitions["systems"]["remove"]:
+                            scene.clear_system(remove_sys_name)
+                        for remove_obj_name in cur_transitions["objects"]["remove"]:
+                            obj = scene.object_registry("name", remove_obj_name)
+                            scene.remove_object(obj)
+                        for j, add_obj_info in enumerate(cur_transitions["objects"]["add"]):
+                            obj = create_object_from_init_info(add_obj_info)
+                            scene.add_object(obj)
+                            obj.set_position(th.ones(3) * 100.0 + th.ones(3) * 5 * j)
+                        og.sim.step()
+                    
+                    if not og.sim.is_playing():
+                        og.sim.play()
+                    self._load_state_with_size_fallback(s, int(ss))
+                    if callback is not None:
+                        result.append(callback(action=a))
+                    
+                    if not og.sim.is_playing():
+                        og.sim.play()
+                    self._load_state_with_size_fallback(s, int(ss))
+                    if not self.include_contacts:
+                        for obj in self.scene.objects:
+                            obj.keep_still()
+                        for system in self.scene.systems:
+                            if isinstance(system, MacroPhysicalParticleSystem):
+                                system.set_particles_velocities(
+                                    lin_vels=th.zeros((system.n_particles, 3)), ang_vels=th.zeros((system.n_particles, 3))
+                                )
+                    self.current_obs, _, _, _, info = self.env.step(action=a, n_render_iterations=self.n_render_iterations, episode_step_count=i, playback=True, init_skip_steps=self.init_skip_steps)
+                    
+                    # Print damage info periodically during playback
+                    # NOTE: Show cumulative damage (from health drop) not just last step
+                    if i > self.init_skip_steps and i % 50 == 0 and self.env.robots:
+                        robot = self.env.robots[0]
+                        if hasattr(robot, "link_healths"):
+                            print(f"\n[PLAYBACK DEBUG] Step {i} - Robot cumulative damage (from health drop):")
+                            initial_health = 100.0
+                            for link_name, current_health in robot.link_healths.items():
+                                cumulative_damage = initial_health - current_health
+                                if cumulative_damage > 0.001:  # Only print if significant damage
+                                    # Also show last step damage if available
+                                    last_step_mech = 0.0
+                                    last_step_thermal = 0.0
+                                    if hasattr(robot, "damage_info") and robot.damage_info and link_name in robot.damage_info:
+                                        link_damage_info = robot.damage_info[link_name]
+                                        if isinstance(link_damage_info, dict):
+                                            if "mechanical" in link_damage_info and isinstance(link_damage_info["mechanical"], dict):
+                                                last_step_mech = link_damage_info["mechanical"].get("damage", 0.0)
+                                            if "thermal" in link_damage_info and isinstance(link_damage_info["thermal"], dict):
+                                                last_step_thermal = link_damage_info["thermal"].get("damage", 0.0)
+                                    print(f"  {link_name}: cumulative={cumulative_damage:.4f} (health={current_health:.2f}), last_step: mech={last_step_mech:.4f}, thermal={last_step_thermal:.4f}")
+                    
+                    if record_data and i > self.init_skip_steps:
+                        step_data = self._parse_step_data(
+                            action=a,
+                            obs=self.current_obs,
+                            reward=r,
+                            terminated=te,
+                            truncated=tr,
+                            info=info,
+                            datacollection_health=None,  # Force None - use computed health
+                            datacollection_damage_info=datacollection_damage_info[i] if datacollection_damage_info is not None else None,
+                        )
+                        if self.flush_every_n_steps > 0:
+                            if i == 0:
+                                self.current_traj_grp, self.traj_dsets = self.allocate_traj_to_hdf5(
+                                    step_data, f"demo_{episode_id}", num_samples=len(action), video_writers=video_writers
+                                )
+                            if i % self.flush_every_n_steps == 0:
+                                self.flush_partial_traj(num_samples=len(action), video_writers=video_writers)
+                        self.current_traj_history.append(step_data)
+                    
+                    self.current_episode_step_count += 1
+                    self.step_count += 1
+                
+                if record_data:
+                    if self.flush_every_n_steps > 0:
+                        self.flush_partial_traj(num_samples=len(action), video_writers=video_writers)
+                    self.flush_current_traj(traj_grp_name=f"demo_{episode_id}")
+                
+                return result
+            
+            def _parse_step_data(self, action, obs, reward, terminated, truncated, info, datacollection_health=None, datacollection_damage_info=None):
+                """Override to use computed health during playback instead of datacollection_health"""
+                # Call parent but ignore datacollection_health - use computed health instead
+                step_data = super()._parse_step_data(
+                    action, obs, reward, terminated, truncated, info,
+                    datacollection_health=None,  # Ignore datacollection_health - use computed health
+                    datacollection_damage_info=datacollection_damage_info
+                )
+                # step_data["obs"]["health"] now contains the computed health (without mechanical damage for robot)
+                return step_data
         
         # Use DamageableDataPlaybackWrapper.create_from_hdf5 like shelve_item.py and pour_glass.py
         env = FirewoodPlaybackWrapper.create_from_hdf5(
@@ -965,6 +1206,32 @@ def __main__():
             only_successes=False,
         )
 
+        # TEMPORARILY RE-ENABLE MECHANICAL DAMAGE FOR DEBUGGING
+        # (Commenting out the removal code)
+        # Override set_damageable_object_params to remove mechanical from robot params before setting
+        # from safety_benchmark.params.test_params import PARAMS
+        # original_set_params = env.env.set_damageable_object_params
+        # def set_damageable_object_params_no_mech():
+        #     # Temporarily modify PARAMS to exclude mechanical for agent category
+        #     if "agent" in PARAMS and "damage_evaluators" in PARAMS["agent"]:
+        #         original_damage_evaluators = PARAMS["agent"]["damage_evaluators"].copy()
+        #         PARAMS["agent"]["damage_evaluators"] = [
+        #             e for e in PARAMS["agent"]["damage_evaluators"] 
+        #             if e != "mechanical"
+        #         ]
+        #     try:
+        #         original_set_params()
+        #     finally:
+        #         # Restore original PARAMS
+        #         if "agent" in PARAMS and "damage_evaluators" in PARAMS["agent"]:
+        #             PARAMS["agent"]["damage_evaluators"] = original_damage_evaluators
+        #     # Also remove any mechanical evaluators that might have been created
+        #     env._remove_mechanical_from_robot()
+        # env.env.set_damageable_object_params = set_damageable_object_params_no_mech
+        # 
+        # # Also remove it initially
+        # env._remove_mechanical_from_robot()
+
         # Set viewer camera to match teleop position
         og.sim.viewer_camera.set_position_orientation(
             position=th.tensor([-0.37351322174072266, -0.9105080366134644, 0.9984497427940369]),
@@ -975,9 +1242,10 @@ def __main__():
 
         # Wrap playback_episode to print health after each episode
         original_playback_episode = env.playback_episode
+        playback_hdf5_path_for_debug = args.playback_hdf5_path  # Capture for use in nested function
         
         def playback_episode_with_health_printing(episode_id, record_data=True, video_writers=None, callback=None, replay_for_annotation=False, break_after_n_steps=100):
-            """Wrapper that prints health after each episode"""
+            """Wrapper that prints health and damage info after each episode"""
             result = original_playback_episode(
                 episode_id=episode_id,
                 record_data=record_data,
@@ -988,35 +1256,117 @@ def __main__():
             )
             
             # Print health after episode completes
+            # NOTE: This reads robot.link_healths AFTER playback_episode returns.
+            # The stored health in HDF5 comes from obs["health"] during each step.
+            # These should match, but if they don't, it means health changed after the last step was stored.
             print("\n" + "=" * 80)
             print(f"FINAL HEALTH AFTER EPISODE {episode_id}")
             print("=" * 80)
             
-            # Print robot health
+            # Print robot health and damage evaluators
             if env.robots:
                 robot = env.robots[0]
-                if hasattr(robot, "link_healths"):
-                    print(f"Robot ({robot.name}) health per link:")
-                    for link_name, health_val in robot.link_healths.items():
-                        print(f"  {link_name}: {health_val:.2f}")
-                    min_health = min(robot.link_healths.values()) if robot.link_healths else None
-                    if min_health is not None:
-                        print(f"  Overall robot health (min): {min_health:.2f}")
+                print(f"\nRobot ({robot.name}):")
+                
+                # Print damage evaluators
+                if hasattr(robot, "damage_evaluators"):
+                    print(f"  Damage evaluators: {[e.name for e in robot.damage_evaluators]}")
                 else:
-                    print(f"Robot ({robot.name}) does not have link_healths attribute")
+                    print(f"  No damage_evaluators attribute")
+                
+                # Print health per link
+                if hasattr(robot, "link_healths") and robot.link_healths:
+                    print(f"  Health per link (from robot.link_healths AFTER episode):")
+                    for link_name, health_val in robot.link_healths.items():
+                        print(f"    {link_name}: {health_val:.2f}")
+                    min_health = min(robot.link_healths.values())
+                    print(f"  Overall robot health (min): {min_health:.2f}")
+                    
+                    # Also print what's stored in the last step of HDF5 for comparison
+                    if record_data and playback_hdf5_path_for_debug and os.path.exists(playback_hdf5_path_for_debug):
+                        try:
+                            f_debug = h5py.File(playback_hdf5_path_for_debug, "r")
+                            demo_key = f"demo_{episode_id}"
+                            if demo_key in f_debug["data"]:
+                                all_obj_healths = np.array(f_debug[f"data/{demo_key}/obs/health"])
+                                health_list_link_names = f_debug[f"data/{demo_key}"].attrs["health_list_link_names"]
+                                print(f"\n  Health from HDF5 (last stored step):")
+                                robot_link_indices = [i for i, name in enumerate(health_list_link_names) if name.startswith(f"{robot.name}@")]
+                                if robot_link_indices:
+                                    for idx in robot_link_indices:
+                                        link_name = health_list_link_names[idx]
+                                        stored_health = all_obj_healths[-1, idx] if len(all_obj_healths) > 0 else None
+                                        current_health = robot.link_healths.get(link_name.split("@")[1], None)
+                                        match_str = "✓" if stored_health is not None and current_health is not None and abs(stored_health - current_health) < 0.01 else "✗"
+                                        print(f"    {link_name}: stored={stored_health:.2f}, current={current_health:.2f} {match_str}")
+                            f_debug.close()
+                        except Exception as e:
+                            print(f"  Could not compare with HDF5: {e}")
+                    
+                    # Print damage_info breakdown
+                    # NOTE: damage_info is reset each step, so it only shows last step's damage
+                    # Calculate cumulative damage from health difference instead
+                    print(f"\n  Cumulative damage breakdown (calculated from health drop):")
+                    initial_health = 100.0
+                    for link_name, current_health in robot.link_healths.items():
+                        total_damage = initial_health - current_health
+                        if total_damage > 0.001:  # Only print if there's significant damage
+                            print(f"    {link_name}:")
+                            print(f"      Total cumulative damage: {total_damage:.4f} (health: {current_health:.2f} -> {initial_health:.2f})")
+                            
+                            # Also show current step's damage_info if available (for debugging)
+                            if hasattr(robot, "damage_info") and robot.damage_info and link_name in robot.damage_info:
+                                link_damage_info = robot.damage_info[link_name]
+                                if isinstance(link_damage_info, dict):
+                                    for damage_type, damage_data in link_damage_info.items():
+                                        if damage_type == "mechanical" and isinstance(damage_data, dict):
+                                            mech_damage = damage_data.get("damage", 0.0)
+                                            print(f"      Last step mechanical: {mech_damage:.4f}")
+                                            if "impact_forces" in damage_data:
+                                                impact = damage_data["impact_forces"]
+                                                if isinstance(impact, list) and len(impact) > 0:
+                                                    last_impact = impact[-1] if isinstance(impact[-1], (int, float)) else "complex"
+                                                    print(f"        impact_forces (last): {last_impact}")
+                                        elif damage_type == "thermal" and isinstance(damage_data, dict):
+                                            thermal_damage = damage_data.get("damage", 0.0)
+                                            temp = damage_data.get("temperature", None)
+                                            print(f"      Last step thermal: damage={thermal_damage:.4f}, temp={temp}")
+                elif hasattr(robot, "link_healths"):
+                    print(f"  link_healths exists but is empty (no health data available)")
+                else:
+                    print(f"  No link_healths attribute")
+                
+                # Also print all links for completeness (even if no damage)
+                if hasattr(robot, "damage_info") and robot.damage_info:
+                    print(f"\n  Last step damage_info (for reference - only shows last step):")
+                    for link_name, link_damage_info in robot.damage_info.items():
+                        if isinstance(link_damage_info, dict):
+                            print(f"    {link_name}:")
+                            for damage_type, damage_data in link_damage_info.items():
+                                if damage_type == "mechanical" and isinstance(damage_data, dict):
+                                    mech_damage = damage_data.get("damage", 0.0)
+                                    print(f"      mechanical: {mech_damage:.4f}")
+                                elif damage_type == "thermal" and isinstance(damage_data, dict):
+                                    thermal_damage = damage_data.get("damage", 0.0)
+                                    temp = damage_data.get("temperature", None)
+                                    print(f"      thermal: damage={thermal_damage:.4f}, temp={temp}")
             
             # Print health for other damageable objects
             for obj in env.scene.objects:
                 if hasattr(obj, "track_damage") and obj.track_damage:
                     robot_name = env.robots[0].name if env.robots else None
                     if obj.name != robot_name:
-                        if hasattr(obj, "link_healths"):
-                            print(f"\n{obj.name} health per link:")
+                        print(f"\n{obj.name}:")
+                        if hasattr(obj, "damage_evaluators"):
+                            print(f"  Damage evaluators: {[e.name for e in obj.damage_evaluators]}")
+                        if hasattr(obj, "link_healths") and obj.link_healths:
+                            print(f"  Health per link:")
                             for link_name, health_val in obj.link_healths.items():
-                                print(f"  {link_name}: {health_val:.2f}")
-                            min_health = min(obj.link_healths.values()) if obj.link_healths else None
-                            if min_health is not None:
-                                print(f"  Overall {obj.name} health (min): {min_health:.2f}")
+                                print(f"    {link_name}: {health_val:.2f}")
+                            min_health = min(obj.link_healths.values())
+                            print(f"  Overall {obj.name} health (min): {min_health:.2f}")
+                        elif hasattr(obj, "link_healths"):
+                            print(f"  link_healths exists but is empty (no health data available)")
             print("=" * 80 + "\n")
             
             return result
@@ -1029,6 +1379,90 @@ def __main__():
         env.save_data()
         og.shutdown()
 
+    # -------------------------
+    # COMPUTE METRICS
+    # -------------------------
+    if args.compute_metrics:
+        # Read from playback HDF5 file to match what was printed during playback
+        # The playback wrapper stores computed health during playback, which should match
+        # what's printed after each episode completes
+        f = h5py.File(args.playback_hdf5_path, "r")
+        robot_name = "franka0"
+        
+        vis_cfg = get_visualization_config(robot_name)
+        target_objects_health_with_links = vis_cfg["target_objects_health_with_links"]
+        target_objects_health = vis_cfg["target_objects_health"]
+        
+        final_robot_healths = []  # Store final robot health (aggregated across links) for each episode
+        zero_damage_episodes = 0  # Count episodes where all objects maintain 100 health
+        
+        # Iterate over demos
+        for demo_key in sorted(f["data"].keys()):
+            if not demo_key.startswith("demo_"):
+                continue
+            demo_idx = int(demo_key.split("_")[-1])
+            print(f"Episode: {demo_idx}")
+            
+            # Health over time (per-link)
+            all_obj_healths = np.array(f[f"data/{demo_key}/obs/health"])
+            health_list_link_names = f[f"data/{demo_key}"].attrs["health_list_link_names"]
+            health = {}
+            for obj_name in target_objects_health_with_links:
+                # Check if this object has health data in the HDF5 file
+                matching_indices = np.where(health_list_link_names == obj_name)[0]
+                if len(matching_indices) > 0:
+                    health[obj_name] = all_obj_healths[:, matching_indices[0]]
+                    health[obj_name] = health[obj_name][1:]  # Skip first frame
+                else:
+                    health[obj_name] = None
+            
+            # Aggregate health per object (min across links)
+            for obj_name in target_objects_health:
+                arrays = [v for k, v in health.items() if k.startswith(f"{obj_name}@") and v is not None]
+                if arrays:
+                    health[obj_name] = np.minimum.reduce(arrays)
+                else:
+                    health[obj_name] = None
+            
+            # Get robot final health (already aggregated as min across links)
+            if health[robot_name] is not None:
+                robot_final_health = health[robot_name][-1]
+                final_robot_healths.append(robot_final_health)
+                print(f"Robot final health (min across links): {robot_final_health:.2f}")
+            else:
+                print(f"Warning: No robot health data found for episode {demo_idx}")
+            
+            # Check if episode has 0 damage (all objects maintain 100 health)
+            all_at_full_health = True
+            for obj_name in target_objects_health:
+                if health[obj_name] is None:
+                    continue
+                final_obj_health = health[obj_name][-1]
+                if final_obj_health < 100.0:
+                    all_at_full_health = False
+                    break
+            
+            if all_at_full_health:
+                zero_damage_episodes += 1
+                print(f"Episode {demo_idx}: Zero damage (all objects at 100 health)")
+        
+        # Print summary statistics
+        print("\n" + "=" * 80)
+        print("METRICS SUMMARY")
+        print("=" * 80)
+        if final_robot_healths:
+            avg_robot_health = np.mean(final_robot_healths)
+            print(f"Average final robot health (min across links): {avg_robot_health:.2f}")
+        else:
+            print("No robot health data found")
+        
+        total_episodes = len([k for k in f["data"].keys() if k.startswith("demo_")])
+        print(f"Number of episodes with 0 damage: {zero_damage_episodes} / {total_episodes}")
+        print("=" * 80)
+        
+        f.close()
+        og.shutdown()
+    
     # -------------------------
     # VISUALIZATION (temperature)
     # -------------------------
@@ -1090,15 +1524,15 @@ def __main__():
 
             # Track final env health for debugging / metrics
             current_env_health = 0.0
+            valid_count = 0
             for obj_name in target_objects_health:
                 if health[obj_name] is None:
                     continue
                 final_obj_healths[obj_name].append(health[obj_name][-1])
                 current_env_health += health[obj_name][-1]
-            if len(target_objects_health) > 0:
-                final_env_healths.append(
-                    current_env_health / max(1, len(target_objects_health))
-                )
+                valid_count += 1
+            if valid_count > 0:
+                final_env_healths.append(current_env_health / valid_count)
 
             # -------------------------
             # TEMPERATURE FROM damage_info
@@ -1149,16 +1583,16 @@ def __main__():
                 # Save plain RGB video
                 save_rgb_camera_video(output_video_path=output_video_path, imgs=imgs)
 
-                # Save temperature video (RGB + temperature history)
-                temp_video_path = os.path.join(
+            # Save temperature video (RGB + temperature history)
+            temp_video_path = os.path.join(
                     output_video_dir, f"demo_{demo_idx}_{camera_name}_temperature_video.mp4"
-                )
-                save_rgb_temperature_video(
-                    output_video_path=temp_video_path,
-                    imgs=imgs,
-                    target_objects=list(obj_temperature.keys()),
-                    temperature=obj_temperature,
-                )
+            )
+            save_rgb_temperature_video(
+                output_video_path=temp_video_path,
+                imgs=imgs,
+                target_objects=list(obj_temperature.keys()),
+                temperature=obj_temperature,
+            )
 
         if final_env_healths:
             print("\nAverage environment health across episodes:")
@@ -1169,4 +1603,3 @@ def __main__():
 
 if __name__ == "__main__":
     __main__()
-

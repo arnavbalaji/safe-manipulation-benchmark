@@ -31,8 +31,13 @@ class ThermalDamageEvaluator(DamageEvaluator):
         damage = 0.0
         # Temperature state should exist now (added in __init__)
         if object_states.Temperature not in self.entity.states:
-            # Fallback: return no damage if Temperature state still doesn't exist
-            return {link_name: 0.0 for link_name in self.entity.links.keys()}
+            try:
+                temperature_state = object_states.Temperature(obj=self.entity)
+                self.entity.add_state(temperature_state)
+                if hasattr(self.entity, "_initialized") and self.entity._initialized:
+                    temperature_state.initialize()
+            except:
+                return {link_name: 0.0 for link_name in self.entity.links.keys()}
         self.current_temperature = self.entity.states[object_states.Temperature].get_value()
 
         if self.current_temperature > self.heating_threshold:

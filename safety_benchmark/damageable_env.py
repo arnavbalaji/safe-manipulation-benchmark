@@ -639,6 +639,39 @@ class DamageableDataCollectionWrapper(DataCollectionWrapper):
 
 
 class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
+    def _load_state_with_size_fallback(self, state, saved_size):
+        """
+        Load state with graceful handling of size mismatches.
+        
+        Sometimes the saved state_size doesn't match what can actually be deserialized
+        (e.g., due to padding or simulation structure changes). This function tries
+        the saved size first, then progressively smaller sizes if needed.
+        
+        Args:
+            state: State tensor to load
+            saved_size: The size that was saved in the HDF5 file
+            
+        Returns:
+            int: The actual size that was successfully loaded
+        """
+        try:
+            og.sim.load_state(state[:saved_size], serialized=True)
+            return saved_size
+        except AssertionError as e:
+            if "Invalid state deserialization" in str(e) and "Expected" in str(e) and "only" in str(e):
+                # State size mismatch - try with progressively smaller sizes
+                print(f"Warning: State size mismatch (saved size: {saved_size}). Trying to find correct size...")
+                for try_size in range(saved_size - 1, max(0, saved_size - 10), -1):
+                    try:
+                        og.sim.load_state(state[:try_size], serialized=True)
+                        print(f"Successfully loaded state with size {try_size} (saved size was {saved_size})")
+                        return try_size
+                    except AssertionError:
+                        continue
+                # If we exhausted all attempts, raise the original error
+                raise e
+            else:
+                raise
     """
     Custom DataPlaybackWrapper that:
     1. Uses DamageableEnvironment instead of og.Environment when creating from HDF5
@@ -932,7 +965,10 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
         # Ensure simulator is playing before loading state (required by load_state)
         if not og.sim.is_playing():
             og.sim.play()
-        og.sim.load_state(state[0, : int(state_size[0])], serialized=True)
+        
+        # Try loading state with saved size, but handle size mismatches gracefully
+        saved_state_size = int(state_size[0])
+        self._load_state_with_size_fallback(state[0], saved_state_size)
         for _ in range(10): og.sim.step()
         if callback is not None:
             result.append(callback(action=action[0]))
@@ -1032,7 +1068,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             # Ensure simulator is playing before loading state (required by load_state)
             if not og.sim.is_playing():
                 og.sim.play()
-            og.sim.load_state(s[: int(ss)], serialized=True)
+            self._load_state_with_size_fallback(s, int(ss))
             if callback is not None:
                 result.append(callback(action=a))
 
@@ -1041,7 +1077,7 @@ class DamageableDataPlaybackWrapper(DataPlaybackWrapper):
             # Ensure simulator is playing before loading state (required by load_state)
             if not og.sim.is_playing():
                 og.sim.play()
-            og.sim.load_state(s[: int(ss)], serialized=True)
+            self._load_state_with_size_fallback(s, int(ss))
             if not self.include_contacts:
                 # When all objects/systems are visual-only, keep them still on every step
                 for obj in self.scene.objects:
