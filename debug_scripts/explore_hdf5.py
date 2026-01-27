@@ -89,6 +89,48 @@ import matplotlib.pyplot as plt
 # plt.savefig("/home/arpit/Downloads/plot_2.png")
 # =========================================================================
 
-# f = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/shelve_item_test-playback.hdf5", "r")
-# f2 = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/pour_glass_temp2_playback.hdf5", "r")
+# f = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/shelve_item/with_live_feedback.hdf5", "r")
+# # f2 = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/pour_glass_temp2_playback.hdf5", "r")
+# close_action_count = 0
+# open_action_count = 0
+# for idx in range(len(f["data/demo_0/action"])):
+#     gripper_actions = f["data/demo_0/action"][:, -1]
+#     # count the frequency of each gripper action
+#     gripper_action_freq = np.unique(gripper_actions, return_counts=True)
+#     close_action_count += gripper_action_freq[1][0]
+#     open_action_count += gripper_action_freq[1][1]
+
+# # print the percentage of close and open actions
+# print(close_action_count / (close_action_count + open_action_count))
+# print(open_action_count / (close_action_count + open_action_count))
+# print(f"Close action count: {close_action_count}, Open action count: {open_action_count}")
 # breakpoint()
+
+# ========================================= =========================================
+
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+
+f = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/shelve_item/no_live_feedback.hdf5", "r")
+all_y_pos = []
+for demo in f["data"].keys():
+    actions = f["data"][demo]["action"][:]
+    # Find where action[-1] transitions from -1 to 1
+    # We'll record indices where the previous is -1 and current is 1
+    switch_index = 0
+    for i in range(1, len(actions)):
+        prev = actions[i-1]
+        curr = actions[i]
+        if prev[-1] == -1 and curr[-1] == 1:
+            switch_index = i
+            break
+    print("Indices where action[-1] transitions from -1 to 1:", switch_index)
+    y_pos = f[f"data/{demo}/obs/franka0::proprio"][switch_index][15].item()
+    print("y_pos: ", y_pos)
+    all_y_pos.append(y_pos)
+
+print("average y_pos: ", np.mean(all_y_pos))
+print("median y_pos: ", np.median(all_y_pos))
+print("min, max y_pos: ", np.min(all_y_pos), np.max(all_y_pos))
+breakpoint()

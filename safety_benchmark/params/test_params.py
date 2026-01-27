@@ -15,7 +15,7 @@ PARAMS = {
     # Robot's category in OG is "agent"
     # TODO: Add Panda
     "agent": {
-        "damage_evaluators": ["mechanical", "thermal"],
+        "damage_evaluators": ["mechanical"],
         "damageabletiago_damageable_links": ["base_link",
                             "arm_right_1_link",
                             "arm_right_2_link",

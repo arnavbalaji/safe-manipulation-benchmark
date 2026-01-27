@@ -216,7 +216,7 @@ def reset_env(env):
     beerbottle = env.scene.object_registry("name", "bottle_of_beer")
     stand = env.scene.object_registry("name", "stand")
 
-    # Since the saved state has different laptop and coffee cup positions, setting it here
+    # Since the saved state has different beerbottle positions, setting it here
     beerbottle.set_position_orientation(position=th.tensor(BOTTLE_OF_BEER_INIT_POS))
 
     objects = [flour, wineglass, winebottle, beerbottle]

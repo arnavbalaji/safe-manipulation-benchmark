@@ -74,7 +74,7 @@ class ObsProcessorConfig:
     def __post_init__(self):
         if self.seg_obs_keys is None:
             self.seg_obs_keys = [
-                # f"{self.robot_name}::{self.robot_name}:eef_link:Camera:0::seg_instance",
+                f"{self.robot_name}::{self.robot_name}:eef_link:Camera:0::seg_instance",
                 "external::external_sensor0::seg_instance",
                 "external::external_sensor1::seg_instance",
             ]
@@ -352,7 +352,7 @@ class ObservationProcessor:
         """
         # Extract, resize, and optionally remap segmentation images
         frank_seg, external_seg_0, external_seg_1 = self._extract_segmentation(obs, obs_info)
-        # self.seg_buffers['franka0::franka0:eef_link:Camera:0::seg_instance'].append(frank_seg)
+        self.seg_buffers['franka0::franka0:eef_link:Camera:0::seg_instance'].append(frank_seg)
         self.seg_buffers['external::external_sensor0::seg_instance'].append(external_seg_0)
         self.seg_buffers['external::external_sensor1::seg_instance'].append(external_seg_1)
         
@@ -567,24 +567,32 @@ def update_health(obs, health_list_link_names, target_objects_health_with_links,
 
 # ======================== Environment Configuration ========================
 
-FLOUR_INIT_POS = [6.00, 0.35, 1.3]
+FLOUR_INIT_POS = [6.00, 0.35, 1.35]
 FLOUR_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+FLOUR_SCALE = [1.0, 1.0, 0.9]
 
-BOTTLE_OF_WINE_INIT_POS = [6.00, 0.2, 1.3]
+BOTTLE_OF_WINE_INIT_POS = [6.00, 0.2, 1.35]
 BOTTLE_OF_WINE_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+BOTTLE_OF_WINE_SCALE = [1.0, 1.0, 1.0]
 
-WINEGLASS_INIT_POS = [6.00, 0.12, 1.3]
+WINEGLASS_INIT_POS = [6.00, 0.12, 1.35]
 WINEGLASS_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+WINEGLASS_SCALE = [1.0, 1.0, 1.0]
 
-BOTTLE_OF_WHISKEY_INIT_POS = [6.00, 0.0, 1.3]
-BOTTLE_OF_WHISKEY_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
-
-BOTTLE_OF_BEER_INIT_POS = [6.00, 0.0, 1.3]
+BOTTLE_OF_BEER_INIT_POS = [6.00, 0.08, 1.35]
 BOTTLE_OF_BEER_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
+BOTTLE_OF_BEER_SCALE = [1.0, 1.0, 1.0]
 
-SHELF_INIT_POS = [6.00, 0.2, 1.3]
+SHELF_INIT_POS = [6.00, 0.2, 1.35]
 SHELF_INIT_ORI = [0.0, 0.0, 0.0, 1.0]
-SHELF_SCALE = [0.4, 0.8, 0.5]
+SHELF_SCALE = [0.3, 0.7, 0.5]
+
+OBJECT_SCALES = {
+    "book": FLOUR_SCALE,
+    "bottle_of_wine": BOTTLE_OF_WINE_SCALE,
+    "wineglass": WINEGLASS_SCALE,
+    "bottle_of_beer": BOTTLE_OF_BEER_SCALE,
+}
 
 # Task objects are located in BEHAVIOR-1k/datasets/objects/*
 TASK_OBJECTS = {
@@ -603,7 +611,7 @@ TASK_OBJECTS = {
         "model": "rlejxx",
         "position": FLOUR_INIT_POS,
         "orientation": FLOUR_INIT_ORI,
-        "scale": [1.0, 1.0, 1.0],
+        "scale": FLOUR_SCALE,
     },
     "bottle_of_wine": {
         "type": "DatasetObject",
@@ -623,6 +631,16 @@ TASK_OBJECTS = {
         "orientation": WINEGLASS_INIT_ORI,
         "scale": [1.0, 1.0, 1.0],
     },
+    # "bottle_of_whiskey": {
+    #     "type": "DatasetObject",
+    #     "name": "bottle_of_whiskey",
+    #     "category": "bottle_of_whiskey",
+    #     # "model": "wfflbd",
+    #     "model": "jfjclv",
+    #     "position": BOTTLE_OF_WHISKEY_INIT_POS,
+    #     "orientation": BOTTLE_OF_WHISKEY_INIT_ORI,
+    #     "scale": [0.6, 0.6, 0.6],
+    # },
     "bottle_of_beer": {
         "type": "DatasetObject",
         "name": "bottle_of_beer",
@@ -630,7 +648,7 @@ TASK_OBJECTS = {
         "model": "dqfsgv",
         "position": BOTTLE_OF_BEER_INIT_POS,
         "orientation": BOTTLE_OF_BEER_INIT_ORI,
-        "scale": [1.0, 1.0, 1.0],
+        "scale": BOTTLE_OF_BEER_SCALE,
     },
     "stand": {
         "type": "DatasetObject",
@@ -659,19 +677,25 @@ def check_object_upright(obj):
 
 def reset_env(env):
     obs, info = env.reset()
-    # load state
-    with open("resources/saved_states/shelve_item_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
-    og.sim.load_state(state_flat_array, serialized=True)
 
-    # TODO: Add object pose and scale randomization
     flour = env.scene.object_registry("name", "book")
     wineglass = env.scene.object_registry("name", "wineglass")
     winebottle = env.scene.object_registry("name", "bottle_of_wine")
     beerbottle = env.scene.object_registry("name", "bottle_of_beer")
+    stand = env.scene.object_registry("name", "stand")
+
+    # Since the saved state has different beerbottle positions, setting it here
+    beerbottle.set_position_orientation(position=th.tensor(BOTTLE_OF_BEER_INIT_POS))
+
     objects = [flour, wineglass, winebottle, beerbottle]
     trial_number = 0
     while True:
-        print("trial number: ", trial_number)
+        print("Reset trial number: ", trial_number)
+
+        # load state
+        with open("resources/saved_states/shelve_item_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
+        og.sim.load_state(state_flat_array, serialized=True)
+
         for obj in objects:
             pos, orn = obj.get_position_orientation()
             pos_magnitude = [-0.05, 0.05] 
@@ -690,10 +714,23 @@ def reset_env(env):
             x_scale_magnitude = np.random.uniform(0.9, 1.1)
             y_scale_magnitude = np.random.uniform(0.9, 1.1)
             z_scale_magnitude = np.random.uniform(0.9, 1.1)
-            new_scale = [obj.scale[0] * x_scale_magnitude, obj.scale[1] * y_scale_magnitude, obj.scale[2] * z_scale_magnitude]
+            # obtain obj original scales
+            original_scale = OBJECT_SCALES[obj.name]
+            new_scale = [original_scale[0] * x_scale_magnitude, original_scale[1] * y_scale_magnitude, original_scale[2] * z_scale_magnitude]
             obj.scale = th.tensor(new_scale)
+
+            # scale stand a bit randomly as well
+            y_scale_magnitude = np.random.uniform(0.9, 1.0)
+            new_scale = [SHELF_SCALE[0], SHELF_SCALE[1] * y_scale_magnitude, SHELF_SCALE[2]]
+            stand.scale = th.tensor(new_scale)
+
+        # scale the bar
+        bar = env.scene.object_registry("name", "bar_udatjt_0")
+        bar.scale = th.tensor([0.85, 0.95, 1.0])
         og.sim.play()
         og.sim.load_state(temp_state)
+
+        for _ in range(50): og.sim.step()
 
         # Make sure all objects are upright
         all_upright = True
@@ -709,18 +746,19 @@ def reset_env(env):
             break
         trial_number += 1
 
-    for _ in range(10): og.sim.step()
+    for _ in range(50): og.sim.step()
 
     return obs, info
 
 def get_policy_config_for_input_type(policy_input_type: str):
     """Get num_seg_views and state_dim based on policy_input_type."""
-    num_seg_views = 2 if policy_input_type == "seg" else 0
+    num_seg_views = 3 if policy_input_type == "seg" else 0
     state_dim_map = {
         "seg": 23,
         "joint_pos_eef_pose": 21,
         "joint_pos_eef_pose_gripper": 23,
         "joint_pos_eef_pose_grasp": 22,  # [:21] + 23rd index
+        "eef_pose": 7,  # [14:17] pos + [17:21] ori
     }
     state_dim = state_dim_map.get(policy_input_type, 23)
     return num_seg_views, state_dim
@@ -735,6 +773,9 @@ def extract_proprio_for_input_type(proprio: th.Tensor, policy_input_type: str) -
     elif policy_input_type == "joint_pos_eef_pose_grasp":
         # [:21] + 23rd index (grasp state)
         return th.cat([proprio[..., :21], proprio[..., 23:24]], dim=-1)
+    elif policy_input_type == "eef_pose":
+        # [14:17] eef pos + [17:21] eef ori
+        return proprio[..., 14:21]
     else:  # "seg" or default
         return proprio[..., :23]
 
@@ -801,7 +842,7 @@ def __main__():
                         default="resources/evals/shelve_item_raw.hdf5",
                         help='Path to save raw HDF5 file')
     parser.add_argument('--load_state', action='store_true', help='Load a saved state')
-    parser.add_argument('--n_episodes', type=int, default=10, help='Number of episodes to run')
+    parser.add_argument('--n_episodes', type=int, default=15, help='Number of episodes to run')
     parser.add_argument('--max_steps', type=int, default=400, help='Max steps per episode')
     parser.add_argument('--device', type=str, default='cuda', help='Device for policy')
     parser.add_argument('--execute_horizon', type=int, default=1, 
@@ -812,12 +853,13 @@ def __main__():
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
     parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=True)
     parser.add_argument('--policy_input_type', type=str, default="seg",
-                        help="Input type: seg, joint_pos_eef_pose, joint_pos_eef_pose_gripper, joint_pos_eef_pose_grasp")
+                        help="Input type: seg, joint_pos_eef_pose, joint_pos_eef_pose_gripper, joint_pos_eef_pose_grasp, eef_pose")
     parser.add_argument('--save_videos', action='store_true', help='Save an RGB video for each episode', default=False)
     parser.add_argument('--video_dir', type=str, default='resources/videos/shelve_item/eval', help='Directory to save episode videos')
     parser.add_argument('--video_camera_type', type=str, default='external', help='Observation camera_type to record (e.g., external or franka0)')
     parser.add_argument('--video_camera_name', type=str, default='external_sensor0', help='Observation camera_name to record (e.g., external_sensor0)')
     parser.add_argument('--video_fps', type=int, default=30, help='FPS for saved videos')
+    parser.add_argument("--num_seg_views", type=int, default=3, help='Number of segmentation views to use')
     args = parser.parse_args()
     
     # Set seeds for reproducibility
@@ -1007,12 +1049,18 @@ def __main__():
     all_eps_health_dict = defaultdict(list)
     all_eps_info_list = list()
 
+    # # Debugging
+    # for _ in range(10):
+    #     obs, info = reset_env(env)
+    #     breakpoint()
+
     for episode in range(args.n_episodes):
         print(f"\n--- Episode {episode + 1}/{args.n_episodes} ---")
 
         imgs = []
         info_list = list()
         
+        # breakpoint()
         # Reset environment and processors
         obs, info = reset_env(env)
         # obs, info = env.reset()

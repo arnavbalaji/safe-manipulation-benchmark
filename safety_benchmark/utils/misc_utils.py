@@ -49,6 +49,9 @@ def save_rgb_camera_video(output_video_path, imgs, fps=30):
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
+            "-loglevel", "error",
+            "-hide_banner",
+            "-nostats",
             mp4_video
         ], check=True)
         os.remove(avi_video)
@@ -150,6 +153,9 @@ def save_rgb_force_video(
         extra_args=[
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
+            "-loglevel", "error",
+            "-hide_banner",
+            "-nostats",
         ],
     )
 
@@ -250,6 +256,9 @@ def save_rgb_health_video(
         extra_args=[
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
+            "-loglevel", "error",
+            "-hide_banner",
+            "-nostats",
         ],
     )
 
@@ -378,6 +387,9 @@ def save_rgb_temperature_video(
         extra_args=[
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
+            "-loglevel", "error",
+            "-hide_banner",
+            "-nostats",
         ],
     )
 
@@ -489,6 +501,9 @@ def save_rgb_water_contacts_video(
         extra_args=[
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
+            "-loglevel", "error",
+            "-hide_banner",
+            "-nostats",
         ],
     )
 
