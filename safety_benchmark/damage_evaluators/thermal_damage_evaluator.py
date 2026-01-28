@@ -41,14 +41,14 @@ class ThermalDamageEvaluator(DamageEvaluator):
         self.current_temperature = self.entity.states[object_states.Temperature].get_value()
 
         if self.current_temperature > self.heating_threshold:
-            damage = self.scale * (self.current_temperature - self.heating_threshold)
+            damage = min(100.0, abs(self.scale * (self.current_temperature - self.heating_threshold)))
             
             # Set the object's Heated state to True when temperature exceeds threshold
             # This will cause steam to appear
             # if object_states.Heated in self.entity.states:
             #     self.entity.states[object_states.Heated].set_value(True)
         elif self.current_temperature < self.cooling_threshold:
-            damage = abs(self.scale * (self.current_temperature - self.cooling_threshold))
+            damage = min(100.0, abs(self.scale * (self.current_temperature - self.cooling_threshold)))
     
         return {link_name: damage for link_name in self.entity.links.keys()}
     

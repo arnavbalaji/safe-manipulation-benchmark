@@ -32,6 +32,92 @@ def json_default(o):
     raise TypeError(f"Object of type {type(o)} not JSON serializable")
 
 
+def flatten_obs_dict(obs: Dict, separator: str = "::") -> Dict:
+    """
+    Convert nested observation dictionary to flat dictionary with separator-separated keys.
+    
+    Example:
+        Input:
+            obs = {
+                'external': {
+                    'external_sensor0': {
+                        'seg_instance': tensor,
+                        'rgb': array
+                    }
+                }
+            }
+        Output:
+            {
+                'external::external_sensor0::seg_instance': tensor,
+                'external::external_sensor0::rgb': array
+            }
+    
+    Args:
+        obs: Nested observation dictionary
+        separator: String separator to use between key levels (default: "::")
+    
+    Returns:
+        Flattened dictionary with separator-separated keys
+    """
+    def _flatten_recursive(d: Dict, parent_key: str = "", result: Dict = None) -> Dict:
+        if result is None:
+            result = {}
+        
+        for key, value in d.items():
+            # Construct the new key
+            if parent_key:
+                new_key = f"{parent_key}{separator}{key}"
+            else:
+                new_key = key
+            
+            # If value is a dict, recurse
+            if isinstance(value, dict):
+                _flatten_recursive(value, new_key, result)
+            else:
+                # Leaf node - add to result
+                result[new_key] = value
+        
+        return result
+    
+    return _flatten_recursive(obs)
+
+
+def get_nested_value(obs: Dict, key: str, separator: str = "::", default=None):
+    """
+    Get a value from a nested observation dictionary using a separator-separated key.
+    
+    Example:
+        obs = {
+            'external': {
+                'external_sensor0': {
+                    'seg_instance': tensor
+                }
+            }
+        }
+        get_nested_value(obs, 'external::external_sensor0::seg_instance')
+        # Returns: tensor
+    
+    Args:
+        obs: Nested observation dictionary
+        key: Separator-separated key (e.g., "external::external_sensor0::seg_instance")
+        separator: String separator used in the key (default: "::")
+        default: Default value to return if key is not found
+    
+    Returns:
+        Value at the nested key path, or default if not found
+    """
+    keys = key.split(separator)
+    current = obs
+    
+    for k in keys:
+        if isinstance(current, dict) and k in current:
+            current = current[k]
+        else:
+            return default
+    
+    return current
+
+
 def save_rgb_camera_video(output_video_path, imgs, fps=30):
     avi_video = output_video_path + ".avi"
     mp4_video = output_video_path + ".mp4"

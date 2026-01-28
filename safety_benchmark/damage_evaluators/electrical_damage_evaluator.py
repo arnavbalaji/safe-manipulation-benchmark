@@ -120,7 +120,7 @@ class ElectricalDamageEvaluator(DamageEvaluator):
         damages: Dict[str, float] = {}
         for link_name, particle_count in counts.items():
             thr, scl = self._best_link_overrides(link_name)
-            damages[link_name] = max(0.0, float(particle_count) - thr) * scl
+            damages[link_name] = min(100.0, max(0.0, float(particle_count) - thr) * scl)
         return damages
 
     def reset_tracking(self) -> None:

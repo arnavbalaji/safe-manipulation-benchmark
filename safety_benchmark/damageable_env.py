@@ -560,6 +560,14 @@ class DamageableEnvironment(Environment):
             print(f"Error updating health visualization: {e}")
             return False
 
+    def initialize_env_health(self):
+        """
+        Initialize the health of the environment.
+        """
+        for obj in self.scene.objects:
+            if hasattr(obj, "track_damage") and obj.track_damage:
+                obj._initialize_health()
+
 
 class DamageableDataCollectionWrapper(DataCollectionWrapper):
     """

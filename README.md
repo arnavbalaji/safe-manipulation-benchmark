@@ -42,4 +42,7 @@ python data_collection_scripts/shelve_item.py --compute_metrics --playback_hdf5_
 #### eval
 python eval_scripts/shelve_item_eval.py --checkpoint /home/arpit/test_projects/rl-flow-matching/checkpoints/shelve_item_no_live_feedback/step_10500.pth --vocab_hdf5 resources/playback_data/shelve_item/no_live_feedback.hdf5 --save_videos --video_dir resources/videos/shelve_item/eval_no_live_feedback
 
+Firewood:
+python eval_scripts/firewood_eval.py --checkpoint /home/arpit/test_projects/rl-flow-matching/checkpoints/add_firewood_trial_1/step_30000.pth --vocab_hdf5 /home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/add_firewood/firewood_trial_1_playback.hdf5 --n_episodes 15 --video_dir resources/eval_results/firewood/no_live --max_steps 400 --seed 1
+
 

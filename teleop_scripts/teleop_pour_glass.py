@@ -17,8 +17,8 @@ from omnigibson.systems import FluidSystem
 from omnigibson.macros import gm
 
 # Commented out - not needed for keyboard teleoperation (causes mediapipe import error)
-# from telemoma.configs.base_config import teleop_config
-# from omnigibson.utils.teleop_utils import TeleopSystem
+from telemoma.configs.base_config import teleop_config
+from omnigibson.utils.teleop_utils import TeleopSystem
 from omnigibson.utils.ui_utils import KeyboardRobotController
 from omnigibson.envs import DataCollectionWrapper, DataPlaybackWrapper
 import omnigibson.lazy as lazy
@@ -283,9 +283,9 @@ def __main__():
             for joint in cup.joints.values():
                 joint.friction = 50000000.0
 
-    # load state
-    # with open("shelf_init_state_dict.pkl", "rb") as f: state_dict = pickle.load(f)
-    # with open("resources/saved_states/shelf_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
+    # # load state
+    # # with open("shelf_init_state_dict.pkl", "rb") as f: state_dict = pickle.load(f)
+    # with open("resources/saved_states/pour_glass_init_state.pkl", "rb") as f: state_flat_array = pickle.load(f)
     # og.sim.load_state(state_flat_array, serialized=True)
     # for _ in range(10): og.sim.step()
     # breakpoint()
@@ -299,6 +299,10 @@ def __main__():
     #     -1.4137e+00, -1.0974e+00, -7.0588e-01,  4.5000e-02,  4.5000e-02,
     #      4.5000e-02,  4.5000e-02]))
 
+    robot_joint_positions = th.tensor([ 1.1922, -1.2874, -1.5870, -2.7042,  0.1077,  3.7508, -0.5944])
+    robot.set_joint_positions(robot_joint_positions, indices=robot.arm_control_idx["0"])
+    for _ in range(10): og.sim.step()
+    
     for _ in range(10):
         og.sim.step()
 
@@ -306,19 +310,19 @@ def __main__():
     # controller_config = {"arm_0": {"name": "InverseKinematicsController", "command_input_limits": None}, "gripper_0": {"name": "MultiFingerGripperController", "command_input_limits": (0.0, 1.0), "mode": "smooth"},}
     # robot.reload_controllers(controller_config=controller_config)
 
-    # # Telemoma: Teleoperate robot
-    # arm_teleop_method = "spacemouse"
-    # base_teleop_method = "spacemouse"
-    # # Franka uses arm_0 instead of arm_left/arm_right
-    # teleop_config.arm_0_controller = arm_teleop_method
-    # # Tiago config (commented out):
-    # # teleop_config.arm_left_controller = arm_teleop_method
-    # # teleop_config.arm_right_controller = arm_teleop_method
-    # teleop_config.base_controller = base_teleop_method
-    # teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
-    # teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.01}
-    # teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
-    # teleop_sys.start()
+    # Telemoma: Teleoperate robot
+    arm_teleop_method = "spacemouse"
+    base_teleop_method = "spacemouse"
+    # Franka uses arm_0 instead of arm_left/arm_right
+    teleop_config.arm_0_controller = arm_teleop_method
+    # Tiago config (commented out):
+    # teleop_config.arm_left_controller = arm_teleop_method
+    # teleop_config.arm_right_controller = arm_teleop_method
+    teleop_config.base_controller = base_teleop_method
+    teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
+    teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.01}
+    teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
+    teleop_sys.start()
 
     # Keyboard Teleop
     action_generator = KeyboardRobotController(robot=robot)
@@ -327,11 +331,11 @@ def __main__():
     def save_state_to_pkl():
         """Save current simulation state to pkl file"""
         os.makedirs("safe-manipulation-benchmark/resources/saved_states", exist_ok=True)
-        save_path = "safe-manipulation-benchmark/resources/saved_states/pour_glass_init_state.pkl"
+        save_path = "resources/saved_states/pour_glass_init_state.pkl"
         og.sim.update_handles()  # Update handles before dumping state
         state = og.sim.dump_state(serialized=True)
-        with open(save_path, "wb") as f:
-            pickle.dump(state, f)
+        f = open(save_path, "wb")
+        pickle.dump(state, f)
         print(f"Simulation state saved to: {save_path}")
     
     action_generator.register_custom_keymapping(

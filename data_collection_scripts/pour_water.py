@@ -482,7 +482,12 @@ def reset_env(env):
         robot.keep_still()
     print("Gripper closed to match saved grasping state")
 
-    # breakpoint()
+    # set joint positons
+    robot_joint_positions = th.tensor([ 0.8922, -1.3874, -1.5870, -2.7042,  0.1077,  3.7508, -0.5944,  0.0400, 0.0261])
+    robot.set_joint_positions(robot_joint_positions)
+    for _ in range(20): og.sim.step()
+
+    breakpoint()
     # Fill water glass with water
     water_glass = env.scene.object_registry("name", "water_glass")
     if water_glass is not None:
