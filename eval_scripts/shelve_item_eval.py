@@ -1,5 +1,8 @@
 import sys
-sys.path.insert(0, "/home/arpit/test_projects/rl-flow-matching")
+# For Arpit
+# sys.path.insert(0, "/home/arpit/test_projects/rl-flow-matching")
+# For Junhong
+sys.path.insert(0, "/home/juxu/Research/safe-manipulation/rl-flow-matching")
 
 from ast import Pass
 import os
@@ -851,6 +854,8 @@ def __main__():
     parser.add_argument('--vocab_hdf5', type=str, 
                         default="resources/playback_data/20260108-shelf-place-playback.hdf5",
                         help='Path to HDF5 file for building class vocabulary (should match training data)')
+    parser.add_argument('--filter_mode', type=str, default=None, help='Filter mode used during training')
+    parser.add_argument('--action_chunk_size', type=int, default=8, help='Action chunk size')
     parser.add_argument('--normalize_action', action='store_true', help='Normalize action', default=True)
     parser.add_argument('--policy_input_type', type=str, default="seg",
                         help="Input type: seg, joint_pos_eef_pose, joint_pos_eef_pose_gripper, joint_pos_eef_pose_grasp, eef_pose")
@@ -874,6 +879,7 @@ def __main__():
         action_chunk_size=8,
         seg_img_size=(128, 128),
         normalize_action=args.normalize_action,
+        filter_mode=args.filter_mode,
     )
     if args.normalize_action:
         action_min = dataset.action_min
@@ -1089,8 +1095,9 @@ def __main__():
         # Get initial obs_info for global class ID remapping
         current_obs_info = info.get("obs_info", None)
         init_skip_steps = 3
+        cur_action_chunk = None
+        cur_action_chunk_idx = 0
         for step in range(args.max_steps):
-            
             # Update link positions and velocities for all damage evaluators
             if step == init_skip_steps:
                 # Update link positions and velocities for all damage evaluators
@@ -1113,24 +1120,16 @@ def __main__():
                 proprio = obs['franka0']['proprio'][None].to(device)
                 # Extract proprio indices based on policy_input_type
                 proprio_processed = extract_proprio_for_input_type(proprio, args.policy_input_type)
-                action_chunk = policy.generate_action(
-                    seg_images=policy_input['extero'],
-                    state=proprio_processed,
-                    # n_actions=4
-                )
-                # import ipdb; ipdb.set_trace()
-                # action_chunk = action_chunk.mean(dim=1)
-
-                # Update chunker with new actions
-                # action_chunker.update_chunk(action_chunk[0])  # Remove batch dim
+                if cur_action_chunk is None or cur_action_chunk_idx >= args.action_chunk_size:
+                    cur_action_chunk = policy.generate_action(
+                        seg_images=policy_input['extero'],
+                        state=proprio_processed,
+                    )
+                    cur_action_chunk_idx = 0
             
-            # Get next action from chunk
-            # action = action_chunker.get_action()
-            action = action_chunk[0, 0]
-            # if action[-1] > 0:
-            #     action[-1] = 1.0
-            # TODO(junhong): force the gripper to be closed, just for testing!
-            # action[-1] = -1.0
+            # Execute the current action in the chunk
+            action = cur_action_chunk[0, cur_action_chunk_idx]
+            cur_action_chunk_idx += 1
             
             if action is None:
                 print(f"Warning: No action available at step {step}")
