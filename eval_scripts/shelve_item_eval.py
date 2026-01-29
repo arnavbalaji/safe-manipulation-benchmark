@@ -1098,6 +1098,8 @@ def __main__():
         cur_action_chunk = None
         cur_action_chunk_idx = 0
         for step in range(args.max_steps):
+            # NOTE: We need to step through the environment to update the current observation.
+            obs, _, _, _, _ = env.step(th.zeros(7))
             # Update link positions and velocities for all damage evaluators
             if step == init_skip_steps:
                 # Update link positions and velocities for all damage evaluators
