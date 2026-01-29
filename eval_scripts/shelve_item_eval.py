@@ -1086,20 +1086,24 @@ def __main__():
         if args.load_state:
             for _ in range(50):
                 og.sim.step()
+
+        for _ in range(10): og.sim.step()
+        env.initialize_env_health()
+        obs, _ = env.get_observation()
+        print("health after reset: ", obs["health"])
         
         episode_reward = 0.0
         episode_damage = 0.0
         stand = env.scene.object_registry("name", "stand")
         box_of_crackers = env.scene.object_registry("name", "box_of_crackers")
-        
+        # # NOTE: 
+        # env.intiialize_env_health() 
         # Get initial obs_info for global class ID remapping
         current_obs_info = info.get("obs_info", None)
         init_skip_steps = 3
         cur_action_chunk = None
         cur_action_chunk_idx = 0
         for step in range(args.max_steps):
-            # NOTE: We need to step through the environment to update the current observation.
-            obs, _, _, _, _ = env.step(th.zeros(7))
             # Update link positions and velocities for all damage evaluators
             if step == init_skip_steps:
                 # Update link positions and velocities for all damage evaluators
@@ -1108,6 +1112,10 @@ def __main__():
                         for evaluator in obj.damage_evaluators:
                             if evaluator.name == "mechanical":
                                 evaluator.update_link_positions_and_velocities()
+            # NOTE: We need to step through the environment to update the current observation.
+                obs, _, _, _, info = env.step(th.zeros(7))
+                current_obs_info = info.get("obs_info", None)
+            print("obs: ", obs["health"])
             
             # Query policy for new action chunk if needed
             # if action_chunker.needs_replan():
