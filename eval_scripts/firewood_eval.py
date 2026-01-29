@@ -1159,6 +1159,8 @@ def __main__():
     parser.add_argument("--num_seg_views", type=int, default=3, help='Number of segmentation views to use')
     parser.add_argument("--seed", type=int, default=0, help='Seed for random number generator')
     parser.add_argument("--env_health_threshold", type=float, default=95.0, help='Environment health threshold for safe task completion')
+    parser.add_argument('--filter_mode', type=str, default="episode", help='Filter mode used during training')
+    parser.add_argument('--action_chunk_size', type=int, default=8, help='Action chunk size')
     args = parser.parse_args()
     
     # Set seeds for reproducibility
@@ -1172,6 +1174,7 @@ def __main__():
         action_chunk_size=8,
         seg_img_size=(128, 128),
         normalize_action=args.normalize_action,
+        filter_mode=args.filter_mode,
     )
     if args.normalize_action:
         action_min = dataset.action_min
@@ -1390,6 +1393,9 @@ def __main__():
         fireplace = env.scene.object_registry("name", "fireplace")
         firewood = env.scene.object_registry("name", "target_object")
         task_completion = False
+
+        cur_action_chunk = None
+        cur_action_chunk_idx = 0
         
         print(f"Starting episode {episode + 1} of {args.n_episodes}")
         # breakpoint()
@@ -1413,13 +1419,16 @@ def __main__():
                 proprio = obs['franka0']['proprio'][None].to(device)
                 # Extract proprio indices based on policy_input_type
                 proprio_processed = extract_proprio_for_input_type(proprio, args.policy_input_type)
-                action_chunk = policy.generate_action(
-                    seg_images=policy_input['extero'],
-                    state=proprio_processed,
-                )
+                if cur_action_chunk is None or cur_action_chunk_idx >= args.action_chunk_size:
+                    cur_action_chunk = policy.generate_action(
+                        seg_images=policy_input['extero'],
+                        state=proprio_processed,
+                    )
+                    cur_action_chunk_idx = 0
             
-            # Get next action from chunk
-            action = action_chunk[0, 0]
+            # Execute the current action in the chunk
+            action = cur_action_chunk[0, cur_action_chunk_idx]
+            cur_action_chunk_idx += 1
             
             if action is None:
                 print(f"Warning: No action available at step {step}")
@@ -1455,12 +1464,13 @@ def __main__():
                     temperature[full_name].append(temp_val)
 
                 # If want to save video during episode run itself
-                if save_video_at_run_time:
-                    video_recorder.record_frame(obs)
-                # If want to save the video at the end of the episode
-                else:
-                    frame = get_frame_from_obs(obs, args.video_camera_type, args.video_camera_name)
-                    imgs.append(frame)
+                if args.save_videos:
+                    if save_video_at_run_time:
+                        video_recorder.record_frame(obs)
+                    # If want to save the video at the end of the episode
+                    else:
+                        frame = get_frame_from_obs(obs, args.video_camera_type, args.video_camera_name)
+                        imgs.append(frame)
             
                 # Compute env health
                 current_env_health = 0.0
@@ -1488,35 +1498,8 @@ def __main__():
         
         print(f"Episode {episode + 1} complete:")
         print(f"  Total steps: {step + 1}")
-        if save_video_at_run_time:
-            video_recorder.close_episode()
-        else:
-            save_rgb_camera_video(os.path.join(args.video_dir, f"{episode:03d}_{args.video_camera_name}"), imgs, args.video_fps)
 
         for k in health.keys(): health[k] = health[k][1:]
-        
-        # TODO: Skipping mechincal for now, bring it back!!
-        # # Saving health and force graphs
-        # data = dict()
-        # for obj_name in target_objects_forces:
-        #     data[obj_name] = dict()
-        #     for force_key in force_keys:
-        #         data[obj_name][force_key] = []
-        # for i in range(len(info_list)):
-        #     damage_info = info_list[i]["damage_info"]
-        #     for obj_name in target_objects_forces:
-        #         for force_key in force_keys:
-        #             data[obj_name][force_key].append(damage_info[obj_name.split("@")[0]][obj_name.split("@")[1]]["mechanical"][force_key])
-
-        # # Save videos for forces plot
-        # forces_video_path = os.path.join(args.video_dir, f"{episode:03d}_forces_video.mp4")
-        # save_rgb_force_video(output_video_path=forces_video_path, imgs=imgs, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
-
-        # Save video for health plot
-        health_video_path = os.path.join(args.video_dir, f"{episode:03d}_health_video.mp4")
-        save_rgb_health_video(output_video_path=health_video_path, imgs=imgs, target_objects=target_objects_health, health=health)
-
-        # Save temperature video
         # Convert per-link temperature to per-object (min over links)
         obj_temperature = {}
         for obj_name in target_objects_health:
@@ -1531,14 +1514,42 @@ def __main__():
                 # If no thermal data, default to NaNs
                 T = len(next(iter(temperature.values()))) if temperature else 0
                 obj_temperature[obj_name] = np.full(T, np.nan) if T > 0 else np.array([])
-        
-        temp_video_path = os.path.join(args.video_dir, f"{episode:03d}_temperature_video.mp4")
-        save_rgb_temperature_video(
-            output_video_path=temp_video_path,
-            imgs=imgs,
-            target_objects=list(obj_temperature.keys()),
-            temperature=obj_temperature,
-        )
+                
+        if args.save_videos:
+            if save_video_at_run_time:
+                video_recorder.close_episode()
+            else:
+                save_rgb_camera_video(os.path.join(args.video_dir, f"{episode:03d}_{args.video_camera_name}"), imgs, args.video_fps)
+            
+            # TODO: Skipping mechincal for now, bring it back!!
+            # # Saving health and force graphs
+            # data = dict()
+            # for obj_name in target_objects_forces:
+            #     data[obj_name] = dict()
+            #     for force_key in force_keys:
+            #         data[obj_name][force_key] = []
+            # for i in range(len(info_list)):
+            #     damage_info = info_list[i]["damage_info"]
+            #     for obj_name in target_objects_forces:
+            #         for force_key in force_keys:
+            #             data[obj_name][force_key].append(damage_info[obj_name.split("@")[0]][obj_name.split("@")[1]]["mechanical"][force_key])
+
+            # # Save videos for forces plot
+            # forces_video_path = os.path.join(args.video_dir, f"{episode:03d}_forces_video.mp4")
+            # save_rgb_force_video(output_video_path=forces_video_path, imgs=imgs, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
+
+            # Save video for health plot
+            health_video_path = os.path.join(args.video_dir, f"{episode:03d}_health_video.mp4")
+            save_rgb_health_video(output_video_path=health_video_path, imgs=imgs, target_objects=target_objects_health, health=health)
+
+            # Save temperature video            
+            temp_video_path = os.path.join(args.video_dir, f"{episode:03d}_temperature_video.mp4")
+            save_rgb_temperature_video(
+                output_video_path=temp_video_path,
+                imgs=imgs,
+                target_objects=list(obj_temperature.keys()),
+                temperature=obj_temperature,
+            )
 
         # Check task completion
         firewood_in_fireplace = firewood.states[object_states.Inside].get_value(fireplace)
