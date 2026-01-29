@@ -112,7 +112,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-f = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/playback_data/add_firewood/firewood_trial_1_playback.hdf5", "r")
+f = h5py.File("/home/arpit/test_projects/safe-manipulation-benchmark/resources/teleop_data/pour_water/trial_1.hdf5", "r")
 # all_y_pos = []
 # for demo in f["data"].keys():
 #     actions = f["data"][demo]["action"][:]

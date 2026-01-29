@@ -156,18 +156,17 @@ def combine_hdf5_files(input_paths: List[str], output_path: str):
                     if "n_steps" in in_data.attrs:
                         total_steps += int(in_data.attrs["n_steps"])
                     
-                    # # Find all demo groups and sort them numerically
-                    # demo_keys = [key for key in in_data.keys() if key.startswith("demo_")]
-                    # # Sort by demo number (extract number after "demo_")
-                    # # Use sorted() to ensure proper numerical ordering (0, 1, 2, ..., 10, 11, ...)
-                    # demo_keys = sorted(demo_keys, key=lambda x: int(x.split("_")[1]))
-                    # breakpoint()
+                    # Find all demo groups and sort them numerically
+                    demo_keys = [key for key in in_data.keys() if key.startswith("demo_")]
+                    # Sort by demo number (extract number after "demo_")
+                    # Use sorted() to ensure proper numerical ordering (0, 1, 2, ..., 10, 11, ...)
+                    demo_keys = sorted(demo_keys, key=lambda x: int(x.split("_")[1]) if x.split("_")[1].isdigit() else float('inf'))
                     
                     # Copy each demo with new numbering
-                    for demo_key in range(len(in_data.keys())):
+                    for old_demo_key in demo_keys:
                         new_demo_key = f"demo_{demo_counter}"
-                        source_demo = in_data[f"demo_{demo_key}"]
-                        print(f"Copying demo {demo_key} to {new_demo_key}")
+                        source_demo = in_data[old_demo_key]
+                        print(f"Copying {old_demo_key} to {new_demo_key}")
                         
                         # Create new demo group
                         target_demo = out_data.create_group(new_demo_key)
@@ -237,14 +236,43 @@ Examples:
     print_hdf5_structure(args.hdf5_path, args.path)
 
 
+def remove_one_step_demos():
+    import h5py
+    import shutil
+
+    input_path = "resources/teleop_data/pour_water/trial_2.hdf5"
+    output_path = "resources/teleop_data/pour_water/trial_1_cleaned.hdf5"
+
+    with h5py.File(input_path, "a") as f:  # "a" = read/write mode
+        to_delete = []
+
+        # First collect (don’t delete while iterating)
+        for demo_name in f["data"].keys():
+            num_samples = f["data"][demo_name].attrs.get("num_samples", None)
+
+            if num_samples is None or num_samples <= 1:
+                print(f"❌ Marking {demo_name} for deletion ({num_samples})")
+                to_delete.append(demo_name)
+            else:
+                print(f"✅ Keeping {demo_name} ({num_samples})")
+
+        breakpoint()
+        # Now delete
+        for demo_name in to_delete:
+            del f["data"][demo_name]
+
 if __name__ == "__main__":
     # explore the hdf5 file
-    # hdf5_path = "resources/playback_data/shelve_item/with_live_feedback.hdf5"
+    # hdf5_path = "resources/teleop_data/trial_2.hdf5"
     # f = h5py.File(hdf5_path, "r")
     # breakpoint()
     # main()
+    # remove_one_step_demos()
 
     combine_hdf5_files(
-        input_paths=["resources/playback_data/shelve_item/trial_1_playback.hdf5", "resources/playback_data/shelve_item/trial_3_playback.hdf5", "resources/playback_data/shelve_item/trial_5_playback.hdf5"],
-        output_path="resources/playback_data/shelve_item/no_live_feedback.hdf5"
+        input_paths=[
+            "resources/teleop_data/pour_water/trial_1.hdf5",
+            "resources/teleop_data/pour_water/trial_2.hdf5",
+        ],
+        output_path="resources/teleop_data/pour_water/all_data.hdf5"
     )

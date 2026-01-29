@@ -1158,6 +1158,7 @@ def __main__():
     parser.add_argument('--video_fps', type=int, default=30, help='FPS for saved videos')
     parser.add_argument("--num_seg_views", type=int, default=3, help='Number of segmentation views to use')
     parser.add_argument("--seed", type=int, default=0, help='Seed for random number generator')
+    parser.add_argument("--env_health_threshold", type=float, default=95.0, help='Environment health threshold for safe task completion')
     args = parser.parse_args()
     
     # Set seeds for reproducibility

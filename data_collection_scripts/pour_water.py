@@ -343,6 +343,55 @@ TASK_OBJECTS = {
     },
 }
 
+def add_water_to_glass(env, robot):
+    robot_joint_positions = th.tensor([ 1.8706, -1.3073, -1.6741, -2.5116,  0.1573,  3.7525, -0.5432,  0.0400, 0.0261])
+    inp = input("Fill water glass with water? (y/n)")
+    if inp == "n":
+        reset_env(env)
+
+    # Fill water glass with water
+    water_glass = env.scene.object_registry("name", "water_glass")
+    if water_glass is not None:
+        water_system = env.scene.get_system("water", force_init=True)
+        # Set the Filled state to True
+        if Filled in water_glass.states:
+            water_glass.states[Filled].set_value(water_system, True)
+        # Generate water particles in batches with env.step() for proper simulation
+        glass_pos, _ = water_glass.get_position_orientation()
+        z_offset = 0.05
+        for _ in range(100):
+            if isinstance(glass_pos, th.Tensor):
+                drop_pos = (glass_pos + th.tensor([0.0, 0.0, z_offset], dtype=th.float32)).tolist()
+            else:
+                drop_pos = [glass_pos[0], glass_pos[1], glass_pos[2] + z_offset]
+            water_system.generate_particles(positions=[drop_pos])
+            robot.set_joint_positions(robot_joint_positions)
+            robot.set_joint_velocities(th.zeros(robot.n_dof))
+            robot.keep_still()
+            og.sim.step()
+            # env.step(keep_gripper_closed_action)
+            # Force restore after EVERY step to guarantee no movement
+            robot.set_joint_positions(robot_joint_positions)
+            robot.set_joint_velocities(th.zeros(robot.n_dof))
+            robot.keep_still()
+        print(f"Total particles: {water_system.n_particles}")
+    
+    # Let simulation settle with env.step() for proper physics
+    for _ in range(30):
+        robot.set_joint_positions(robot_joint_positions)
+        robot.set_joint_velocities(th.zeros(robot.n_dof))
+        robot.keep_still()
+        og.sim.step()
+        # env.step(keep_gripper_closed_action)
+        robot.set_joint_positions(robot_joint_positions)
+        robot.set_joint_velocities(th.zeros(robot.n_dof))
+        robot.keep_still()
+
+    # # If we want water particles to be invisible
+    # if "water" in env.scene.systems:
+    #     water_system = env.scene.get_system("water")
+    #     for prototype in water_system.particle_prototypes: prototype.visible = False
+    #     for instancer in water_system.particle_instancers.values(): instancer.visible = False
 
 def reset_env(env):
     env.reset()
@@ -362,8 +411,8 @@ def reset_env(env):
     coffee_cup = env.scene.object_registry("name", "coffee_cup_1")
 
     # Since the saved state has different laptop and coffee cup positions, setting it here
-    laptop.set_position_orientation(position=th.tensor([6.3, 0.5, 1.1]))
-    coffee_cup.set_position_orientation(position=th.tensor([6.3, 0.7, 1.3]))
+    laptop.set_position_orientation(position=th.tensor([6.2, 0.3, 1.1]))
+    coffee_cup.set_position_orientation(position=th.tensor([6.2, 0.5, 1.1]))
     
     # Save original positions from the freshly loaded state (before any sim steps)
     laptop_orig_pos, laptop_orig_orn = None, None
@@ -389,7 +438,7 @@ def reset_env(env):
     for trial in range(max_trials):
         for obj in [laptop, coffee_cup]:
             pos, orn = obj.get_position_orientation()
-            pos_magnitude = [-0.05, 0.05] 
+            pos_magnitude = [-0.03, 0.03] 
             rot_magnitude = np.pi / 12 # 15 degrees
             pos_diff_xy = np.random.uniform(pos_magnitude[0], pos_magnitude[1], size=2)
             pos_diff = th.from_numpy(np.concatenate([pos_diff_xy, np.zeros(1)])).float()
@@ -426,41 +475,41 @@ def reset_env(env):
         cup_xy = cup_new_pos[:2].cpu().numpy()
         final_distance = np.linalg.norm(laptop_xy - cup_xy)
     
-    # Randomize laptop scale based on distance between objects
-    # Further apart = larger scale allowed (up to 1.2), closer = smaller scale (min 0.9)
-    if laptop is not None:
-        old_scale = laptop.scale.tolist()
-        # Dump state AFTER position randomization to preserve new positions
-        temp_state = og.sim.dump_state(serialized=False)
-        og.sim.stop()
+    # # Randomize laptop scale based on distance between objects
+    # # Further apart = larger scale allowed (up to 1.2), closer = smaller scale (min 0.9)
+    # if laptop is not None:
+    #     old_scale = laptop.scale.tolist()
+    #     # Dump state AFTER position randomization to preserve new positions
+    #     temp_state = og.sim.dump_state(serialized=False)
+    #     og.sim.stop()
         
-        # Calculate max scale based on distance
-        # Estimate max possible distance: sqrt((x_range)^2 + (y_range)^2)
-        # x_range = 6.35 - 6.25 = 0.1, y_range = 0.25 - (-0.05) = 0.3
-        max_possible_distance = np.sqrt(0.1**2 + 0.3**2)  # ~0.316
-        # Map distance from [min_distance, max_possible_distance] to scale max [0.9, 1.2]
-        if final_distance is not None:
-            # Clamp distance to reasonable range
-            distance_clamped = np.clip(final_distance, min_distance, max_possible_distance)
-            # Linear interpolation: distance -> max_scale
-            max_scale = 0.9 + (distance_clamped - min_distance) / (max_possible_distance - min_distance) * (1.1 - 0.9)
-            max_scale = np.clip(max_scale, 0.9, 1.1)  # Ensure within bounds
-        else:
-            max_scale = 1.2  # Default if distance not calculated
+    #     # Calculate max scale based on distance
+    #     # Estimate max possible distance: sqrt((x_range)^2 + (y_range)^2)
+    #     # x_range = 6.35 - 6.25 = 0.1, y_range = 0.25 - (-0.05) = 0.3
+    #     max_possible_distance = np.sqrt(0.1**2 + 0.3**2)  # ~0.316
+    #     # Map distance from [min_distance, max_possible_distance] to scale max [0.9, 1.2]
+    #     if final_distance is not None:
+    #         # Clamp distance to reasonable range
+    #         distance_clamped = np.clip(final_distance, min_distance, max_possible_distance)
+    #         # Linear interpolation: distance -> max_scale
+    #         max_scale = 0.9 + (distance_clamped - min_distance) / (max_possible_distance - min_distance) * (1.1 - 0.9)
+    #         max_scale = np.clip(max_scale, 0.9, 1.1)  # Ensure within bounds
+    #     else:
+    #         max_scale = 1.2  # Default if distance not calculated
         
-        x_scale_mult = np.random.uniform(0.9, max_scale)
-        y_scale_mult = np.random.uniform(0.9, max_scale)
-        z_scale_mult = np.random.uniform(0.9, max_scale)
-        new_scale = [old_scale[0] * x_scale_mult, old_scale[1] * y_scale_mult, old_scale[2] * z_scale_mult]
-        laptop.scale = th.tensor(new_scale)
-        print(f"Randomizing laptop scale: distance={final_distance:.3f}, max_scale={max_scale:.3f}, old={old_scale}, multipliers=[{x_scale_mult:.3f}, {y_scale_mult:.3f}, {z_scale_mult:.3f}], new={new_scale}")
-        og.sim.play()
-        og.sim.load_state(temp_state)
-        robot.keep_still()
+    #     x_scale_mult = np.random.uniform(0.9, max_scale)
+    #     y_scale_mult = np.random.uniform(0.9, max_scale)
+    #     z_scale_mult = np.random.uniform(0.9, max_scale)
+    #     new_scale = [old_scale[0] * x_scale_mult, old_scale[1] * y_scale_mult, old_scale[2] * z_scale_mult]
+    #     laptop.scale = th.tensor(new_scale)
+    #     print(f"Randomizing laptop scale: distance={final_distance:.3f}, max_scale={max_scale:.3f}, old={old_scale}, multipliers=[{x_scale_mult:.3f}, {y_scale_mult:.3f}, {z_scale_mult:.3f}], new={new_scale}")
+    #     og.sim.play()
+    #     og.sim.load_state(temp_state)
+    #     robot.keep_still()
 
-    for _ in range(10):
-        robot.keep_still()
-        og.sim.step()
+    # for _ in range(10):
+    #     robot.keep_still()
+    #     og.sim.step()
     
     # Sync robot controller state after loading - prevents random movement
     robot.keep_still()
@@ -475,7 +524,8 @@ def reset_env(env):
         robot.set_joint_positions(robot_joint_positions)
         robot.set_joint_velocities(th.zeros(robot.n_dof))
         robot.keep_still()
-        env.step(keep_gripper_closed_action)
+        og.sim.step()
+        # env.step(keep_gripper_closed_action)
         # Force restore after step to prevent any drift
         robot.set_joint_positions(robot_joint_positions)
         robot.set_joint_velocities(th.zeros(robot.n_dof))
@@ -483,52 +533,9 @@ def reset_env(env):
     print("Gripper closed to match saved grasping state")
 
     # set joint positons
-    robot_joint_positions = th.tensor([ 0.8922, -1.3874, -1.5870, -2.7042,  0.1077,  3.7508, -0.5944,  0.0400, 0.0261])
+    robot_joint_positions = th.tensor([ 1.8706, -1.3073, -1.6741, -2.5116,  0.1573,  3.7525, -0.5432,  0.0400, 0.0261])
     robot.set_joint_positions(robot_joint_positions)
     for _ in range(20): og.sim.step()
-
-    breakpoint()
-    # Fill water glass with water
-    water_glass = env.scene.object_registry("name", "water_glass")
-    if water_glass is not None:
-        water_system = env.scene.get_system("water", force_init=True)
-        # Set the Filled state to True
-        if Filled in water_glass.states:
-            water_glass.states[Filled].set_value(water_system, True)
-        # Generate water particles in batches with env.step() for proper simulation
-        glass_pos, _ = water_glass.get_position_orientation()
-        z_offset = 0.05
-        for _ in range(100):
-            if isinstance(glass_pos, th.Tensor):
-                drop_pos = (glass_pos + th.tensor([0.0, 0.0, z_offset], dtype=th.float32)).tolist()
-            else:
-                drop_pos = [glass_pos[0], glass_pos[1], glass_pos[2] + z_offset]
-            water_system.generate_particles(positions=[drop_pos])
-            robot.set_joint_positions(robot_joint_positions)
-            robot.set_joint_velocities(th.zeros(robot.n_dof))
-            robot.keep_still()
-            env.step(keep_gripper_closed_action)
-            # Force restore after EVERY step to guarantee no movement
-            robot.set_joint_positions(robot_joint_positions)
-            robot.set_joint_velocities(th.zeros(robot.n_dof))
-            robot.keep_still()
-        print(f"Total particles: {water_system.n_particles}")
-    
-    # Let simulation settle with env.step() for proper physics
-    for _ in range(30):
-        robot.set_joint_positions(robot_joint_positions)
-        robot.set_joint_velocities(th.zeros(robot.n_dof))
-        robot.keep_still()
-        env.step(keep_gripper_closed_action)
-        robot.set_joint_positions(robot_joint_positions)
-        robot.set_joint_velocities(th.zeros(robot.n_dof))
-        robot.keep_still()
-
-    # If we want water particles to be invisible
-    if "water" in env.scene.systems:
-        water_system = env.scene.get_system("water")
-        for prototype in water_system.particle_prototypes: prototype.visible = False
-        for instancer in water_system.particle_instancers.values(): instancer.visible = False
 
 
 def save_camera_images(env, output_dir="safe-manipulation-benchmark/resources/debug_images"):
@@ -642,7 +649,7 @@ def __main__():
             "position": [6.8, 0.2, 1.0],  # Match Tiago base position
             "orientation": [0.0, 0.0, 1.0, 0.0],
             "grasping_mode": "assisted",
-            "obs_modalities": ["rgb", "depth", "seg_instance"],
+            "obs_modalities": ["rgb", "seg_instance", "proprio"],
             "action_normalize": False,
             "self_collisions": True,
             # Franka has single arm (arm_0, gripper_0) instead of left/right
@@ -745,7 +752,7 @@ def __main__():
         teleop_config.arm_right_controller = arm_teleop_method
         teleop_config.base_controller = base_teleop_method
         teleop_config.interface_kwargs["keyboard"] = {"arm_speed_scaledown": 0.04}
-        teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.03}
+        teleop_config.interface_kwargs["spacemouse"] = {"arm_speed_scaledown": 0.02}
         teleop_sys = TeleopSystem(config=teleop_config, robot=robot, show_control_marker=False)
         teleop_sys.start()
         
@@ -795,7 +802,11 @@ def __main__():
             if enable_health_graph:
                 water_contacts_data.clear()
             
-            reset_env(env)
+            inp = "n"
+            while inp != "y":
+                reset_env(env)
+                inp = input("Fill water glass with water? (y/n)")
+            add_water_to_glass(env, robot)
             coffee_cup = env.scene.object_registry("name", "coffee_cup_1")
             water_system = env.scene.get_system("water")
             
@@ -837,6 +848,8 @@ def __main__():
 
             print("Ready for teleoperation. Press TAB to end episode, BACKSPACE/DELETE to discard and reset.")
             breakpoint()
+
+            env.initialize_env_health()
             
             discard_episode = False
             while True:
@@ -864,7 +877,11 @@ def __main__():
                         break
                     else:
                         print("Saving but as task success being False")
-                        env.task._success = False
+                        steps_to_remove = len(env.current_traj_history)
+                        env.current_traj_history = []
+                        env.step_count -= steps_to_remove
+                        print(f"Discarded {steps_to_remove} steps from current trajectory")
+                        discard_episode = True
                         break
                 
                 # BACKSPACE/DELETE: discard current trajectory and reset
