@@ -352,6 +352,242 @@ def save_rgb_health_video(
     plt.close(fig)
 
 
+def save_rgb_health_video_with_overlay(
+    output_video_path,
+    imgs,
+    target_objects,
+    health,
+    position="bottom_left",
+    n_columns=1,
+    fps=30,
+):
+    """
+    Save video with RGB frames and health bars overlaid on the video (no separate plot panel).
+    Health bars are drawn directly on the RGB images at the bottom-left, bottom-right, or center.
+    
+    Args:
+        output_video_path: Path to save the video
+        imgs: Array/list of RGB images (H, W, 3) in RGB format
+        target_objects: List of object names to plot
+        health: Dict mapping object_name -> list of health values (0-100)
+        position: "bottom_left", "bottom_right", or "center" for bar placement
+        n_columns: Number of columns to arrange health bars (1, 2, or 3)
+        fps: Frames per second
+    """
+    T = len(health[target_objects[0]])
+    
+    # Validate n_columns
+    n_columns = max(1, min(3, int(n_columns)))  # Clamp between 1 and 3
+    
+    # Object name display mapping (same as in setup_live_health_bars)
+    OBJ_NAME_DISPLAY_NAME_MAPPING = {
+        "box_of_crackers": "Crackers Box",
+        "book": "Paper Bag",
+        "bottle_of_wine": "Wine Bottle",
+        "wineglass": "Wine Glass",
+        "bottle_of_beer": "Beer Bottle",
+        "franka0": "Robot"
+    }
+    
+    # Get image dimensions
+    img_height, img_width = imgs[0].shape[:2]
+    
+    # Health bar configuration - scale based on image size
+    n_objects = len(target_objects)
+    bar_height = max(25, int(img_height * 0.05))  # ~3% of image height, min 25px
+    bar_spacing = max(8, int(img_height * 0.01))  # ~1% of image height, min 8px
+    padding = max(15, int(img_width * 0.02))  # ~2% of image width, min 15px
+    column_spacing = max(15, int(img_width * 0.02))  # Spacing between columns
+    
+    # Bar panel dimensions (per column)
+    label_width = max(80, int(img_width * 0.13))  # Slightly smaller for multi-column
+    bar_width = max(100, int(img_width * 0.1))  # Slightly smaller for multi-column
+    gap_after_label = max(4, int(img_width * 0.012))
+    gap_after_bar = max(8, int(img_width * 0.012))
+    
+    # Calculate objects per column
+    objects_per_column = int(np.ceil(n_objects / n_columns))
+    
+    # Single column width
+    column_width = label_width + gap_after_label + bar_width + gap_after_bar + max(50, int(img_width * 0.06))
+    # breakpoint()
+    
+    # Total panel width (all columns + spacing between columns)
+    panel_width = n_columns * column_width + (n_columns - 1) * column_spacing
+    panel_height = objects_per_column * (bar_height + bar_spacing) + padding * 2
+    
+    # Position calculation
+    if position == "bottom_right":
+        panel_x = img_width - panel_width - padding
+    elif position == "center" or position == "bottom_center":
+        # Center align the panel horizontally
+        panel_x = (img_width - panel_width) // 2
+    else:  # bottom_left (default)
+        panel_x = padding
+    
+    panel_y = img_height - panel_height - padding
+    
+    # Helper function to convert hex color to BGR (OpenCV format)
+    def hex_to_bgr(hex_color):
+        hex_color = hex_color.lstrip('#')
+        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        return (b, g, r)  # BGR format for OpenCV
+    
+    # Color definitions (BGR format for OpenCV)
+    COLORS = {
+        'bg': hex_to_bgr('#1A1A1A'),  # Dark background
+        'bg_bar': hex_to_bgr('#0D0D0D'),  # Bar background
+        'border': hex_to_bgr('#2A2A2A'),  # Border color
+        'glow': hex_to_bgr('#333333'),  # Glow effect
+        'green': hex_to_bgr('#4CAF50'),
+        'amber': hex_to_bgr('#FFC107'),
+        'orange': hex_to_bgr('#FF9800'),
+        'red': hex_to_bgr('#F44336'),
+        'dark_red': hex_to_bgr('#D32F2F'),
+        'text_white': hex_to_bgr('#FFFFFF'),
+        'text_light': hex_to_bgr('#E8E8E8'),
+        'text_gray': hex_to_bgr('#888888'),
+        'text_dark_gray': hex_to_bgr('#666666'),
+    }
+    
+    # Process each frame
+    processed_imgs = []
+    for frame_idx in range(T):
+        # Convert RGB to BGR for OpenCV operations
+        img = imgs[frame_idx].copy()
+        if img.dtype != np.uint8:
+            img = (img * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
+        
+        # Convert RGB to BGR
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        
+        # Draw semi-transparent background panel
+        overlay = img_bgr.copy()
+        cv2.rectangle(
+            overlay,
+            (panel_x, panel_y),
+            (panel_x + panel_width, panel_y + panel_height),
+            COLORS['bg'],
+            -1
+        )
+        cv2.addWeighted(overlay, 0.85, img_bgr, 0.15, 0, img_bgr)
+        
+        # Draw health bars for each object
+        for obj_idx, obj_name in enumerate(target_objects):
+            # Get current health value
+            current_health = health[obj_name][frame_idx] if frame_idx < len(health[obj_name]) else 100.0
+            current_health = max(0.0, min(100.0, current_health))
+            
+            # Calculate which column and row this object belongs to
+            col_idx = obj_idx // objects_per_column
+            row_idx = obj_idx % objects_per_column
+            
+            # Calculate column x position
+            column_x = panel_x + col_idx * (column_width + column_spacing)
+            
+            # Calculate bar position within the column
+            bar_y = panel_y + padding + row_idx * (bar_height + bar_spacing)
+            label_x = column_x + padding
+            bar_x_start = label_x + label_width + gap_after_label
+            value_x = bar_x_start + bar_width + gap_after_bar
+            
+            # Draw background bar container
+            cv2.rectangle(
+                img_bgr,
+                (bar_x_start, bar_y),
+                (bar_x_start + bar_width, bar_y + bar_height),
+                COLORS['bg_bar'],
+                -1
+            )
+            cv2.rectangle(
+                img_bgr,
+                (bar_x_start, bar_y),
+                (bar_x_start + bar_width, bar_y + bar_height),
+                COLORS['border'],
+                2
+            )
+            
+            # Draw glow effect (top edge)
+            glow_height = 3
+            cv2.rectangle(
+                img_bgr,
+                (bar_x_start, bar_y + bar_height - glow_height),
+                (bar_x_start + bar_width, bar_y + bar_height),
+                COLORS['glow'],
+                -1
+            )
+            
+            # Calculate health bar width and color
+            health_width = int((current_health / 100.0) * (bar_width - 6))
+            bar_inset = 3
+            
+            if current_health == 0:
+                bar_color = None  # No bar drawn
+                value_color = COLORS['text_dark_gray']
+            elif current_health >= 80:
+                bar_color = COLORS['green']
+                value_color = COLORS['text_white']
+            elif current_health >= 60:
+                bar_color = COLORS['amber']
+                value_color = COLORS['text_white']
+            elif current_health >= 40:
+                bar_color = COLORS['orange']
+                value_color = COLORS['text_white']
+            elif current_health >= 20:
+                bar_color = COLORS['red']
+                value_color = COLORS['text_white']
+            else:
+                bar_color = COLORS['dark_red']
+                value_color = COLORS['text_white']
+            
+            # Draw foreground health bar
+            if bar_color is not None and health_width > 0:
+                cv2.rectangle(
+                    img_bgr,
+                    (bar_x_start + bar_inset, bar_y + bar_inset),
+                    (bar_x_start + bar_inset + health_width, bar_y + bar_height - bar_inset),
+                    bar_color,
+                    -1
+                )
+            
+            # Draw object name label
+            display_obj_name = OBJ_NAME_DISPLAY_NAME_MAPPING.get(obj_name, obj_name)
+            if len(display_obj_name) > 20:
+                display_obj_name = display_obj_name[:17] + '...'
+            
+            label_color = COLORS['text_gray'] if current_health == 0 else COLORS['text_light']
+            cv2.putText(
+                img_bgr,
+                display_obj_name,
+                (label_x, bar_y + bar_height // 2 + 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                label_color,
+                1,
+                cv2.LINE_AA
+            )
+            
+            # Draw health value
+            health_text = f'{current_health:.1f}'
+            cv2.putText(
+                img_bgr,
+                health_text,
+                (value_x, bar_y + bar_height // 2 + 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                value_color,
+                1,
+                cv2.LINE_AA
+            )
+        
+        # Convert back to RGB for consistency
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        processed_imgs.append(img_rgb)
+    
+    # Save video
+    save_rgb_camera_video(output_video_path, np.array(processed_imgs), fps=fps)
+
+
 def save_rgb_temperature_video(
     output_video_path,
     imgs,
@@ -1106,15 +1342,30 @@ def setup_live_health_bars(target_objects_health):
     
     # Calculate window size based on number of objects
     n_objects = len(target_objects_health)
-    bar_height = 40.0  # Increased height for better visibility
-    bar_spacing = 18.0  # Increased spacing between bars
+    bar_height = 30.0  # Increased height for better visibility #40.0
+    bar_spacing = 10.0  # Increased spacing between bars #18.0
     header_height = 60.0  # More space for title
-    padding = 25.0  # More padding around edges
+    padding = 15.0  # More padding around edges #25.0
     window_width = 600.0  # Wider window for better spacing
     window_height = header_height + n_objects * (bar_height + bar_spacing) + padding * 2
     
     fig, ax = plt.subplots(figsize=(window_width/100, window_height/100))
-    fig.canvas.manager.set_window_title("Health Monitor")
+
+    window = fig.canvas.manager.window
+    window.overrideredirect(True)
+    def start_move(event):
+        window._drag_start_x = event.x
+        window._drag_start_y = event.y
+
+    def do_move(event):
+        x = window.winfo_pointerx() - window._drag_start_x
+        y = window.winfo_pointery() - window._drag_start_y
+        window.geometry(f"+{x}+{y}")
+
+    window.bind("<Button-1>", start_move)
+    window.bind("<B1-Motion>", do_move)
+    window.bind("<Escape>", lambda e: window.destroy())
+    # fig.canvas.manager.set_window_title("Health Monitor")
     
     # Set dark background with subtle gradient effect
     fig.patch.set_facecolor('#1A1A1A')
@@ -1153,7 +1404,19 @@ def setup_live_health_bars(target_objects_health):
     health_bars_dict = {}
     
     # Create health bars for each object
+    OBJ_NAME_DISPLAY_NAME_MAPPING = {
+        "box_of_crackers": "Crackers Box",
+        "book": "Paper Bag",
+        "bottle_of_wine": "Wine Bottle",
+        "wineglass": "Wine Glass",
+        "bottle_of_beer": "Beer Bottle",
+        "franka0": "Robot"
+    }
+    
     for idx, obj_name in enumerate(target_objects_health):
+        # Save original name for dictionary key (before transformation)
+        original_obj_name = obj_name
+        
         # Y position for this bar (from top, accounting for header)
         y_pos = window_height - header_height - (idx + 1) * (bar_height + bar_spacing) - padding / 2
         
@@ -1190,7 +1453,9 @@ def setup_live_health_bars(target_objects_health):
         ax.add_patch(fg_bar)
         
         # Object name label (truncate if too long, with better positioning)
-        display_name = obj_name if len(obj_name) <= 20 else obj_name[:17] + '...'
+        # Transform name only for display purposes
+        display_obj_name = OBJ_NAME_DISPLAY_NAME_MAPPING.get(obj_name, obj_name)
+        display_name = display_obj_name if len(display_obj_name) <= 20 else display_obj_name[:17] + '...'
         label_text = ax.text(
             label_x, y_pos + bar_height / 2,
             display_name,
@@ -1208,7 +1473,8 @@ def setup_live_health_bars(target_objects_health):
             family='sans-serif'
         )
         
-        health_bars_dict[obj_name] = {
+        # Use original name as dictionary key to match update function
+        health_bars_dict[original_obj_name] = {
             'background_bar': bg_bar,
             'glow_bar': glow_bar,
             'shadow_bar': shadow_bar,

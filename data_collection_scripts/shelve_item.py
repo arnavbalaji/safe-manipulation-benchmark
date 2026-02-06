@@ -35,6 +35,7 @@ from safety_benchmark.utils.misc_utils import (
     save_rgb_camera_video,
     save_rgb_force_video,
     save_rgb_health_video,
+    save_rgb_health_video_with_overlay,
     save_rgb_force_contact_video,
     setup_viewport_layout,
 )
@@ -336,6 +337,7 @@ def __main__():
     parser.add_argument('--compute_metrics', action='store_true', help='Compute metrics')
     parser.add_argument('--task_name', type=str, help='Task name', default="shelve_item")
     parser.add_argument('--live_feedback', action='store_true', help='Show live health graph window during teleop (use with --teleop)')
+    parser.add_argument('--high_resolution', action='store_true', help='Use high resolution video')
     args = parser.parse_args()
 
     seed = random.randint(0, 1000000)
@@ -590,15 +592,21 @@ def __main__():
     if args.playback:
         robot_name = "franka0"
         robot_type = "FrankaPanda"
-        image_height = 256
-        image_width = 256
+        if args.high_resolution:
+            image_height = 1280
+            image_width = 1280
+            horizontal_aperture = 10.0
+        else:
+            image_height = 256
+            image_width = 256
+            horizontal_aperture = 15.0
         # Set external cameras for videos
         EXTERNAL_CAMERA_CONFIGS = {
             # Side camera (fixed to base_link frame)
             "external_sensor_0": {
                 "position": [7.3920, -0.6436, 1.7519],
                 "orientation": [0.5273, 0.2970, 0.3907, 0.6936],
-                "horizontal_aperture": 15.0,
+                "horizontal_aperture": horizontal_aperture,
                 "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor0",
             },
             # Left Shoulder (fixed to base_link frame)
@@ -606,7 +614,7 @@ def __main__():
                 # wrt base frame
                 "position": [7.1264, 1.1205, 2.0117],
                 "orientation": [0.2131, 0.4377, 0.7853, 0.3824],
-                "horizontal_aperture": 15.0,
+                "horizontal_aperture": horizontal_aperture,
                 "relative_prim_path": f"/controllable__damageable{robot_type}__{robot_name}/base_link/external_sensor1",
             },
         }
@@ -750,7 +758,8 @@ def __main__():
                             overlay_color = np.array([0, 0, 255], dtype=np.uint8)  # BGR
                             img[mask] = ((1 - alpha) * img[mask] + alpha * overlay_color).astype(np.uint8)
                     
-                    new_imgs.append(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                    # Convert back to RGB for video saving functions (which expect RGB format)
+                    new_imgs.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
                 imgs = np.array(new_imgs)
                 # save_rgb_camera_video(output_video_path=output_video_path, imgs=imgs)
             
@@ -782,9 +791,21 @@ def __main__():
                 forces_video_path = os.path.join(output_video_dir, f"demo_{demo_idx}_forces_video.mp4")
                 save_rgb_force_video(output_video_path=forces_video_path, imgs=imgs, target_objects=target_objects_forces, data=data, forces_to_plot=force_keys)
 
-                # Save video for health plot
+                # Save video for health plot (with separate plot panel)
                 health_video_path = os.path.join(output_video_dir, f"demo_{demo_idx}_health_video.mp4")
                 save_rgb_health_video(output_video_path=health_video_path, imgs=imgs, target_objects=target_objects_health, health=health)
+                
+                # Save video for health with overlay bars (bars on video, no separate plot)
+                health_overlay_video_path = os.path.join(output_video_dir, f"demo_{demo_idx}_health_overlay_video.mp4")
+                save_rgb_health_video_with_overlay(
+                    output_video_path=health_overlay_video_path,
+                    imgs=imgs,
+                    target_objects=target_objects_health,
+                    health=health,
+                    position="bottom_center",
+                    n_columns=3,  # Use 2 columns to spread out the health bars
+                    fps=30
+                )
 
                 # Obtain contact information for the target objects
                 if args.task_name in ["clean_a_trumpet", "make_microwave_popcorn"]:
