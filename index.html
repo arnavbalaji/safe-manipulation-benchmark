@@ -69,7 +69,7 @@
     </div>
   </section>
 
-  <!-- Additional videos -->
+  <!-- DamageSim -->
   <section class="section video-section">
     <div class="container is-max-desktop">
       <div class="columns is-centered">
@@ -81,7 +81,21 @@
       </div>
     </div>
   </section>
+  <section class="section hero is-light">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-four-fifths">
+          <div class="content has-text-justified">
+            <p>
+              DamageSim is our simulator-agnostic damage-aware instrumentation layer that makes physical safety measurable during household navigation and manipulation by tracking an object-centric "health" state and updating it online from common simulator signals (e.g., contact forces, temperatures, and liquid exposure). Concretely, it converts these interaction signals into mechanical, thermal, and fluid damage, exposing damage as a physically grounded, task-agnostic signal that can be used as observations, rewards, and/or termination conditions—without changing the underlying task dynamics. We demonstrate portability by instantiating DamageSim in OmniGibson/Omniverse and RoboCasa/MuJoCo, enabling consistent safety evaluation and learning across simulators.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
+  <!-- OopsieBench -->
   <section class="section video-section">
     <div class="container is-max-desktop">
       <div class="columns is-centered">
@@ -89,6 +103,19 @@
           <video id="oopsiebench" autoplay controls muted loop playsinline>
             <source src="static/videos/oopsiebench.mp4" type="video/mp4">
           </video>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="section hero is-light">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-four-fifths">
+          <div class="content has-text-justified">
+            <p>
+              OopsieBench is a suite of 32 household manipulation tasks designed specifically to expose the gap between task completion and safe execution. Each task includes realistic "tempting shortcuts" that can achieve the goal while causing damage, alongside safer strategies that require more careful interaction—enabling systematic measurement of safety–performance trade-offs using DamageSim's health signals. The benchmark spans diverse scenes, objects, horizons, and damage modalities, and is cross-platform (tasks in both OmniGibson and RoboCasa), with human demonstration data included for learning-based baselines and safety-aware imitation learning.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -103,8 +130,15 @@
         </div>
       </div>
       
-      <!-- Safety-aware data collection video -->
+      <!-- Safer demonstration collection + imitation learning -->
       <div class="columns is-centered" style="margin-top: 2rem;">
+        <div class="column is-four-fifths">
+          <div class="content has-text-justified">
+            <p><strong>Safer demonstration collection + imitation learning:</strong> We add real-time DamageSim health feedback to teleoperation, showing it yields safer demonstrations, and we further use the damage signal to curate/weight data so imitation policies improve safe success with minimal loss in task completion across five tasks.</p>
+          </div>
+        </div>
+      </div>
+      <div class="columns is-centered" style="margin-top: 1rem;">
         <div class="column is-full">
           <video id="safety_aware_data_collection" autoplay controls muted loop playsinline>
             <source src="static/videos/safety_aware_data_collection.mp4" type="video/mp4">
@@ -113,7 +147,7 @@
       </div>
 
       <!-- Imitation Learning row -->
-      <div class="columns is-centered content-row" style="margin-top: 3rem;">
+      <div class="columns is-centered content-row" style="margin-top: 2rem;">
         <div class="column is-half">
           <video id="imitation_learning" autoplay controls muted loop playsinline>
             <source src="static/videos/imitation_learning.mp4" type="video/mp4">
@@ -124,7 +158,14 @@
         </div>
       </div>
 
-      <!-- Reinforcement Learning row -->
+      <!-- Damage-aware reinforcement learning -->
+      <div class="columns is-centered" style="margin-top: 2rem;">
+        <div class="column is-four-fifths">
+          <div class="content has-text-justified">
+            <p><strong>Damage-aware reinforcement learning:</strong> We use DamageSim-derived damage penalties as a universal safety cost for RL—steering and fine-tuning existing policies and training from scratch—demonstrating substantially higher safe completion compared to task-reward-only baselines.</p>
+          </div>
+        </div>
+      </div>
       <div class="columns is-centered content-row">
         <div class="column is-half">
           <video id="reinforcement_learning" autoplay controls muted loop playsinline>
@@ -136,7 +177,14 @@
         </div>
       </div>
 
-      <!-- VLA Evaluations row -->
+      <!-- VLA evaluations -->
+      <div class="columns is-centered" style="margin-top: 2rem;">
+        <div class="column is-four-fifths">
+          <div class="content has-text-justified">
+            <p><strong>VLA evaluations:</strong> We benchmark a state-of-the-art VLA model (NVIDIA GR00T) and find a consistent gap where high task completion often masks damaging interactions, causing much lower safe success and degraded average environment health—highlighting why damage-aware benchmarks are necessary.</p>
+          </div>
+        </div>
+      </div>
       <div class="columns is-centered content-row">
         <div class="column is-half">
           <video id="vla_evals" autoplay controls muted loop playsinline>
@@ -148,7 +196,14 @@
         </div>
       </div>
 
-      <!-- Sim2Real row -->
+      <!-- Sim-to-real transfer -->
+      <div class="columns is-centered" style="margin-top: 2rem;">
+        <div class="column is-four-fifths">
+          <div class="content has-text-justified">
+            <p><strong>Sim-to-real transfer:</strong> Policies trained with damage-aware signals (e.g., health-filtered IL) transfer to a real Franka Panda setup and qualitatively reduce unsafe outcomes (e.g., spills/unsafe contacts) compared to damage-unaware baselines over repeated trials.</p>
+          </div>
+        </div>
+      </div>
       <div class="columns is-centered content-row">
         <div class="column is-half">
           <video id="sim2real_place_box" autoplay controls muted loop playsinline>
