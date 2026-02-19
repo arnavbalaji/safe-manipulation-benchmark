@@ -11,6 +11,18 @@
     .video-section { padding: 2rem 0; }
     .video-section video { width: 100%; height: auto; border-radius: 8px; }
     video { outline: none; }
+    .content-row { margin-bottom: 3rem; }
+    .content-row video, .content-row img { width: 100%; height: auto; border-radius: 8px; }
+    .content-row .column { display: flex; align-items: center; }
+    .content-row img { display: block; border: none; box-shadow: none; object-fit: contain; }
+    /* Hide volume controls but keep timeline */
+    video::-webkit-media-controls-volume-slider { display: none !important; }
+    video::-webkit-media-controls-mute-button { display: none !important; }
+    video::-webkit-media-controls-timeline { display: flex !important; }
+    video::-webkit-media-controls-play-button { display: flex !important; }
+    video::-webkit-media-controls-current-time-display { display: flex !important; }
+    video::-webkit-media-controls-time-remaining-display { display: flex !important; }
+    video::-webkit-media-controls-fullscreen-button { display: flex !important; }
   </style>
 </head>
 <body>
@@ -81,6 +93,89 @@
       </div>
     </div>
   </section>
+
+  <!-- How can OopsieVerse enable safer policy learning and evaluation -->
+  <section class="section hero is-light">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-full">
+          <h2 class="title is-2">How can OopsieVerse enable safer policy learning and evaluation?</h2>
+        </div>
+      </div>
+      
+      <!-- Safety-aware data collection video -->
+      <div class="columns is-centered" style="margin-top: 2rem;">
+        <div class="column is-full">
+          <video id="safety_aware_data_collection" autoplay controls muted loop playsinline>
+            <source src="static/videos/safety_aware_data_collection.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
+
+      <!-- Imitation Learning row -->
+      <div class="columns is-centered content-row" style="margin-top: 3rem;">
+        <div class="column is-half">
+          <video id="imitation_learning" autoplay controls muted loop playsinline>
+            <source src="static/videos/imitation_learning.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="column is-half">
+          <img src="static/images/IL_plot.png" alt="Imitation Learning Results" />
+        </div>
+      </div>
+
+      <!-- Reinforcement Learning row -->
+      <div class="columns is-centered content-row">
+        <div class="column is-half">
+          <video id="reinforcement_learning" autoplay controls muted loop playsinline>
+            <source src="static/videos/reinforcement_learning.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="column is-half">
+          <img src="static/images/rl_plot.png" alt="Reinforcement Learning Results" />
+        </div>
+      </div>
+
+      <!-- Sim2Real row -->
+      <div class="columns is-centered content-row">
+        <div class="column is-half">
+          <video id="sim2real_place_box" autoplay controls muted loop playsinline>
+            <source src="static/videos/sim2real_place_box.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="column is-half">
+          <video id="sim2real_pour_water" autoplay controls muted loop playsinline>
+            <source src="static/videos/sim2real_pour_water.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // Hide volume controls for all browsers
+    document.addEventListener('DOMContentLoaded', function() {
+      const videos = document.querySelectorAll('video');
+      videos.forEach(video => {
+        video.addEventListener('loadedmetadata', function() {
+          // For browsers that support it, remove volume control
+          if (video.controls) {
+            // CSS handles webkit browsers, this is a fallback
+            const controls = video.parentElement;
+            if (controls) {
+              // Try to hide volume-related elements
+              const style = document.createElement('style');
+              style.textContent = `
+                video::-webkit-media-controls-volume-slider { display: none !important; }
+                video::-webkit-media-controls-mute-button { display: none !important; }
+              `;
+              document.head.appendChild(style);
+            }
+          }
+        });
+      });
+    });
+  </script>
 
 </body>
 </html>
