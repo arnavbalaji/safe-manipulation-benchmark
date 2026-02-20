@@ -8,20 +8,24 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Noto Sans', sans-serif; }
-    .publication-title { font-weight: 600; }
-    .publication-authors { color: #555; }
+    .publication-title { font-family: 'Noto Sans', sans-serif; font-weight: 600; }
+    .publication-subtitle { font-family: 'Noto Sans', sans-serif; font-weight: 400; font-size: 1.5rem; color: #363636; }
+    .publication-authors { font-family: 'Noto Sans', sans-serif; font-size: 1.1rem; }
+    .publication-venue { color: #555; font-weight: 600; width: fit-content; }
     .hero.teaser .hero-body { padding-top: 0; padding-bottom: 3rem; }
     .hero.teaser video { width: 100%; height: auto; border-radius: 10px; }
     .section .title { font-weight: 600; }
+    .section .title.is-2 { font-size: 2rem; }
     .video-section { padding: 2rem 0; }
     .video-section video { width: 100%; height: auto; border-radius: 10px; }
     .content-row { margin-bottom: 3rem; }
-    .content-row video, .content-row img { width: 100%; height: auto; border-radius: 10px; }
+    .content-row video, .content-row img { width: 100%; height: auto; border-radius: 10px; border: 1px solid #ddd; margin: 0.5%; }
     .content-row .column { display: flex; align-items: center; }
     .content-row img { display: block; border: none; box-shadow: none; object-fit: contain; }
     .content.has-text-justified p { line-height: 1.6; }
-    .exp-caption { font-size: 0.95rem; line-height: 1.5; margin-bottom: 1rem; }
     video { outline: none; }
+    .footer { padding: 3rem 1.5rem; }
+    .footer .content p { font-size: 0.9rem; color: #666; }
     /* Hide volume controls but keep timeline */
     video::-webkit-media-controls-volume-slider { display: none !important; }
     video::-webkit-media-controls-mute-button { display: none !important; }
@@ -39,7 +43,8 @@
       <div class="container is-max-desktop">
         <div class="columns is-centered">
           <div class="column has-text-centered">
-            <h1 class="title is-1 publication-title">OopsieVerse: A Safety Benchmark with Damage-Aware Simulation for Robot Manipulation</h1>
+            <h1 class="title is-1 publication-title">OopsieVerse:</h1>
+            <h2 class="subtitle is-2 publication-subtitle">A Safety Benchmark with Damage-Aware Simulation for Robot Manipulation</h2>
             <div class="is-size-5 publication-authors">
               <span class="author-block">Paper-ID 1018</span>
             </div>
@@ -65,8 +70,8 @@
     <div class="container is-max-desktop">
       <div class="columns is-centered has-text-centered">
         <div class="column is-four-fifths">
-          <h2 class="title is-3">Abstract</h2>
-          <div class="content has-text-justified">
+          <h2 class="title is-3" style="text-align: center;">Abstract</h2>
+          <div class="content has-text-justified" style="margin-top: 1rem;">
             <p>
               While robotic manipulation capabilities have advanced rapidly, physical safety remains a major barrier to deploying household robots: task success is insufficient if the robot damages itself or its surroundings. Simulation offers a harm-free alternative to costly and dangerous real-world training and evaluation, yet existing simulators lack general mechanisms to detect, quantify, and represent damage. To address this gap, we introduce OOPSIEVERSE, a unified simulation framework and benchmark for damage-aware household manipulation. At a theoretical level, OOPSIEVERSE augments an existing Markov Decision Problem with additional damage-related observations, rewards and/or termination conditions based on user preferences. OOPSIEVERSE provides damage as an explicit, physically-grounded, and task-agnostic signal by converting sources such as contact forces, temperature changes, and liquid interactions into corresponding mechanical, thermal or fluid damage. OOPSIEVERSE comprises two core elements: (1) DAMAGESIM, a simulator-agnostic framework for detecting and quantifying damage during navigation and manipulation, and (2) a suite of household tasks designed to evaluate common damage modes and distinguish between task completion and safe execution. We demonstrate the generality of our framework by instantiating DAMAGESIM in two simulators with different physics backends, OmniGibson (Nvidia Omniverse) and RoboCasa (MuJoCo). We further showcase the utility of OOPSIEVERSE across multiple use cases, including (1) guiding safer demonstration collection via real- time damage feedback, (2) learning safer manipulation policies through damage-conditioned imitation learning and reinforcement learning, (3) benchmarking the safety of state-of-the-art Vision Language Action policies, and (4) improving real-world safety of sim-to-real transferred policies. Together, our results highlight the potential of OOPSIEVERSE as an open-source foundation for systematic, scalable research on safe robot manipulation.
             </p>
@@ -79,7 +84,7 @@
   <!-- DamageSim -->
   <section class="section">
     <div class="container is-max-desktop">
-      <h2 class="title is-2" style="text-align: center;">DamageSim</h2>
+      <h2 class="title is-2" style="text-align: center; margin-bottom: 0.5rem;">DamageSim</h2>
       <div class="columns is-centered" style="margin-top: 1.5rem;">
         <div class="column is-full">
           <video id="damagesim" autoplay controls muted loop playsinline>
@@ -104,7 +109,7 @@
   <!-- OopsieBench -->
   <section class="section">
     <div class="container is-max-desktop">
-      <h2 class="title is-2" style="text-align: center;">OopsieBench</h2>
+      <h2 class="title is-2" style="text-align: center; margin-bottom: 0.5rem;">OopsieBench</h2>
       <div class="columns is-centered" style="margin-top: 1.5rem;">
         <div class="column is-full">
           <video id="oopsiebench" autoplay controls muted loop playsinline>
@@ -126,14 +131,10 @@
     </div>
   </section>
 
-  <!-- How can OopsieVerse enable safer policy learning and evaluation -->
+  <!-- Experiments / How can OopsieVerse enable safer policy learning and evaluation -->
   <section class="section hero is-light">
     <div class="container is-max-desktop">
-      <div class="columns is-centered has-text-centered">
-        <div class="column is-full">
-          <h2 class="title is-2">How can OopsieVerse enable safer policy learning and evaluation?</h2>
-        </div>
-      </div>
+      <h2 class="title is-2" style="text-align: center; margin-bottom: 1.5rem;">How can OopsieVerse enable safer policy learning and evaluation?</h2>
       
       <div class="columns is-centered" style="margin-top: 2rem;">
         <div class="column is-full">
@@ -191,6 +192,20 @@
       </div>
     </div>
   </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="columns is-centered">
+        <div class="column is-8">
+          <div class="content">
+            <p>
+              This page was built using the <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a>, adopted from the <a href="https://nerfies.github.io" target="_blank">Nerfies</a> project page and styled after <a href="https://robin-lab.cs.utexas.edu/SafeMimic/" target="_blank">SafeMimic</a>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </footer>
 
   <script>
     // Hide volume controls for all browsers
