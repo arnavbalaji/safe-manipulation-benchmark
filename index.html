@@ -189,11 +189,84 @@
       pointer-events: none;
     }
 
+    /* IL unsafe/safe grid */
+    .il-video-grid {
+      display: flex;
+      justify-content: center;
+      gap: 1.25rem;
+      margin-top: 1.75rem;
+      flex-wrap: wrap;
+    }
+    .il-task-col {
+      flex: 0 1 18%;
+      text-align: center;
+    }
+    .il-task-label {
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+    }
+    .il-video-grid .video-row {
+      margin-bottom: 0.75rem;
+    }
+    .il-video-grid .video-box {
+      position: relative;
+      width: 100%;
+      padding-top: 100%;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      background: #000;
+    }
+    .il-video-grid .video-box video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Sim2Real 2x2 collage */
+    .sim2real-video-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+    }
+    .sim2real-video-grid .video-box {
+      position: relative;
+      width: 100%;
+      padding-top: 100%;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      background: #000;
+    }
+    .sim2real-video-grid .video-box video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .sim2real-caption {
+      margin-top: 0.5rem;
+      font-weight: 600;
+      text-align: center;
+      font-size: 0.95rem;
+    }
+
     @media (max-width: 1023px) {
       .vla-video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .il-task-col { flex: 0 1 45%; }
     }
     @media (max-width: 600px) {
       .vla-video-grid { grid-template-columns: 1fr; }
+      .il-task-col { flex: 0 1 100%; }
     }
 
     .content.has-text-justified p { line-height: 1.6; }
@@ -434,28 +507,122 @@
 
       <div id="usecase-panel-il" class="usecase-panel" data-usecase-panel="il">
         <h3 class="title is-4 usecase-subtitle">Imitation Learning (IL)</h3>
+        <div class="content has-text-justified" style="margin-top: 0.75rem;">
+          Many real-world (or sim-collected) demonstration datasets mix safe and unsafe behavior. Using DamageSim, we can automatically flag trajectories that incur damage and filter them out to construct a dataset of only safe demonstrations. In the videos below, the top row shows an IL policy trained on the full dataset (including unsafe trajectories), while the bottom row shows a policy trained on the filtered safe-only demonstrations.
+        </div>
         <div class="columns is-centered content-row" style="margin-top: 1rem;">
-          <div class="column is-half">
-            <video id="imitation_learning" autoplay controls muted loop playsinline>
-              <source src="static/videos/imitation_learning.mp4" type="video/mp4">
-            </video>
-          </div>
-          <div class="column is-half">
+          <div class="column is-two-thirds">
             <img src="static/images/IL_plot.png" alt="Imitation Learning Results" />
+          </div>
+        </div>
+        <div class="il-video-grid" aria-label="Imitation Learning unsafe/safe demonstrations">
+          <div class="il-task-col">
+            <p class="il-task-label">Pour Glass</p>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/pour_water_il_unsafe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/pour_glass_il_safe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+          </div>
+
+          <div class="il-task-col">
+            <p class="il-task-label">Add Firewood</p>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/place_log_il_unsafe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/place_log_il_safe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+          </div>
+
+          <div class="il-task-col">
+            <p class="il-task-label">Lift Egg</p>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/lift_egg_il_unsafe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/lift_egg_il_safe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+          </div>
+
+          <div class="il-task-col">
+            <p class="il-task-label">Shelve Item</p>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/shelve_item_il_unsafe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/shelve_item_il_safe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+          </div>
+
+          <div class="il-task-col">
+            <p class="il-task-label">Wipe Countertop</p>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/wipe_dirt_il_unsafe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
+            <div class="video-row">
+              <div class="video-box">
+                <video autoplay muted playsinline>
+                  <source src="static/il_videos/wipe_dirt_il_safe.mp4" type="video/mp4">
+                </video>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <div id="usecase-panel-rl" class="usecase-panel" data-usecase-panel="rl">
         <h3 class="title is-4 usecase-subtitle">Reinforcement Learning (RL)</h3>
+        <div class="content has-text-justified" style="margin-top: 0.75rem;">
+          DamageSim lets us turn physically-grounded damage signals into a shaping reward that penalizes harmful interactions. Combined with the task reward, this yields a learning signal that encourages agents to complete the task while avoiding damage. We evaluate this idea in three settings: (i) pure RL on the Place Plate task with and without the damage reward (PPO), (ii) behavior cloning on Move Glass of Water followed by PPO finetuning with the damage reward, and (iii) taking the Shelve Item policy trained on the full IL dataset and finetuning it with a damage-aware objective (DSRL). The video below shows the training process for (iii).
+        </div>
         <div class="columns is-centered content-row" style="margin-top: 1rem;">
-          <div class="column is-half">
-            <video id="reinforcement_learning" autoplay controls muted loop playsinline>
-              <source src="static/videos/reinforcement_learning.mp4" type="video/mp4">
-            </video>
-          </div>
-          <div class="column is-half">
+          <div class="column is-two-thirds">
             <img src="static/images/rl_plot.png" alt="Reinforcement Learning Results" />
+          </div>
+        </div>
+        <div class="columns is-centered content-row" style="margin-top: 1.5rem;">
+          <div class="column is-two-thirds">
+            <video autoplay controls muted loop playsinline>
+              <source src="static/videos/rl_video.mp4" type="video/mp4">
+            </video>
           </div>
         </div>
       </div>
@@ -551,16 +718,41 @@
 
       <div id="usecase-panel-sim2real" class="usecase-panel" data-usecase-panel="sim2real">
         <h3 class="title is-4 usecase-subtitle">Sim2Real</h3>
-        <div class="columns is-centered content-row" style="margin-top: 1rem;">
-          <div class="column is-half">
-            <video id="sim2real_place_box" autoplay controls muted loop playsinline>
-              <source src="static/videos/sim2real_place_box.mp4" type="video/mp4">
-            </video>
+        <div class="content has-text-justified" style="margin-top: 0.75rem;">
+          We take the IL policies trained for the Pour Water and Shelve Item tasks and evaluate them in the real world. The videos below show unsafe and safe real-world executions for each task.
+        </div>
+        <div class="sim2real-video-grid" aria-label="Sim2Real real-world evaluations">
+          <div>
+            <div class="video-box">
+              <video autoplay muted playsinline>
+                <source src="static/sim2real_videos/pour_water_real_world_unsafe.mp4" type="video/mp4">
+              </video>
+            </div>
+            <p class="sim2real-caption">Pour Water (All Data)</p>
           </div>
-          <div class="column is-half">
-            <video id="sim2real_pour_water" autoplay controls muted loop playsinline>
-              <source src="static/videos/sim2real_pour_water.mp4" type="video/mp4">
-            </video>
+          <div>
+            <div class="video-box">
+              <video autoplay muted playsinline>
+                <source src="static/sim2real_videos/shelve_item_real_unsafe.mp4" type="video/mp4">
+              </video>
+            </div>
+            <p class="sim2real-caption">Shelve Item (All Data)</p>
+          </div>
+          <div>
+            <div class="video-box">
+              <video autoplay muted playsinline>
+                <source src="static/sim2real_videos/pour_water_real_world_safe.mp4" type="video/mp4">
+              </video>
+            </div>
+            <p class="sim2real-caption">Pour Water (Safe Data)</p>
+          </div>
+          <div>
+            <div class="video-box">
+              <video autoplay muted playsinline>
+                <source src="static/sim2real_videos/shelve_item_real_safe.mp4" type="video/mp4">
+              </video>
+            </div>
+            <p class="sim2real-caption">Shelve Item (Safe Data)</p>
           </div>
         </div>
       </div>
@@ -717,15 +909,89 @@
         if (v) v.playbackRate = 1;
       });
 
-      // Don't play last 8 seconds of safety_aware_data_collection — loop before that
+      // safety_aware_data_collection: skip last 8s then loop normally
       (function() {
         var v = document.getElementById('safety_aware_data_collection');
         if (!v) return;
-        var skipLast = 8;
+        v.loop = false;
         v.addEventListener('loadedmetadata', function() {
-          var maxTime = Math.max(0, v.duration - skipLast);
+          var maxTime = Math.max(0, v.duration - 8);
           v.addEventListener('timeupdate', function() {
-            if (v.currentTime >= maxTime) v.currentTime = 0;
+            if (v.currentTime >= maxTime) {
+              v.currentTime = 0;
+              var p = v.play();
+              if (p && typeof p.catch === 'function') p.catch(function() {});
+            }
+          });
+        });
+      })();
+
+      // IL videos: wait for all 10 to finish, pause 2s, then restart together
+      (function() {
+        var grid = document.querySelector('.il-video-grid');
+        if (!grid) return;
+        var ilVideos = Array.prototype.slice.call(grid.querySelectorAll('video'), 0);
+        if (!ilVideos.length) return;
+
+        var doneFlags = [];
+        var restarting = false;
+
+        ilVideos.forEach(function(v, idx) {
+          doneFlags[idx] = false;
+          v.loop = false;
+
+          v.addEventListener('ended', function() {
+            if (restarting) return;
+            doneFlags[idx] = true;
+
+            var allDone = doneFlags.every(function(d) { return d; });
+            if (allDone && !restarting) {
+              restarting = true;
+              setTimeout(function() {
+                ilVideos.forEach(function(vid, i) {
+                  doneFlags[i] = false;
+                  vid.currentTime = 0;
+                  var p = vid.play();
+                  if (p && typeof p.catch === 'function') p.catch(function() {});
+                });
+                restarting = false;
+              }, 2000);
+            }
+          });
+        });
+      })();
+
+      // Sim2Real videos: wait for all 4 to finish, pause 2s, then restart together
+      (function() {
+        var grid = document.querySelector('.sim2real-video-grid');
+        if (!grid) return;
+        var vids = Array.prototype.slice.call(grid.querySelectorAll('video'), 0);
+        if (!vids.length) return;
+
+        var doneFlags = [];
+        var restarting = false;
+
+        vids.forEach(function(v, idx) {
+          doneFlags[idx] = false;
+          v.loop = false;
+
+          v.addEventListener('ended', function() {
+            if (restarting) return;
+            doneFlags[idx] = true;
+
+            var allDone = doneFlags.every(function(d) { return d; });
+            if (allDone && !restarting) {
+              restarting = true;
+              setTimeout(function() {
+                vids.forEach(function(vid, i) {
+                  doneFlags[i] = false;
+                  vid.currentTime = 0;
+                  var p = vid.play();
+                  if (p && typeof p.catch === 'function') p.catch(function() {});
+                });
+                restarting = false;
+              }, 2000);
+            }
           });
         });
       })();
