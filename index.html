@@ -378,7 +378,7 @@
           </div>
           <div>
             <video autoplay controls muted loop playsinline>
-              <source src="static/videos/open_drawer.mp4" type="video/mp4">
+              <source src="static/videos/open_drawer_health.mp4" type="video/mp4">
             </video>
             <p class="damagesim-caption">Mechanical Damage</p>
           </div>
@@ -452,17 +452,17 @@
               <div class="carousel-cell"><div class="video-box"><video autoplay muted loop playsinline><source src="static/task_videos/wipe_counter_unsafe.mp4" type="video/mp4"></video></div><p>Wipe Counter</p></div>
             </div>
             <!-- Column 6 (placeholders) -->
-            <div class="carousel-col">
+            <!-- <div class="carousel-col">
               <div class="carousel-cell"><div class="video-box"><video autoplay muted loop playsinline><source src="static/task_videos/shelve_item_unsafe.mp4" type="video/mp4"></video></div><p>Task 16</p></div>
               <div class="carousel-cell"><div class="video-box"><video autoplay muted loop playsinline><source src="static/task_videos/shelve_item_unsafe.mp4" type="video/mp4"></video></div><p>Task 17</p></div>
               <div class="carousel-cell"><div class="video-box"><video autoplay muted loop playsinline><source src="static/task_videos/shelve_item_unsafe.mp4" type="video/mp4"></video></div><p>Task 18</p></div>
-            </div>
+            </div> -->
             <!-- Column 7 (placeholders) -->
-            <div class="carousel-col">
+            <!-- <div class="carousel-col">
               <div class="carousel-cell"><div class="video-box"><video autoplay muted loop playsinline><source src="static/task_videos/shelve_item_unsafe.mp4" type="video/mp4"></video></div><p>Task 19</p></div>
               <div class="carousel-cell"><div class="video-box"><video autoplay muted loop playsinline><source src="static/task_videos/shelve_item_unsafe.mp4" type="video/mp4"></video></div><p>Task 20</p></div>
               <div class="carousel-cell"><div class="video-box"><video autoplay muted loop playsinline><source src="static/task_videos/shelve_item_unsafe.mp4" type="video/mp4"></video></div><p>Task 21</p></div>
-            </div>
+            </div> -->
             </div>
           </div>
         <div class="carousel-nav">
@@ -506,14 +506,9 @@
       </div>
 
       <div id="usecase-panel-il" class="usecase-panel" data-usecase-panel="il">
-        <h3 class="title is-4 usecase-subtitle">Imitation Learning (IL)</h3>
+        <!-- <h3 class="title is-4 usecase-subtitle">Imitation Learning (IL)</h3> -->
         <div class="content has-text-justified" style="margin-top: 0.75rem;">
           Many real-world (or sim-collected) demonstration datasets mix safe and unsafe behavior. Using DamageSim, we can automatically flag trajectories that incur damage and filter them out to construct a dataset of only safe demonstrations. In the videos below, the top row shows an IL policy trained on the full dataset (including unsafe trajectories), while the bottom row shows a policy trained on the filtered safe-only demonstrations.
-        </div>
-        <div class="columns is-centered content-row" style="margin-top: 1rem;">
-          <div class="column is-two-thirds">
-            <img src="static/images/IL_plot.png" alt="Imitation Learning Results" />
-          </div>
         </div>
         <div class="il-video-grid" aria-label="Imitation Learning unsafe/safe demonstrations">
           <div class="il-task-col">
@@ -606,105 +601,122 @@
             </div>
           </div>
         </div>
+        <div class="columns is-centered content-row" style="margin-top: 1rem;">
+          <div class="column">
+            <img src="static/images/IL_plot.png" alt="Imitation Learning Results" />
+          </div>
+        </div>
       </div>
 
       <div id="usecase-panel-rl" class="usecase-panel" data-usecase-panel="rl">
-        <h3 class="title is-4 usecase-subtitle">Reinforcement Learning (RL)</h3>
+        <!-- <h3 class="title is-4 usecase-subtitle">Reinforcement Learning (RL)</h3> -->
         <div class="content has-text-justified" style="margin-top: 0.75rem;">
-          DamageSim lets us turn physically-grounded damage signals into a shaping reward that penalizes harmful interactions. Combined with the task reward, this yields a learning signal that encourages agents to complete the task while avoiding damage. We evaluate this idea in three settings: (i) pure RL on the Place Plate task with and without the damage reward (PPO), (ii) behavior cloning on Move Glass of Water followed by PPO finetuning with the damage reward, and (iii) taking the Shelve Item policy trained on the full IL dataset and finetuning it with a damage-aware objective (DSRL). The video below shows the training process for (iii).
+          DamageSim lets us turn physically-grounded damage signals into a shaping reward that penalizes harmful interactions. 
+          Combined with the task reward, this yields a learning signal that encourages agents to complete the task while minimizing damage. 
+          We evaluate this idea in three settings: (i) pure RL on the <i>Place Plate</i> task with and without the damage reward (PPO),
+           (ii) behavior cloning on <i>Move Glass of Water</i> task followed by PPO finetuning with the damage reward, 
+           and (iii) fine-tuning a <i>Shelve Item</i> policy—initially trained on the full IL dataset—using an additional damage-reward using <a href="https://diffusion-steering.github.io/">DSRL</a>.
+           The video below shows the training process for (iii), illustrating that over time the agent learns to reduce damage while maintaining high task performance.
+        </div>
+        <div class="columns is-centered content-row" style="margin-top: 1.5rem;">
+          <div class="column">
+            <video autoplay controls muted loop playsinline>
+              <source src="static/videos/rl_video.mp4" type="video/mp4">
+            </video>
+          </div>
         </div>
         <div class="columns is-centered content-row" style="margin-top: 1rem;">
           <div class="column is-two-thirds">
             <img src="static/images/rl_plot.png" alt="Reinforcement Learning Results" />
           </div>
         </div>
-        <div class="columns is-centered content-row" style="margin-top: 1.5rem;">
-          <div class="column is-two-thirds">
-            <video autoplay controls muted loop playsinline>
-              <source src="static/videos/rl_video.mp4" type="video/mp4">
-            </video>
-          </div>
-        </div>
       </div>
 
       <div id="usecase-panel-vla" class="usecase-panel" data-usecase-panel="vla">
+        <div class="content has-text-justified" style="margin-top: 0.75rem;">
+          We evaluate the safety of modern manipulation policies by benchmarking <a href="https://github.com/NVIDIA/Isaac-GR00T">GR00T</a>, a state-of-the-art Vision-Language-Action model
+          from NVIDIA. Even when GR00T achieves high task success, it frequently causes damage, resulting in much lower safe success 
+          rates and degraded environment health. This underscores the limits of evaluating VLAs solely by task completion and highlights
+          the need for benchmarks and learning signals that explicitly account for harmful interactions.          
+        </div>
+        
         <div class="vla-video-grid">
           <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/attach_camera_1.mp4|static/vla_evals/attach_camera_1.mp4|static/vla_evals/attach_camera_1.mp4" data-index="0">
             <div class="video-box">
               <video autoplay muted loop playsinline><source src="static/vla_evals/attach_camera_1.mp4" type="video/mp4"></video>
-              <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
+              <!-- <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
               <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
-              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
+              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div> -->
             </div>
             <p>Attach Camera</p>
           </div>
 
-          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/vla_eval2.mp4|static/vla_evals/vla_eval3.mp4|static/vla_evals/vla_eval4.mp4" data-index="0">
+          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/open_microwave_door.mp4|static/vla_evals/vla_eval3.mp4|static/vla_evals/vla_eval4.mp4" data-index="0">
             <div class="video-box">
-              <video autoplay muted loop playsinline><source src="static/vla_evals/vla_eval2.mp4" type="video/mp4"></video>
-              <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
+              <video autoplay muted loop playsinline><source src="static/vla_evals/open_microwave_door.mp4" type="video/mp4"></video>
+              <!-- <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
               <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
-              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
+              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div> -->
             </div>
             <p>Open Microwave Door</p>
           </div>
 
-          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/vla_eval3.mp4|static/vla_evals/vla_eval4.mp4|static/vla_evals/vla_eval5.mp4" data-index="0">
+          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/pick_scrub.mp4|static/vla_evals/vla_eval4.mp4|static/vla_evals/vla_eval5.mp4" data-index="0">
             <div class="video-box">
-              <video autoplay muted loop playsinline><source src="static/vla_evals/vla_eval3.mp4" type="video/mp4"></video>
-              <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
+              <video autoplay muted loop playsinline><source src="static/vla_evals/pick_scrub.mp4" type="video/mp4"></video>
+              <!-- <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
               <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
-              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
+              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div> -->
             </div>
             <p>pick up Scrubber</p>
           </div>
 
-          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/vla_eval4.mp4|static/vla_evals/vla_eval5.mp4|static/vla_evals/vla_eval6.mp4" data-index="0">
+          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/ignite_wood.mp4|static/vla_evals/vla_eval5.mp4|static/vla_evals/vla_eval6.mp4" data-index="0">
             <div class="video-box">
-              <video autoplay muted loop playsinline><source src="static/vla_evals/vla_eval4.mp4" type="video/mp4"></video>
-              <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
+              <video autoplay muted loop playsinline><source src="static/vla_evals/ignite_wood.mp4" type="video/mp4"></video>
+              <!-- <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
               <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
-              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
+              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div> -->
             </div>
             <p>Ignite Wood</p>
           </div>
 
-          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/vla_eval5.mp4|static/vla_evals/vla_eval6.mp4|static/vla_evals/vla_eval1.mp4" data-index="0">
+          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/open_single_door_unsafe.mp4|static/vla_evals/vla_eval6.mp4|static/vla_evals/vla_eval1.mp4" data-index="0">
             <div class="video-box">
-              <video autoplay muted loop playsinline><source src="static/vla_evals/vla_eval5.mp4" type="video/mp4"></video>
-              <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
-              <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
-              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
+              <video autoplay muted loop playsinline><source src="static/vla_evals/open_single_door_unsafe.mp4" type="video/mp4"></video>
+                <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
+                <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
+                <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
             </div>
             <p>Open Single Door</p>
           </div>
 
-          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/vla_eval6.mp4|static/vla_evals/vla_eval1.mp4|static/vla_evals/vla_eval2.mp4" data-index="0">
+          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/toggle_on_microwave.mp4" data-index="0">
             <div class="video-box">
-              <video autoplay muted loop playsinline><source src="static/vla_evals/vla_eval6.mp4" type="video/mp4"></video>
-              <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
+              <video autoplay muted loop playsinline><source src="static/vla_evals/toggle_on_microwave.mp4" type="video/mp4"></video>
+              <!-- <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
               <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
-              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
+              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div> -->
             </div>
             <p>Turn on Microwave</p>
           </div>
 
-          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/vla_eval1.mp4|static/vla_evals/vla_eval3.mp4|static/vla_evals/vla_eval5.mp4" data-index="0">
+          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/counter_to_microwave.mp4|static/vla_evals/vla_eval3.mp4|static/vla_evals/vla_eval5.mp4" data-index="0">
             <div class="video-box">
-              <video autoplay muted loop playsinline><source src="static/vla_evals/vla_eval1.mp4" type="video/mp4"></video>
-              <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
+              <video autoplay muted loop playsinline><source src="static/vla_evals/counter_to_microwave.mp4" type="video/mp4"></video>
+              <!-- <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
               <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
-              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
+              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div> -->
             </div>
             <p>Counter to Microwave</p>
           </div>
 
-          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/vla_eval2.mp4|static/vla_evals/vla_eval4.mp4|static/vla_evals/vla_eval6.mp4" data-index="0">
+          <div class="carousel-cell vla-mini-carousel" data-sources="static/vla_evals/turn_on_stove.mp4|static/vla_evals/vla_eval4.mp4|static/vla_evals/vla_eval6.mp4" data-index="0">
             <div class="video-box">
-              <video autoplay muted loop playsinline><source src="static/vla_evals/vla_eval2.mp4" type="video/mp4"></video>
-              <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
+              <video autoplay muted loop playsinline><source src="static/vla_evals/turn_on_stove.mp4" type="video/mp4"></video>
+              <!-- <button type="button" class="vla-mini-btn prev" data-mini-shift="-1" aria-label="Previous eval">&#8249;</button>
               <button type="button" class="vla-mini-btn next" data-mini-shift="1" aria-label="Next eval">&#8250;</button>
-              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div>
+              <div class="vla-mini-indicator" aria-hidden="true">1 / 3</div> -->
             </div>
             <p>Turn on Stove</p>
           </div>
@@ -717,9 +729,13 @@
       </div>
 
       <div id="usecase-panel-sim2real" class="usecase-panel" data-usecase-panel="sim2real">
-        <h3 class="title is-4 usecase-subtitle">Sim2Real</h3>
+        <!-- <h3 class="title is-4 usecase-subtitle">Sim2Real</h3> -->
         <div class="content has-text-justified" style="margin-top: 0.75rem;">
-          We take the IL policies trained for the Pour Water and Shelve Item tasks and evaluate them in the real world. The videos below show unsafe and safe real-world executions for each task.
+          Our ultimate goal is safe real-world robot behavior, so we test whether policies trained with OopsieVerse transfer safely to real world.
+          Compared to a baseline IL policy trained on all data, a damage-aware IL policy trained on health-filtered episodes behaves 
+          more cautiously in the <i>Pour Water</i> and <i>Shelve Cereal Box</i> tasks. It goes futher away from the laptop when pouring water 
+          and learns to make space for the cereal box by pushing non-fragile objects like the crackers box instead of fragile objects 
+          like glass bottles. Our experiments suggest that explicit damage signals obtained via OopsieVerse can translate into improved safety on hardware.
         </div>
         <div class="sim2real-video-grid" aria-label="Sim2Real real-world evaluations">
           <div>
@@ -733,14 +749,6 @@
           <div>
             <div class="video-box">
               <video autoplay muted playsinline>
-                <source src="static/sim2real_videos/shelve_item_real_unsafe.mp4" type="video/mp4">
-              </video>
-            </div>
-            <p class="sim2real-caption">Shelve Item (All Data)</p>
-          </div>
-          <div>
-            <div class="video-box">
-              <video autoplay muted playsinline>
                 <source src="static/sim2real_videos/pour_water_real_world_safe.mp4" type="video/mp4">
               </video>
             </div>
@@ -749,10 +757,18 @@
           <div>
             <div class="video-box">
               <video autoplay muted playsinline>
+                <source src="static/sim2real_videos/shelve_item_real_unsafe.mp4" type="video/mp4">
+              </video>
+            </div>
+            <p class="sim2real-caption">Shelve Cereal Box (All Data)</p>
+          </div>
+          <div>
+            <div class="video-box">
+              <video autoplay muted playsinline>
                 <source src="static/sim2real_videos/shelve_item_real_safe.mp4" type="video/mp4">
               </video>
             </div>
-            <p class="sim2real-caption">Shelve Item (Safe Data)</p>
+            <p class="sim2real-caption">Shelve Cereal Box (Safe Data)</p>
           </div>
         </div>
       </div>
@@ -775,7 +791,7 @@
 
   <script>
     // Carousel logic – start in middle so user can scroll left or right equally
-    var totalCols = 7;
+    var totalCols = 5;
     var visibleCols = 3;
     var maxPos = totalCols - visibleCols;
     var carouselPos = 0; // start from beginning
