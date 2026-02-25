@@ -49,7 +49,7 @@
     .damagesim-types-row .damagesim-caption { margin-top: 0.5rem; }
     .damagesim-fig-caption {
       margin-top: 0.75rem;
-      font-size: 0.9rem;
+      /* font-size: 0.9rem; */
       line-height: 1.55;
       color: #363636;
       max-width: 960px;
@@ -78,8 +78,8 @@
     }
     .damagesim-sim-caption {
       margin-top: 1rem;
-      text-align: center;
-      font-size: 0.95rem;
+      /* text-align: center; */
+      /* font-size: 0.95rem; */
       line-height: 1.5;
       color: #363636;
       grid-column: 1 / -1;
@@ -262,6 +262,13 @@
     }
     .oopsiebench-tile:hover .oopsiebench-label {
       opacity: 1;
+    }
+
+    .oopsiebench-hint {
+      margin-top: 0.75rem;
+      text-align: center;
+      font-size: 0.95rem;
+      color: #6b6b6b;
     }
 
     /* OopsieBench fullscreen modal */
@@ -540,7 +547,12 @@
       <div class="columns is-centered">
         <div class="column is-five-fifths">
           <div class="content has-text-justified" style="margin-top: 1rem;">
-            <p>DamageSim is our simulator-agnostic layer that makes physical safety measurable by tracking object-centric "health" and updating it from simulator signals (contact forces, temperatures, liquid exposure), converting them into mechanical, thermal, and fluid damage as observations, rewards, and/or termination conditions. We instantiate it in RoboCasa (MuJoCo) and BEHAVIOR-1K (Omniverse) showcasing its consistency across simulators.</p>
+            <p>DamageSim is our simulator-agnostic plugin that makes physical safety measurable 
+              by tracking object-centric “health.” It monitors simulator signals—such as contact 
+              forces, temperature, and liquid exposure—and converts them into mechanical 
+              (e.g., impact or compression), thermal, and fluid damage, which can be used as 
+              observations, rewards, or termination conditions. 
+              We instantiate it in RoboCasa (MuJoCo) and BEHAVIOR-1K (Omniverse) showcasing its consistency across simulators.</p>
           </div>
         </div>
       </div>
@@ -568,27 +580,30 @@
 
       <div class="columns is-centered" style="margin-top: 2.5rem;">
         <div class="column is-five-fifths">
-          <img src="static/images/mdp_fig.png" alt="Damage-Augmented POMDP diagram" style="width: 100%; height: auto; border-radius: 10px;" />
           <p class="damagesim-fig-caption">
             <strong>Damage-Augmented POMDP Implementation with DamageSim.</strong> Conceptually, our DamageSim plugin (<em>blue</em>) extends an existing POMDP in simulation (<em>green</em>, dotted arrow to agent) by augmenting the state with <em>health</em>. The health state can in turn influence the observations and rewards, and/or provide access to new damage-aware terminal states. DamageSim implements the health state to augment the original POMDP state into a <em>Damage Aware</em> state (s<sup>DA</sup> ∈ S<sup>DA</sup> = S × S<sup>h</sup>) as a per-object physical property, updated at every timestep by a set of <em>damage evaluator models (DEM)</em> that compute mechanical, thermal, and fluid damage (d<sub>DEM</sub>) from simulator state and interactions, reducing per-entity health accordingly. The augmented POMDP provided by DamageSim approximates better the conditions of the real-world task.
           </p>
+          <br>
+          <img src="static/images/mdp_fig.png" alt="Damage-Augmented POMDP diagram" style="width: 100%; height: auto; border-radius: 10px;" />
         </div>
       </div>
 
+      
       <div class="damagesim-sim-row">
+        <p class="damagesim-sim-caption"><b>DamageSim is simulator-agnostic.</b> we instantiate it in BEHAVIOR-1k (Nvidia Omniverse) 
+          and RoboCasa (MuJoCo) to demonstrate consistent safety measurement across different physics backends.</p>
         <div>
-          <p class="damagesim-sim-label">RoboCasa</p>
           <video autoplay controls muted loop playsinline>
             <source src="static/videos/open_drawer_health.mp4" type="video/mp4">
           </video>
+          <p class="damagesim-sim-label">RoboCasa</p>
         </div>
         <div>
-          <p class="damagesim-sim-label">BEHAVIOR-1k</p>
           <video autoplay controls muted loop playsinline>
             <source src="static/videos/shelve_item.mp4" type="video/mp4">
           </video>
+          <p class="damagesim-sim-label">BEHAVIOR-1k</p>
         </div>
-        <p class="damagesim-sim-caption">DamageSim is simulator-agnostic; we implement it in Omniverse (BEHAVIOR-1k) and RoboSuite (RoboCasa) to show consistency across physics backends and benchmarks.</p>
       </div>
     </div>
   </section>
@@ -600,7 +615,12 @@
       <div class="columns is-centered" style="margin-top: 1rem;">
         <div class="column is-five-fifths">
           <div class="content has-text-justified">
-            <p>OopsieBench is a suite of 32 household tasks in total (15 tasks shown in the grid below; hover a tile to see its name). It exposes the gap between task completion and safe execution via "tempting shortcuts" and safer strategies, using DamageSim's health signals. The benchmark spans diverse scenes, objects, and damage modalities, is cross-platform (OmniGibson and RoboCasa), and includes human demonstration data for baselines and safety-aware imitation learning.</p>
+            <p>OopsieBench is a suite of 32 household tasks in total (15 tasks shown in the grid below; hover a tile to see its name). 
+              The suite is designed to (i) expose policies to realistic, physically damaging failure modes in household manipulation, 
+              and (ii) make safety measurable by contrasting easy but risky strategies with safer ones that require more careful 
+              interaction (e.g., gentler contact, safer approaches, or avoiding hazards). 
+              The benchmark spans diverse scenes, objects, and damage modalities, is cross-platform (BEHAVIOR-1k and RoboCasa), 
+              and includes a dataset of safe and unsafe human teleop demonstrations for five tasks.</p>
           </div>
         </div>
       </div>
@@ -670,6 +690,8 @@
           <span class="oopsiebench-label">Wipe Counter</span>
         </div>
       </div>
+
+      <p class="oopsiebench-hint">Click a tile to enlarge.</p>
 
       <div id="oopsiebenchModal" class="oopsiebench-modal" aria-hidden="true">
         <div class="oopsiebench-modal-content" onclick="event.stopPropagation()">
@@ -956,7 +978,7 @@
                 <source src="static/sim2real_videos/pour_water_real_world_unsafe.mp4" type="video/mp4">
               </video>
             </div>
-            <p class="sim2real-caption">Pour Water (All Data)</p>
+            <p class="sim2real-caption">Pour Water (Safe + Unsafe Data)</p>
           </div>
           <div>
             <div class="video-box">
@@ -964,7 +986,7 @@
                 <source src="static/sim2real_videos/pour_water_real_world_safe.mp4" type="video/mp4">
               </video>
             </div>
-            <p class="sim2real-caption">Pour Water (Safe Data)</p>
+            <p class="sim2real-caption">Pour Water (Safety-filtered Data)</p>
           </div>
           <div>
             <div class="video-box">
@@ -972,7 +994,7 @@
                 <source src="static/sim2real_videos/shelve_item_real_unsafe.mp4" type="video/mp4">
               </video>
             </div>
-            <p class="sim2real-caption">Shelve Cereal Box (All Data)</p>
+            <p class="sim2real-caption">Shelve Cereal Box (Safe + Unsafe Data)</p>
           </div>
           <div>
             <div class="video-box">
@@ -980,7 +1002,7 @@
                 <source src="static/sim2real_videos/shelve_item_real_safe.mp4" type="video/mp4">
               </video>
             </div>
-            <p class="sim2real-caption">Shelve Cereal Box (Safe Data)</p>
+            <p class="sim2real-caption">Shelve Cereal Box (Safety-filtered Data)</p>
           </div>
         </div>
       </div>
@@ -1014,6 +1036,15 @@
     var maxPos = totalCols - visibleCols;
     var carouselPos = 0; // start from beginning
 
+    function recomputeCarouselBounds() {
+      var track = document.getElementById('carouselTrack');
+      if (!track) return;
+      var cols = track.querySelectorAll(':scope > .carousel-col').length;
+      if (cols) totalCols = cols;
+      maxPos = Math.max(0, totalCols - visibleCols);
+      carouselPos = Math.max(0, Math.min(maxPos, carouselPos));
+    }
+
     function updateCarouselButtons() {
       var prevBtn = document.getElementById('carouselBtnPrev');
       var nextBtn = document.getElementById('carouselBtnNext');
@@ -1031,6 +1062,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
+      recomputeCarouselBounds();
       // Navbar burger (mobile)
       (function() {
         var burgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
