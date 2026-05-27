@@ -261,6 +261,45 @@ def remove_one_step_demos():
         for demo_name in to_delete:
             del f["data"][demo_name]
 
+def save_episodes_to_new_hdf5(input_hdf5_path, output_hdf5_path, episodes_to_save=[]):
+    # Open first file to get structure and metadata
+    with h5py.File(input_hdf5_path, "r") as f:
+        
+        in_data = f["data"]
+        breakpoint()
+        
+        # Create output file and data group
+        with h5py.File(output_hdf5_path, "w") as out_file:
+            out_data = out_file.create_group("data")
+            
+            for k in in_data.attrs.keys():
+                out_data.attrs[k] = in_data.attrs[k]
+
+            # Process all input files
+            total_episodes = 0
+            total_steps = 0
+            for episode_name in episodes_to_save:                                                            
+                    # Copy each demo with new numbering
+                    print(f"Copying {episode_name}")
+                    
+                    # Create new demo group
+                    new_episode_name = f"demo_{total_episodes}"
+                    target_demo = out_data.create_group(new_episode_name)
+                    
+                    # Recursively copy the demo group
+                    copy_group_recursive(in_data[episode_name], target_demo)
+
+                    total_steps += int(in_data[episode_name]["action"].shape[0])
+                    total_episodes += 1
+
+
+            # Update n_episodes and n_steps
+            out_data.attrs["n_episodes"] = total_episodes
+            out_data.attrs["n_steps"] = total_steps
+    
+    print(f"Total episodes: {total_episodes}, Total steps: {total_steps}")
+
+
 if __name__ == "__main__":
     # explore the hdf5 file
     # hdf5_path = "resources/teleop_data/trial_2.hdf5"
@@ -269,10 +308,19 @@ if __name__ == "__main__":
     # main()
     # remove_one_step_demos()
 
-    combine_hdf5_files(
-        input_paths=[
-            "resources/teleop_data/pour_water/trial_1.hdf5",
-            "resources/teleop_data/pour_water/trial_2.hdf5",
-        ],
-        output_path="resources/teleop_data/pour_water/all_data.hdf5"
+    # combine_hdf5_files(
+    #     input_paths=[
+    #         "resources/teleop_data/pour_water/trial_1.hdf5",
+    #         "resources/teleop_data/pour_water/trial_2.hdf5",
+    #     ],
+    #     output_path="resources/teleop_data/pour_water/all_data.hdf5"
+    # )
+
+    save_episodes_to_new_hdf5(
+        input_hdf5_path="/media/ssd/safe-manipulation-benchmark/resources/teleop_data/pour_water/trial_1.hdf5",
+        output_hdf5_path="resources/teleop_data/pour_water_unsafe.hdf5",
+        episodes_to_save=[
+            "demo_1",
+            "demo_2",
+        ]
     )
